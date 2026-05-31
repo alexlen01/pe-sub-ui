@@ -3,6 +3,7 @@ import { SCREENS as SCREEN_MAP } from '../config/screenConfig'
 import { getLPsForFacilitySync } from '../services/lpService'
 import { DEFAULT_FACILITY_PARAMS } from '../services/bbCalculationService'
 import { DEFAULT_USER } from '../config/navigationConfig'
+import { useServerEvents } from '../hooks/useServerEvents'
 import type { LPRecord } from '../services/lpService'
 
 export { SCREEN_MAP as SCREENS }
@@ -57,6 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const abortSubmission = useCallback((facility: string) => {
     if (facility) setAbortedFacilities(prev => [...prev, facility])
   }, [])
+
+  useServerEvents(toast)
 
   return (
     <AppContext.Provider value={{
