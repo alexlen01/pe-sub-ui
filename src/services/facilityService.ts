@@ -171,11 +171,10 @@ export async function createFacility(name: string, agentBank: string): Promise<{
     reportApiMode('live')
     return { ok: true }
   } catch (e: unknown) {
-    if (e instanceof Response || (e && typeof e === 'object' && 'status' in e)) {
-      const status = (e as { status: number }).status
-      if (status === 409) return { ok: false, error: 'A facility with this name already exists.' }
-    }
-    return { ok: false, error: 'Unable to save facility. Check that the API is running.' }
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg.includes('409')) return { ok: false, error: 'A facility with this name already exists.' }
+    if (msg.includes('400')) return { ok: false, error: 'Facility name and agent bank are required.' }
+    return { ok: false, error: 'Unable to save — API unavailable. Restart pe-sub-api and try again.' }
   }
 }
 
