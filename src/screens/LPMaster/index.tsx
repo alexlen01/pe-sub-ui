@@ -378,7 +378,7 @@ function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: (
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{facility.agentBank}</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
         <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
-          {facility.lps.toLocaleString()}
+          {facility.lps?.toLocaleString() ?? '—'}
           <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>LPs</span>
         </span>
         <span style={{ fontSize: 11, fontWeight: 600, color }}>● {facility.status}</span>
@@ -463,7 +463,7 @@ export default function LPMaster() {
             autoFocus
           />
           <Button variant="secondary" size="sm" onClick={openAll}>
-            View All {facilities.reduce((s, f) => s + f.lps, 0).toLocaleString()} LPs →
+            View All {facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString()} LPs →
           </Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
             {visibleFacilities.length} of {facilities.length} facilities

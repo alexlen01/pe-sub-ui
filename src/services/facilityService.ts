@@ -156,20 +156,14 @@ export async function getSubmissions(): Promise<SubmissionRow[]> {
 export function getActivityFeed(): ActivityRow[] { return [] }
 
 export async function getAuditLog(): Promise<AuditRow[]> {
-  try {
-    const data = (await api.facilities.list()) as unknown as AuditRow[]
-    reportApiMode('live')
-    return data
-  } catch {
-    return []
-  }
+  return []
 }
 
-export async function createFacility(name: string, agentBank: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function createFacility(name: string, agentBank: string): Promise<{ ok: true; id?: number } | { ok: false; error: string }> {
   try {
-    await api.facilities.create(name, agentBank)
+    const facility = await api.facilities.create(name, agentBank) as { id?: number }
     reportApiMode('live')
-    return { ok: true }
+    return { ok: true, id: facility?.id }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('409')) return { ok: false, error: 'A facility with this name already exists.' }

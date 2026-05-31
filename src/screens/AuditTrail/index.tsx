@@ -26,7 +26,7 @@ export default function AuditTrail() {
     })
   }, [auditLog, search, evtFilter, userFilter])
 
-  const users = [...new Set(auditLog.map(r => r.user))]
+  const users = [...new Set(auditLog.map(r => r.user).filter(Boolean))]
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(rows)
 
   return (

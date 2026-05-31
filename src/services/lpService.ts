@@ -45,9 +45,8 @@ export async function getLPById(rank: number): Promise<LPRecord | null> {
   }
 }
 
-export async function getLPsForFacility(_facilityName: string): Promise<LPRecord[]> {
+export async function getLPsForFacility(facilityId: number): Promise<LPRecord[]> {
   try {
-    const facilityId = 1 // TODO: map facilityName → facilityId once facilities API is wired
     const data = (await api.lps.list({ facilityId })) as unknown as LPRecord[]
     reportApiMode('live')
     return data
@@ -56,8 +55,6 @@ export async function getLPsForFacility(_facilityName: string): Promise<LPRecord
     return _localGetLPsForFacility()
   }
 }
-
-export function getLPsForFacilitySync(_facilityName: string): LPRecord[] { return _localGetLPsForFacility() }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }
 

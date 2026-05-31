@@ -18,11 +18,15 @@ export async function getWizardConfig() {
 }
 const _localWizardCfg = { WIZARD_STEPS, SNAPSHOT_OPTIONS, CALC_MODES }
 
-export async function getEligibilityConfig() {
-  try { return (await api.config.eligibility()) as typeof _localEligCfg }
-  catch { return _localEligCfg }
-}
 const _localEligCfg = { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS }
+let _eligCache: Promise<typeof _localEligCfg> | null = null
+
+export function getEligibilityConfig(): Promise<typeof _localEligCfg> {
+  if (!_eligCache) {
+    _eligCache = (api.config.eligibility() as Promise<typeof _localEligCfg>).catch(() => _localEligCfg)
+  }
+  return _eligCache
+}
 
 export async function getReportConfig() {
   try { return (await api.config.reports()) as typeof _localRptCfg }

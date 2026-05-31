@@ -81,7 +81,7 @@ const CollapseBtn = ({ collapsed, onToggle }: { collapsed: boolean; onToggle: ()
 )
 
 export default function ExtractionPreview() {
-  const { navigate, toast, activeSubmission, abortSubmission } = useApp()
+  const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
   const [extracted,    setExtracted]    = useState<ExtractedRow[]>(EXTRACTED_LPS)
   const [fieldMap,     setFieldMap]     = useState(EXTRACTION_FIELD_MAP)
   const [docRec,       setDocRec]       = useState(DOC_RECOGNITION)
@@ -96,7 +96,7 @@ export default function ExtractionPreview() {
   )
 
   useEffect(() => {
-    getExtractedLPs().then(rows => setExtracted(rows as unknown as ExtractedRow[]))
+    getExtractedLPs(activeSubmissionId ?? 0).then(rows => setExtracted(rows as unknown as ExtractedRow[]))
     getAllCanonicalFields().then(f => setCanonicals(f as unknown as typeof ALL_CANONICAL_FIELDS))
     getUnrecognizedColumns().then(cols => setUnrecog((cols as typeof UNRECOGNIZED_COLUMNS).map(c => ({ ...c, suggestedCanonical: '', dismissed: false }))))
     setFieldMap(getExtractionFieldMap())

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApp }    from '../../context/AppContext'
 import KpiCard        from '../../components/ui/KpiCard'
 import Card           from '../../components/ui/Card'
@@ -7,8 +7,8 @@ import DonutChart     from '../../components/ui/DonutChart'
 import Tag            from '../../components/ui/Tag'
 import Button         from '../../components/ui/Button'
 import InfoTip        from '../../components/ui/InfoTip'
-import { getFacilities, getActivityFeed } from '../../services/facilityService'
-import { getDonutData } from '../../services/lpService'
+import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
+import { getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 
 // Derive Executive Summary rows from a selected facility record.
@@ -46,16 +46,22 @@ const FACILITY_STATUS_ITEMS = [
 
 const FACILITY_COLS = [
   { key: 'name',    label: 'Facility'  },
-  { key: 'lps',     label: '# LPs',    align: 'right', style: { width: 70  }, render: (r: FacilityRow) => r.lps.toLocaleString() },
+  { key: 'lps',     label: '# LPs',    align: 'right', style: { width: 70  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
   { key: 'agentBB', label: 'Agent BB', align: 'right', style: { width: 90  } },
   { key: 'ubsBB',   label: 'UBS BB',   align: 'right', style: { width: 90  } },
-  { key: 'delta',   label: 'Delta',    align: 'right', style: { width: 90  }, neg: (r: FacilityRow) => r.delta.startsWith('-') },
+  { key: 'delta',   label: 'Delta',    align: 'right', style: { width: 90  }, neg: (r: FacilityRow) => r.delta?.startsWith('-') ?? false },
   { key: 'ear',     label: 'EAR',      align: 'right', style: { width: 70  } },
   { key: 'lastRun', label: 'Last Run', align: 'right', style: { width: 85  }, render: (r: FacilityRow) => <span style={{ color: r.lastRun === '—' ? 'var(--muted)' : 'inherit' }}>{r.lastRun}</span> },
   { key: 'status',  label: 'Status',                   style: { width: 120 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
 ]
 
-const donutData = getDonutData()
+const CLS_SEGMENTS = [
+  { cls: 'Rated',          label: 'Rated (90%)',           color: '#4F4F4F' },
+  { cls: 'Unrated >2bn',   label: 'Unrated >$2bn (75%)',   color: '#E60000' },
+  { cls: 'Unrated 1–2bn', label: 'Unrated $1–2bn (65%)', color: '#767676' },
+  { cls: 'Eligible',       label: 'Eligible <$1bn (50%)',  color: '#007A38' },
+  { cls: 'Excluded',       label: 'Excluded (0%)',         color: '#C8C8C8' },
+]
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, screen } = useApp()
@@ -64,6 +70,14 @@ export default function Dashboard() {
   const [statusFilter,     setStatusFilter]     = useState('All')
   const [activityFeed,     setActivityFeed]     = useState<ReturnType<typeof getActivityFeed>>([])
   const [loading,          setLoading]          = useState(false)
+  const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
+
+  const selectedFacilityId = (selectedFacility as unknown as { id?: number })?.id ?? null
+
+  useEffect(() => {
+    if (!selectedFacilityId) { setFacilityLPs([]); return }
+    getLPsForFacility(selectedFacilityId).then(lps => setFacilityLPs(lps as { cls?: string }[]))
+  }, [selectedFacilityId])
 
   const load = () => {
     setLoading(true)
@@ -82,7 +96,17 @@ export default function Dashboard() {
   }, [screen])
 
   const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
-  const donut              = selectedFacility ? (donutData[selectedFacility.name] ?? null) : null
+  const donut = useMemo(() => {
+    if (facilityLPs.length === 0) return null
+    const total = facilityLPs.length
+    const segments = CLS_SEGMENTS
+      .map(({ cls, label, color }) => {
+        const n = facilityLPs.filter(lp => lp.cls === cls).length
+        return { label, n, pct: `${((n / total) * 100).toFixed(1)}%`, color }
+      })
+      .filter(s => s.n > 0)
+    return { total, segments }
+  }, [facilityLPs])
   const certifiedCount      = facilities.filter(f => f.status === 'Certified').length
   const needsReviewCount    = facilities.filter(f => f.status === 'Needs Review').length
   const inProgressCount     = facilities.filter(f => f.status === 'In Progress').length
@@ -101,9 +125,9 @@ export default function Dashboard() {
       </>,
       color: 'black',
     },
-    { label: 'Total LP Records',   value: facilities.reduce((s, f) => s + f.lps, 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
-    { label: 'Pending LP Reviews', value: donut ? String(donut.pendingReviews) : '—', sub: donut ? `${donut.pendingReviewsSub} · ${selectedFacility?.name}` : '', color: 'amber' },
-    { label: 'Last BB Run',        value: donut ? donut.lastBBRun : '—',              sub: donut ? `${donut.lastBBSub} · ${selectedFacility?.name}` : '',          color: 'green' },
+    { label: 'Total LP Records',   value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
+    { label: 'Pending LP Reviews', value: '—', sub: selectedFacility?.name ?? '', color: 'amber' },
+    { label: 'Last BB Run',        value: selectedFacility ? formatLastRun((selectedFacility as unknown as { lastRunAt?: string }).lastRunAt) : '—', sub: selectedFacility?.name ?? '',          color: 'green' },
   ]
 
   return (

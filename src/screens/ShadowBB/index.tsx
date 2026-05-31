@@ -139,8 +139,9 @@ type BBResult = ReturnType<typeof computePortfolioBB>
 
 export default function ShadowBB() {
   const { bbParams, toast } = useApp()
-  const [facilityNames, setFacilityNames] = useState<string[]>([])
-  const [facility,      setFacility]      = useState('')
+  const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string }[]>([])
+  const [facility,        setFacility]        = useState('')
+  const [facilityId,      setFacilityId]      = useState<number | null>(null)
   const [clsFilter,     setClsFilter]     = useState('')
   const [selectedLP,    setSelectedLP]    = useState<ComputedLPRecord | null>(null)
   const [summaryHidden, setSummaryHidden] = useState(false)
@@ -150,17 +151,17 @@ export default function ShadowBB() {
 
   useEffect(() => {
     getFacilities().then(fs => {
-      const names = fs.map(f => f.name)
-      setFacilityNames(names)
-      if (names.length > 0) setFacility(names[0])
+      const opts = fs.map(f => ({ id: (f as unknown as { id?: number }).id, name: f.name }))
+      setFacilityOptions(opts)
+      if (opts.length > 0) { setFacility(opts[0].name); setFacilityId(opts[0].id ?? null) }
     })
   }, [])
 
   useEffect(() => {
-    if (!facility) return
-    getLPsForFacility(facility).then(lps => {
+    if (!facilityId) return
+    getLPsForFacility(facilityId).then(lps => {
       const computed = computePortfolioBB(lps as LPRecord[], { ...bbParams })
-      getFacilityBBSnapshot(facility).then(snapshot => {
+      getFacilityBBSnapshot(facilityId).then(snapshot => {
         const snapshotData = (snapshot as unknown as Record<string, unknown>) ?? {}
         const patched = Object.keys(snapshotData).length
           ? { ...computed, summary: { ...computed.summary, ...snapshotData }, breaches: [] }
@@ -171,7 +172,7 @@ export default function ShadowBB() {
         setClsFilter('')
       })
     })
-    getFacilitySummaryExt(facility).then(ext => setSummaryExtApi(ext))
+    getFacilitySummaryExt(facilityId).then(ext => setSummaryExtApi(ext))
   }, [facility])
 
   const filtered = useMemo(() => clsFilter ? result.lps.filter(r => r.cls === clsFilter) : result.lps, [result.lps, clsFilter])
@@ -216,10 +217,14 @@ export default function ShadowBB() {
     <div>
       <div className="subbar">
         <span className="subbar-label">Facility</span>
-        <select style={{ width: 240 }} value={facility} onChange={e => setFacility(e.target.value)}>
-          {facilityNames.length === 0
+        <select style={{ width: 240 }} value={facility} onChange={e => {
+          const opt = facilityOptions.find(o => o.name === e.target.value)
+          setFacility(e.target.value)
+          setFacilityId(opt?.id ?? null)
+        }}>
+          {facilityOptions.length === 0
             ? <option value="">No facilities available</option>
-            : facilityNames.map(n => <option key={n}>{n}</option>)
+            : facilityOptions.map(o => <option key={o.name}>{o.name}</option>)
           }
         </select>
         {calcMeta && <span style={{ fontSize: 11, color: 'var(--muted)' }}>Last run: {calcMeta.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {calcMeta.facility}</span>}

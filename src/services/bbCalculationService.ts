@@ -102,12 +102,12 @@ export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PA
 
 export function getBusaRates() { return BUSA_RATES }
 
-export async function getFacilityBBSnapshot(_facilityName: string) {
-  try { return (await api.bb.latestSnapshot(1)).result?.summary ?? null }
+export async function getFacilityBBSnapshot(facilityId: number) {
+  try { return (await api.bb.latestSnapshot(facilityId) as unknown as { result?: { summary?: unknown } })?.result?.summary ?? null }
   catch { return null }
 }
 
-export async function getFacilitySummaryExt(_facilityName: string): Promise<BBSummaryExt | null> {
-  try { return await api.bb.summaryExt(1) }
+export async function getFacilitySummaryExt(facilityId: number): Promise<BBSummaryExt | null> {
+  try { return await api.bb.summaryExt(facilityId) }
   catch { return null }
 }

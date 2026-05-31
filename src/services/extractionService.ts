@@ -2,8 +2,8 @@ import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLU
 import { ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 import { api } from './api'
 
-export async function getExtractedLPs() {
-  try { return await api.extraction.extractedLPs(1) }
+export async function getExtractedLPs(submissionId: number) {
+  try { return await api.extraction.extractedLPs(submissionId) }
   catch { return EXTRACTED_LPS }
 }
 

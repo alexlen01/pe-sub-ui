@@ -9,6 +9,7 @@ import DropZone           from '../../components/ui/DropZone'
 import DataTable          from '../../components/ui/DataTable'
 import InfoTip            from '../../components/ui/InfoTip'
 import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
+import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import type { SubmissionRow } from '../../services/facilityService'
 
@@ -94,7 +95,7 @@ function SubmissionDetailPanel({ sub, onClose, navigate }: { sub: SubmissionRow;
 function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBank }: {
   open: boolean
   onClose: () => void
-  onSave: (data: { name: string; agentBank: string; creditRef: string }) => void
+  onSave: (data: { name: string; agentBank: string; creditRef: string; id?: number }) => void
   existingNames: string[]
   defaultAgentBank: string
 }) {
@@ -127,7 +128,7 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
     const result = await createFacility(name.trim(), agentBank.trim())
     setSaving(false)
     if (!result.ok) { setError(result.error); return }
-    onSave({ name: name.trim(), agentBank: agentBank.trim(), creditRef: creditRef.trim() })
+    onSave({ name: name.trim(), agentBank: agentBank.trim(), creditRef: creditRef.trim(), id: result.id })
   }
 
   return (
@@ -202,25 +203,27 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
 const NEW_SENTINEL = '__new__'
 
 export default function Upload() {
-  const { toast, navigate, setActiveSubmission, abortedFacilities } = useApp()
+  const { toast, navigate, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, abortedFacilities } = useApp()
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
-  const [facilities,     setFacilities]     = useState<{ name: string; agentBank: string }[]>([])
+  const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
 
   useEffect(() => {
     getSubmissions().then(setAllSubmissions)
     getFacilities().then(fs => {
-      setFacilities(fs.map(f => ({ name: f.name, agentBank: f.agentBank ?? '' })))
-      if (fs.length > 0) {
-        setFacility(fs[0].name)
-        setAgentBank(fs[0].agentBank ?? '')
-      }
+      const mapped = fs.map(f => ({
+        id:        (f as unknown as { id?: number }).id,
+        name:      f.name,
+        agentBank: f.agentBank ?? '',
+      }))
+      setFacilities(mapped)
     })
   }, [])
 
   const submissions = allSubmissions.filter(s => !abortedFacilities.includes(s.facility))
 
-  const [facility,    setFacility]    = useState('')
+  const [facility,      setFacility]      = useState('')
+  const [facilityId,    setFacilityId]    = useState<number | null>(null)
   const [isNewFacility, setIsNewFacility] = useState(false)
   const [newFacModal, setNewFacModal] = useState(false)
 
@@ -239,14 +242,16 @@ export default function Upload() {
     } else {
       const f = facilities.find(f => f.name === e.target.value)
       setFacility(e.target.value)
+      setFacilityId(f?.id ?? null)
       setAgentBank(f?.agentBank ?? '')
       setIsNewFacility(false)
     }
   }
 
-  const handleNewFacilitySave = ({ name, agentBank: ab }: { name: string; agentBank: string; creditRef: string }) => {
-    setFacilities(prev => [...prev, { name, agentBank: ab }])
+  const handleNewFacilitySave = ({ name, agentBank: ab, id }: { name: string; agentBank: string; creditRef: string; id?: number }) => {
+    setFacilities(prev => [...prev, { id, name, agentBank: ab }])
     setFacility(name)
+    setFacilityId(id ?? null)
     setAgentBank(ab)
     setIsNewFacility(true)
     setNewFacModal(false)
@@ -258,22 +263,29 @@ export default function Upload() {
     setError('')
   }
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!file) {
       setError('Please select an Agent BB Excel file before uploading.')
       return
     }
-    if (!facility) {
+    if (!facilityId) {
       setError('Please select a facility.')
       return
     }
     setProcessing(true)
     setError('')
     toast(`Uploading ${file.name} for ${facility}…`)
-    setTimeout(() => {
-      toast('Extraction complete. Please review extracted records before matching.')
+    try {
+      const sub = await api.submissions.create(facilityId, agentBank, subDate, file)
+      setActiveSubmission(facility)
+      setActiveSubmissionId(sub.id)
+      setActiveFacilityId(facilityId)
+      toast('Upload complete. Please review extracted records before matching.')
       navigate('extraction-preview')
-    }, 3000)
+    } catch {
+      setProcessing(false)
+      setError('Upload failed — ensure pe-sub-api is running and try again.')
+    }
   }
 
   const handleCancel = () => navigate('dashboard')
@@ -289,8 +301,8 @@ export default function Upload() {
             <div className="form-group">
               <label className="form-label">Facility</label>
               <select style={{ width: '100%' }} value={facility} onChange={handleFacilityChange}>
-                {facilities.length === 0 && <option value="">No facilities available</option>}
-              {facilities.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                <option value="">— Select a facility —</option>
+                {facilities.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
                 <option disabled>────────────────</option>
                 <option value={NEW_SENTINEL}>+ Onboard New Facility…</option>
               </select>
@@ -322,26 +334,33 @@ export default function Upload() {
           </Card>
 
           <Card title="2 Upload Document" bodyStyle={{ padding: 18 }}>
-            <DropZone onFile={handleFileSelected} />
-            {error && (
-              <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--red-lt)', borderRadius: 4, color: 'var(--red)', fontSize: 12, fontWeight: 600 }}>
-                {error}
+            {!facility && (
+              <div style={{ marginBottom: 12, padding: '7px 10px', background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, color: 'var(--muted)' }}>
+                Select a facility in <strong style={{ color: 'var(--text)' }}>Step 1</strong> to enable upload.
               </div>
             )}
-            <div className="form-group" style={{ marginTop: 14 }}>
-              <label className="form-label">Notes (optional)</label>
-              <textarea
-                style={{ width: '100%', height: 60 }}
-                placeholder="Add any notes about this submission..."
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <Button onClick={handleUpload} disabled={processing}>
-                {processing ? 'Processing…' : '↑ Upload and Process'}
-              </Button>
-              <Button variant="secondary" onClick={handleCancel} disabled={processing}>Cancel</Button>
+            <div style={{ opacity: facility ? 1 : 0.4, pointerEvents: facility ? undefined : 'none', transition: 'opacity 0.15s' }}>
+              <DropZone onFile={handleFileSelected} />
+              {error && (
+                <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--red-lt)', borderRadius: 4, color: 'var(--red)', fontSize: 12, fontWeight: 600 }}>
+                  {error}
+                </div>
+              )}
+              <div className="form-group" style={{ marginTop: 14 }}>
+                <label className="form-label">Notes (optional)</label>
+                <textarea
+                  style={{ width: '100%', height: 60 }}
+                  placeholder="Add any notes about this submission..."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <Button onClick={handleUpload} disabled={processing || !facility}>
+                  {processing ? 'Processing…' : '↑ Upload and Process'}
+                </Button>
+                <Button variant="secondary" onClick={handleCancel} disabled={processing}>Cancel</Button>
+              </div>
             </div>
           </Card>
 

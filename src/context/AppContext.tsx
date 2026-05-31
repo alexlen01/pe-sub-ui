@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { SCREENS as SCREEN_MAP } from '../config/screenConfig'
-import { getLPsForFacilitySync } from '../services/lpService'
+import { getLPsForFacility } from '../services/lpService'
 import { DEFAULT_FACILITY_PARAMS } from '../services/bbCalculationService'
 import { DEFAULT_USER } from '../config/navigationConfig'
 import { useServerEvents } from '../hooks/useServerEvents'
@@ -17,6 +17,7 @@ interface AppState {
   toasts: ToastItem[]
   toast: (msg: string, duration?: number) => void
   lpData: LPRecord[]
+  lpLoading: boolean
   setLpData: (lps: LPRecord[]) => void
   updateLPRecord: (updated: LPRecord) => void
   bbParams: typeof DEFAULT_FACILITY_PARAMS
@@ -24,6 +25,10 @@ interface AppState {
   currentUser: User
   activeSubmission: string | null
   setActiveSubmission: (s: string | null) => void
+  activeSubmissionId: number | null
+  setActiveSubmissionId: (id: number | null) => void
+  activeFacilityId: number | null
+  setActiveFacilityId: (id: number | null) => void
   abortedFacilities: string[]
   abortSubmission: (facility: string) => void
   targetFacility: string | null
@@ -33,13 +38,24 @@ interface AppState {
 const AppContext = createContext<AppState | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [screen,            setScreen]           = useState('dashboard')
-  const [toasts,            setToasts]           = useState<ToastItem[]>([])
-  const [lpData,            setLpData]           = useState<LPRecord[]>(() => getLPsForFacilitySync('Blue Owl GP Stakes V'))
-  const [bbParams,          setBbParams]         = useState(DEFAULT_FACILITY_PARAMS)
-  const [activeSubmission,  setActiveSubmission] = useState<string | null>(null)
-  const [abortedFacilities, setAbortedFacilities] = useState<string[]>([])
-  const [targetFacility,    setTargetFacility]   = useState<string | null>(null)
+  const [screen,             setScreen]            = useState('dashboard')
+  const [toasts,             setToasts]            = useState<ToastItem[]>([])
+  const [lpData,             setLpData]            = useState<LPRecord[]>([])
+  const [lpLoading,          setLpLoading]         = useState(false)
+  const [bbParams,           setBbParams]          = useState(DEFAULT_FACILITY_PARAMS)
+  const [activeSubmission,   setActiveSubmission]  = useState<string | null>(null)
+  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null)
+  const [activeFacilityId,   setActiveFacilityId] = useState<number | null>(null)
+  const [abortedFacilities,  setAbortedFacilities] = useState<string[]>([])
+  const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
+
+  useEffect(() => {
+    if (activeFacilityId == null) return
+    setLpLoading(true)
+    getLPsForFacility(activeFacilityId)
+      .then(setLpData)
+      .finally(() => setLpLoading(false))
+  }, [activeFacilityId])
 
   const navigate = useCallback((name: string) => {
     if (SCREEN_MAP[name]) { setScreen(name); setToasts([]) }
@@ -65,10 +81,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       screen, navigate,
       toasts, toast,
-      lpData, setLpData, updateLPRecord,
+      lpData, lpLoading, setLpData, updateLPRecord,
       bbParams, setBbParams,
       currentUser: DEFAULT_USER,
       activeSubmission, setActiveSubmission,
+      activeSubmissionId, setActiveSubmissionId,
+      activeFacilityId, setActiveFacilityId,
       abortedFacilities, abortSubmission,
       targetFacility, setTargetFacility,
     }}>
