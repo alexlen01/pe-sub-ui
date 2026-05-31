@@ -217,7 +217,10 @@ export default function ShadowBB() {
       <div className="subbar">
         <span className="subbar-label">Facility</span>
         <select style={{ width: 240 }} value={facility} onChange={e => setFacility(e.target.value)}>
-          {facilityNames.map(n => <option key={n}>{n}</option>)}
+          {facilityNames.length === 0
+            ? <option value="">No facilities available</option>
+            : facilityNames.map(n => <option key={n}>{n}</option>)
+          }
         </select>
         {calcMeta && <span style={{ fontSize: 11, color: 'var(--muted)' }}>Last run: {calcMeta.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {calcMeta.facility}</span>}
       </div>
