@@ -75,7 +75,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    if (screen === 'dashboard') load()
+    if (screen !== 'dashboard') return
+    load()
+    const interval = setInterval(load, 10_000)
+    return () => clearInterval(interval)
   }, [screen])
 
   const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
