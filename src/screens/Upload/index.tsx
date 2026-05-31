@@ -8,7 +8,7 @@ import Modal              from '../../components/ui/Modal'
 import DropZone           from '../../components/ui/DropZone'
 import DataTable          from '../../components/ui/DataTable'
 import InfoTip            from '../../components/ui/InfoTip'
-import { getSubmissions, getFacilities } from '../../services/facilityService'
+import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import type { SubmissionRow } from '../../services/facilityService'
 
@@ -102,11 +102,12 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
   const [agentBank, setAgentBank] = useState(defaultAgentBank)
   const [creditRef, setCreditRef] = useState('')
   const [error,     setError]     = useState('')
+  const [saving,    setSaving]    = useState(false)
 
   useEffect(() => {
     if (open) {
       setName(''); setAgentBank(defaultAgentBank)
-      setCreditRef(''); setError('')
+      setCreditRef(''); setError(''); setSaving(false)
     }
   }, [open, defaultAgentBank])
 
@@ -119,8 +120,13 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
     return true
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return
+    setSaving(true)
+    setError('')
+    const result = await createFacility(name.trim(), agentBank.trim())
+    setSaving(false)
+    if (!result.ok) { setError(result.error); return }
     onSave({ name: name.trim(), agentBank: agentBank.trim(), creditRef: creditRef.trim() })
   }
 
@@ -132,8 +138,8 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
       subtitle="Register a new credit facility before uploading its first borrowing base."
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Create Facility</Button>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Create Facility'}</Button>
         </>
       }
     >

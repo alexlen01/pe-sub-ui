@@ -109,6 +109,8 @@ export const api = {
       get<Facility[]>('/api/facilities'),
     get: (id: number) =>
       get<Facility>(`/api/facilities/${id}`),
+    create: (name: string, agentBank: string) =>
+      post<Facility>('/api/facilities', { name, agentBank }),
     setStatus: (id: number, status: string) =>
       patch<Facility>(`/api/facilities/${id}/status`, { status }),
   },

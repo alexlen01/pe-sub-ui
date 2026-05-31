@@ -165,4 +165,18 @@ export async function getAuditLog(): Promise<AuditRow[]> {
   }
 }
 
+export async function createFacility(name: string, agentBank: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await api.facilities.create(name, agentBank)
+    reportApiMode('live')
+    return { ok: true }
+  } catch (e: unknown) {
+    if (e instanceof Response || (e && typeof e === 'object' && 'status' in e)) {
+      const status = (e as { status: number }).status
+      if (status === 409) return { ok: false, error: 'A facility with this name already exists.' }
+    }
+    return { ok: false, error: 'Unable to save facility. Check that the API is running.' }
+  }
+}
+
 export function getDonutData() { return _localGetDonutData() }
