@@ -149,12 +149,11 @@ export async function getSubmissions(): Promise<SubmissionRow[]> {
     reportApiMode('live')
     return data
   } catch {
-    reportApiMode('prototype')
-    return _localGetSubmissions()
+    return []
   }
 }
 
-export function getActivityFeed(): ActivityRow[] { return _localGetActivityFeed() }
+export function getActivityFeed(): ActivityRow[] { return [] }
 
 export async function getAuditLog(): Promise<AuditRow[]> {
   try {
@@ -162,8 +161,7 @@ export async function getAuditLog(): Promise<AuditRow[]> {
     reportApiMode('live')
     return data
   } catch {
-    reportApiMode('prototype')
-    return _localGetAuditLog()
+    return []
   }
 }
 
