@@ -58,19 +58,25 @@ const FACILITY_COLS = [
 const donutData = getDonutData()
 
 export default function Dashboard() {
-  const { navigate, currentUser, setActiveSubmission } = useApp()
-  const [facilities,     setFacilities]     = useState<FacilityRow[]>([])
+  const { navigate, currentUser, setActiveSubmission, screen } = useApp()
+  const [facilities,       setFacilities]       = useState<FacilityRow[]>([])
   const [selectedFacility, setSelectedFacility] = useState<FacilityRow | null>(null)
-  const [statusFilter,   setStatusFilter]   = useState('All')
-  const [activityFeed,   setActivityFeed]   = useState<ReturnType<typeof getActivityFeed>>([])
+  const [statusFilter,     setStatusFilter]     = useState('All')
+  const [activityFeed,     setActivityFeed]     = useState<ReturnType<typeof getActivityFeed>>([])
+  const [loading,          setLoading]          = useState(false)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
     getFacilities().then(data => {
       setFacilities(data)
-      setSelectedFacility(data[0] ?? null)
-      if (data.length > 0) setActivityFeed(getActivityFeed())
-    })
-  }, [])
+      setSelectedFacility(prev => prev ? (data.find(f => f.name === prev.name) ?? data[0] ?? null) : (data[0] ?? null))
+      setActivityFeed(data.length > 0 ? getActivityFeed() : [])
+    }).finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (screen === 'dashboard') load()
+  }, [screen])
 
   const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
   const donut              = selectedFacility ? (donutData[selectedFacility.name] ?? null) : null
@@ -123,6 +129,7 @@ export default function Dashboard() {
                 <option value="In Progress">In Progress ({inProgressCount})</option>
                 <option value="Not Started">Not Started ({notStartedCount})</option>
               </select>
+              <Button variant="secondary" size="sm" onClick={load} disabled={loading}>↻ Refresh</Button>
               <Button variant="secondary" size="sm" onClick={() => navigate('lp-master')}>View All LPs</Button>
             </div>
           }
