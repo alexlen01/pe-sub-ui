@@ -25,8 +25,12 @@ App runs at `http://localhost:3000`.
 ## Other commands
 
 ```bash
-npm run build       # production build
-npm run typecheck   # tsc --noEmit
+npm run build              # production build (tsc + vite)
+npm run typecheck          # tsc --noEmit
+npm run clean              # delete dist/
+npm run package            # build + create dist/pe-sub-ui-v<version>.tar.gz (PowerShell)
+npm run package:sh         # same via bash
+npm run generate:agent-bb  # generate public/Agent-BB-Sample-May-2026.xlsx for upload testing
 ```
 
 ## Project structure
