@@ -224,8 +224,13 @@ export default function ShadowBB() {
 
       <div style={{ padding: '16px 24px 0' }}>
         <Card title="Portfolio & BB Summary"
-          action={<button onClick={() => setSummaryHidden(h => !h)} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>{summaryHidden ? 'Show' : 'Hide'}</button>}>
-          {!summaryHidden && (
+          action={result.lps.length > 0 ? <button onClick={() => setSummaryHidden(h => !h)} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>{summaryHidden ? 'Show' : 'Hide'}</button> : undefined}>
+          {!summaryHidden && result.lps.length === 0 && (
+            <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+              No summary available — select a facility and run the Shadow BB to populate this panel.
+            </div>
+          )}
+          {!summaryHidden && result.lps.length > 0 && (
             <div style={{ display: 'flex', gap: 12, padding: '12px 18px 16px', overflowX: 'auto', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="LP Portfolio" rows={[
