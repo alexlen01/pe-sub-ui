@@ -98,6 +98,8 @@ function _localGetFacilities() {
 }
 
 
+function _localGetFacilityNames() { return FACILITIES.map(f => f.name).sort((a, b) => a.localeCompare(b)) }
+
 function _localGetSubmissions() {
   return [...SUBMISSIONS]
     .sort((a, b) => b.date.localeCompare(a.date) || a.facility.localeCompare(b.facility))
@@ -121,28 +123,48 @@ function _localGetDonutData() {
 
 // ── API-first exports ─────────────────────────────────────────────────────────
 
+import { reportApiMode } from './apiStatus'
+
 export type FacilityRow = ReturnType<typeof _localGetFacilities>[0]
 export type SubmissionRow = ReturnType<typeof _localGetSubmissions>[0]
 export type ActivityRow   = ReturnType<typeof _localGetActivityFeed>[0]
 export type AuditRow      = ReturnType<typeof _localGetAuditLog>[0]
 
 export async function getFacilities(): Promise<FacilityRow[]> {
-  try { return (await api.facilities.list()) as unknown as FacilityRow[] }
-  catch { return [] }
+  try {
+    const data = (await api.facilities.list()) as unknown as FacilityRow[]
+    reportApiMode('live')
+    return data
+  } catch {
+    reportApiMode('prototype')
+    return _localGetFacilities()
+  }
 }
 
-export function getFacilityNames(): string[] { return [] }
+export function getFacilityNames(): string[] { return _localGetFacilityNames() }
 
 export async function getSubmissions(): Promise<SubmissionRow[]> {
-  try { return (await api.submissions.list()) as unknown as SubmissionRow[] }
-  catch { return [] }
+  try {
+    const data = (await api.submissions.list()) as unknown as SubmissionRow[]
+    reportApiMode('live')
+    return data
+  } catch {
+    reportApiMode('prototype')
+    return _localGetSubmissions()
+  }
 }
 
-export function getActivityFeed(): ActivityRow[] { return [] }
+export function getActivityFeed(): ActivityRow[] { return _localGetActivityFeed() }
 
 export async function getAuditLog(): Promise<AuditRow[]> {
-  try { return (await api.facilities.list()) as unknown as AuditRow[] }
-  catch { return [] }
+  try {
+    const data = (await api.facilities.list()) as unknown as AuditRow[]
+    reportApiMode('live')
+    return data
+  } catch {
+    reportApiMode('prototype')
+    return _localGetAuditLog()
+  }
 }
 
 export function getDonutData() { return _localGetDonutData() }
