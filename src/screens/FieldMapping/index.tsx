@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useApp }   from '../../context/AppContext'
 import Button        from '../../components/ui/Button'
 import { getAliasGroups } from '../../services/fieldMappingService'
+import { api } from '../../services/api'
 
 type AliasGroup = Awaited<ReturnType<typeof getAliasGroups>>
 
@@ -31,19 +32,28 @@ export default function FieldMapping() {
       fields: g.fields.map((f, i) => i !== fieldIdx ? f : { ...f, aliases: fn(f.aliases) }),
     }))
 
-  const removeAlias = (groupName: string, fieldIdx: number, aliasId: number) => {
-    updateAliases(groupName, fieldIdx, aliases => aliases.filter(a => a.id !== aliasId))
-    toast('Alias removed.')
+  const removeAlias = async (groupName: string, fieldIdx: number, aliasId: number) => {
+    try {
+      await api.fieldMapping.aliases.remove(aliasId)
+      updateAliases(groupName, fieldIdx, aliases => aliases.filter(a => a.id !== aliasId))
+      toast('Alias removed.')
+    } catch {
+      toast('Failed to remove alias.')
+    }
   }
 
-  const addAlias = (groupName: string, fieldIdx: number) => {
+  const addAlias = async (groupName: string, fieldIdx: number) => {
     if (!newAlias.trim()) return
-    updateAliases(groupName, fieldIdx, aliases => [
-      ...aliases,
-      { id: Date.now(), text: newAlias.trim(), tier: 'Bank', bank: newBank.trim() || null },
-    ])
-    setNewAlias(''); setNewBank(''); setAddingTo(null)
-    toast('Alias added.')
+    const field = groups.find(g => g.group === groupName)?.fields[fieldIdx]
+    if (!field?.id) { toast('Cannot add alias: not connected to server.'); return }
+    try {
+      const created = await api.fieldMapping.aliases.create(field.id, newAlias.trim(), 'Bank', newBank.trim() || null)
+      updateAliases(groupName, fieldIdx, aliases => [...aliases, created])
+      setNewAlias(''); setNewBank(''); setAddingTo(null)
+      toast('Alias added.')
+    } catch {
+      toast('Failed to add alias.')
+    }
   }
 
   const startEdit = (alias: { id: number; text: string; bank?: string | null }) => {
@@ -53,15 +63,18 @@ export default function FieldMapping() {
     setAddingTo(null)
   }
 
-  const saveEdit = (groupName: string, fieldIdx: number) => {
-    if (!editText.trim()) return
-    updateAliases(groupName, fieldIdx, aliases =>
-      aliases.map(a => a.id !== editingId ? a : {
-        ...a, text: editText.trim(), bank: editBank.trim() || null,
-      })
-    )
-    setEditingId(null)
-    toast('Alias updated.')
+  const saveEdit = async (groupName: string, fieldIdx: number) => {
+    if (!editText.trim() || editingId === null) return
+    try {
+      const updated = await api.fieldMapping.aliases.update(editingId, editText.trim(), editBank.trim() || null)
+      updateAliases(groupName, fieldIdx, aliases =>
+        aliases.map(a => a.id !== editingId ? a : updated)
+      )
+      setEditingId(null)
+      toast('Alias updated.')
+    } catch {
+      toast('Failed to update alias.')
+    }
   }
 
   const cancelEdit = () => setEditingId(null)
@@ -85,8 +98,8 @@ export default function FieldMapping() {
         </thead>
         <tbody>
           {groups.map(group => (
-            <>
-              <tr key={`hdr-${group.group}`}>
+            <Fragment key={group.group}>
+              <tr>
                 <td colSpan={2} style={{ padding: '5px 14px', background: 'var(--navy)', color: '#fff', fontWeight: 700, fontSize: 11, letterSpacing: '0.03em' }}>
                   {group.group}
                 </td>
@@ -201,7 +214,7 @@ export default function FieldMapping() {
                   </tr>
                 )
               })}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

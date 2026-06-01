@@ -145,9 +145,18 @@ export function getFacilityNames(): string[] { return _localGetFacilityNames() }
 
 export async function getSubmissions(): Promise<SubmissionRow[]> {
   try {
-    const data = (await api.submissions.list()) as unknown as SubmissionRow[]
+    const data = await api.submissions.list()
     reportApiMode('live')
-    return data
+    return data.map(s => ({
+      facility:  s.facilityName || `Facility ${s.facilityId}`,
+      date:      new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      status:    s.status,
+      action:    s.status === 'Processing' ? 'Pending' : s.status === 'Review' ? 'Resolve' : 'View',
+      step:      1,
+      file:      s.fileName,
+      agentBank: s.agentBank,
+      notes:     '',
+    }))
   } catch {
     return []
   }
@@ -156,7 +165,13 @@ export async function getSubmissions(): Promise<SubmissionRow[]> {
 export function getActivityFeed(): ActivityRow[] { return [] }
 
 export async function getAuditLog(): Promise<AuditRow[]> {
-  return []
+  try {
+    const data = await api.audit.list()
+    reportApiMode('live')
+    return data.map(r => ({ ...r, ts: formatAuditTs(r.ts) }))
+  } catch {
+    return []
+  }
 }
 
 export async function createFacility(name: string, agentBank: string): Promise<{ ok: true; id?: number } | { ok: false; error: string }> {

@@ -1,5 +1,8 @@
 import type { Facility, LP, BBSnapshot, BBResult } from '../types'
 
+export interface MatchCandidate { name: string; score: number; action: string }
+export interface MatchTestResult { input: string; normalised: string; matches: MatchCandidate[] }
+
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 // ── HTTP primitives ───────────────────────────────────────────────────────────
@@ -28,6 +31,21 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
   return res.json() as Promise<T>
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
 }
 
 async function postForm<T>(path: string, form: FormData): Promise<T> {
@@ -70,7 +88,7 @@ export interface ClassBreakdownRow { label: string; count: number; dollars: numb
 export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: number; earDelta: number }
 
 export interface Submission {
-  id: number; facilityId: number; agentBank: string; periodMonth: string
+  id: number; facilityId: number; facilityName: string; agentBank: string; periodMonth: string
   status: string; fileName: string; uploadedBy: number | null
   createdAt: string; updatedAt: string
 }
@@ -89,7 +107,7 @@ export interface AliasEntry { id: number; text: string; tier: string; bank: stri
 
 export interface AliasGroup {
   group: string
-  fields: Array<{ canonical: string; lpMasterField: string; disambiguation?: string | null; aliases: AliasEntry[] }>
+  fields: Array<{ id?: number; canonical: string; lpMasterField: string; disambiguation?: string | null; aliases: AliasEntry[] }>
 }
 
 export interface MatchQueueItem {
@@ -97,7 +115,18 @@ export interface MatchQueueItem {
   score: number; decision: 'pending' | 'accepted' | 'rejected' | 'manual' | null; isNew: boolean
 }
 
-export interface MatchThresholds { autoAccept: number; reviewQueue: number }
+export interface MatchingThresholds {
+  autoAccept: number; reviewQueue: number
+  jwWeight: number; levWeight: number
+  stripSuffixes: boolean; caseFold: boolean; punctuation: boolean; abbrevExpand: boolean
+}
+export interface LegalSuffix       { abbr: string; full: string; strip: boolean }
+export interface KnownAbbreviation { token: string; expansion: string }
+export interface MatchingConfig {
+  thresholds:         MatchingThresholds
+  legalSuffixes:      LegalSuffix[]
+  knownAbbreviations: KnownAbbreviation[]
+}
 
 // ── API client ────────────────────────────────────────────────────────────────
 
@@ -182,25 +211,43 @@ export const api = {
     aliasGroups: () =>
       get<AliasGroup[]>('/api/field-mapping/alias-groups'),
     canonicalFields: () =>
-      get<string[]>('/api/field-mapping/canonical-fields'),
+      get<Array<{ value: string; label: string }>>('/api/field-mapping/canonical-fields'),
     blocklist: () =>
-      get<string[]>('/api/field-mapping/blocklist'),
+      get<Array<{ id: number; qualifier: string; reason: string }>>('/api/field-mapping/blocklist'),
     suggestions: () =>
-      get<Array<{ extractedHeader: string; canonicalField: string }>>('/api/field-mapping/suggestions'),
+      get<Array<{ id: number; extractedHeader: string; canonicalField: string; suggestedBy: string | null; source: string; confidence: number | null; createdAt: string }>>('/api/field-mapping/suggestions'),
     suggest: (extractedHeader: string, canonicalField: string) =>
       post('/api/field-mapping/suggestions', { extractedHeader, canonicalField }),
+    aliases: {
+      create: (canonicalFieldId: number, text: string, tier: string, bank: string | null) =>
+        post<AliasEntry>('/api/field-mapping/aliases', { canonicalFieldId, text, tier, bank }),
+      remove: (id: number) =>
+        del(`/api/field-mapping/aliases/${id}`),
+      update: (id: number, text: string, bank: string | null) =>
+        patch<AliasEntry>(`/api/field-mapping/aliases/${id}`, { text, bank }),
+    },
   },
 
   // ── Matching ──────────────────────────────────────────────────────────────────
   matching: {
+    test: (name: string) =>
+      post<MatchTestResult>('/api/matching/test', { name }),
     queue: (submissionId: number) =>
       get<MatchQueueItem[]>(`/api/matching/queue${qs({ submissionId })}`),
     decide: (id: number, decision: MatchQueueItem['decision'], masterName?: string) =>
       patch<MatchQueueItem>(`/api/matching/queue/${id}`, { decision, masterName }),
     getThresholds: () =>
-      get<MatchThresholds>('/api/matching/thresholds'),
-    setThresholds: (t: MatchThresholds) =>
-      patch<MatchThresholds>('/api/matching/thresholds', t),
+      get<MatchingConfig>('/api/matching/thresholds'),
+    setThresholds: (t: MatchingConfig) =>
+      patch<MatchingConfig>('/api/matching/thresholds', t),
+  },
+
+  // ── Audit ─────────────────────────────────────────────────────────────────────
+  audit: {
+    list: () =>
+      get<Array<{ ts: string; event: string; detail: string; facility: string; user: string; ip: string }>>('/api/audit'),
+    login: () =>
+      post<void>('/api/audit/login'),
   },
 
   // ── Config (read-only, mirrors pe-sub-platform configService / classificationService) ──
@@ -214,7 +261,9 @@ export const api = {
     audit: () =>
       get('/api/config/audit'),
     matching: () =>
-      get('/api/config/matching'),
+      get<MatchingConfig>('/api/config/matching'),
+    setMatching: (data: MatchingConfig, section: string) =>
+      put<MatchingConfig>(`/api/config/matching?section=${encodeURIComponent(section)}`, data),
     reports: () =>
       get('/api/config/reports'),
   },
