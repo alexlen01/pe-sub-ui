@@ -14,7 +14,12 @@ export default function AuditTrail() {
   const [evtFilter,  setEvtFilter]  = useState('')
   const [userFilter, setUserFilter] = useState('')
 
-  useEffect(() => { getAuditLog().then(setAuditLog) }, [])
+  useEffect(() => {
+    const load = () => getAuditLog().then(setAuditLog)
+    load()
+    const interval = setInterval(load, 10_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const rows = useMemo(() => {
     const q = search.toLowerCase()

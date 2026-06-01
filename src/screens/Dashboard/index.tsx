@@ -91,7 +91,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (screen !== 'dashboard') return
     load()
-    const interval = setInterval(load, 10_000)
+    const interval = setInterval(load, 20_000)
     return () => clearInterval(interval)
   }, [screen])
 

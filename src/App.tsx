@@ -34,6 +34,7 @@ const SCREEN_MAP: Record<string, JSX.Element> = {
 
 function ScreenRouter() {
   const { screen } = useApp()
+
   return (
     <Suspense fallback={<div style={{ padding: 32, color: 'var(--muted)', fontSize: 13 }}>Loading…</div>}>
       {SCREEN_MAP[screen] ?? SCREEN_MAP.dashboard}
