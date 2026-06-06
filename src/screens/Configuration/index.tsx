@@ -1,105 +1,261 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Card from '../../components/ui/Card'
-import { getEligibilityConfig } from '../../services/configService'
+import Button from '../../components/ui/Button'
+import { useApp } from '../../context/AppContext'
+import { api } from '../../services/api'
 import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../../config/eligibilityConfig'
 import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
 
+const RETENTION_OPTIONS = [1, 2, 3, 5, 7, 10, 15]
+
+const SNAPSHOT_FREQ_OPTIONS: Array<{ label: string; days: number }> = [
+  { label: 'Daily',          days: 1   },
+  { label: 'Weekly',         days: 7   },
+  { label: 'Bi-weekly',      days: 14  },
+  { label: 'Monthly',        days: 30  },
+  { label: 'Quarterly',      days: 90  },
+  { label: 'Semi-annually',  days: 180 },
+  { label: 'Annually',       days: 365 },
+]
+
+const WATERMARK_OPTIONS = [
+  'DRAFT - For Internal Review',
+  'DRAFT',
+  'PRELIMINARY',
+  'CONFIDENTIAL',
+  'FINAL',
+]
+
+const RATING_OPTIONS = [
+  'BBB- / Baa3',
+  'BBB / Baa2',
+  'BBB+ / Baa1',
+  'A- / A3',
+  'A / A2',
+  'A+ / A1',
+  'AA- / Aa3',
+  'AA / Aa2',
+  'AA+ / Aa1',
+  'AAA / Aaa',
+]
+
 const TH: React.CSSProperties = { padding: '6px 10px', color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }
 const TD: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid var(--border)', fontSize: 12 }
-
-function RateTable({ rows }: { rows: RateTier[] }) {
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr style={{ background: 'var(--tbl)' }}>
-          <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
-          <th style={{ ...TH, textAlign: 'right' }}>Rate</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(r => (
-          <tr key={r.cls}>
-            <td style={{ ...TD, fontWeight: 600 }}>{r.cls}</td>
-            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace' }}>{r.rate}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-const LOCAL_DEFAULTS = { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS }
-
-type EligConfig = {
-  BUSA_TIERS: RateTier[]
-  AGENT_TIERS: RateTier[]
-  AGENT_RATE_PARAMS: Array<{ label: string; value: string }>
-  ELIG_RULES: EligRule[]
-  CONC_LIMITS: ConcLimit[]
-  GLOBAL_SETTINGS: GlobalSetting[]
-}
+const numIn = (w: number): React.CSSProperties => ({
+  width: w, textAlign: 'right', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 12, fontFamily: 'monospace',
+})
+const txtIn = (w: number): React.CSSProperties => ({
+  width: w, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 12,
+})
+const unit = (s: string) => (
+  <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', userSelect: 'none' }}>{s}</span>
+)
 
 export default function Configuration() {
-  const [cfg, setCfg] = useState<EligConfig>(LOCAL_DEFAULTS)
-  const [fromDb, setFromDb] = useState(false)
+  const { toast } = useApp()
+
+  const [busa,           setBusa]           = useState<RateTier[]>(BUSA_TIERS)
+  const [agentTiers,     setAgentTiers]     = useState<RateTier[]>(AGENT_TIERS)
+  const [agentParams,    setAgentParams]    = useState<Array<{ label: string; value: string | number }>>(AGENT_RATE_PARAMS)
+  const [eligRules,      setEligRules]      = useState<EligRule[]>(ELIG_RULES)
+  const [concLimits,     setConcLimits]     = useState<ConcLimit[]>(CONC_LIMITS)
+  const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>(GLOBAL_SETTINGS)
+  const [loading,        setLoading]        = useState(true)
+  const [saving,         setSaving]         = useState<string | null>(null)
 
   useEffect(() => {
-    getEligibilityConfig().then(result => {
-      setCfg(result as EligConfig)
-      setFromDb(true)
-    })
+    api.config.eligibility()
+      .then((result: any) => {
+        if (result.BUSA_TIERS)        setBusa(result.BUSA_TIERS)
+        if (result.AGENT_TIERS)       setAgentTiers(result.AGENT_TIERS)
+        if (result.AGENT_RATE_PARAMS) setAgentParams(result.AGENT_RATE_PARAMS)
+        if (result.ELIG_RULES)        setEligRules(result.ELIG_RULES)
+        if (result.CONC_LIMITS)       setConcLimits(result.CONC_LIMITS)
+        if (result.GLOBAL_SETTINGS)   setGlobalSettings(result.GLOBAL_SETTINGS)
+      })
+      .catch(() => { /* keep defaults */ })
+      .finally(() => setLoading(false))
   }, [])
+
+  const handleSave = useCallback(async (section: string, saves: Array<[string, unknown]>) => {
+    setSaving(section)
+    try {
+      for (const [key, data] of saves) {
+        await api.config.setEligibility(key, data)
+      }
+      toast('Configuration saved.')
+    } catch {
+      toast('Save failed — ensure pe-sub-api is running.')
+    } finally {
+      setSaving(null)
+    }
+  }, [toast])
+
+  const busy = saving !== null || loading
+
+  if (loading) {
+    return <div style={{ padding: '40px 24px', color: 'var(--muted)', fontSize: 13 }}>Loading configuration…</div>
+  }
 
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--tbl)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px' }}>
-        {fromDb
-          ? 'Values loaded from database. Contact the platform team to request an amendment.'
-          : 'These values are defined in source code and require a deployment to change. Contact the platform team to request an amendment.'}
-      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
-        <Card title="BUSA Advance Rate Schedule" subtitle="UBS (BUSA) tiered advance rates by LP classification">
+        {/* 1 — BUSA Advance Rate Schedule */}
+        <Card
+          title="BUSA Advance Rate Schedule"
+          subtitle="UBS (BUSA) tiered advance rates by LP classification"
+          action={
+            <Button size="sm" disabled={busy} onClick={() => handleSave('busa_tiers', [['busa_tiers', busa]])}>
+              {saving === 'busa_tiers' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
           <div style={{ padding: '0 18px 16px' }}>
-            <RateTable rows={cfg.BUSA_TIERS} />
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--tbl)' }}>
+                  <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
+                  <th style={{ ...TH, textAlign: 'right', width: 80 }}>Rate (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {busa.map((r, i) => (
+                  <tr key={r.cls}>
+                    <td style={{ ...TD, fontWeight: 600 }}>{r.cls}</td>
+                    <td style={{ ...TD, textAlign: 'right' }}>
+                      <input
+                        type="number" min={0} max={100} step={1}
+                        value={r.rate}
+                        onChange={e => setBusa(prev => prev.map((row, j) => j === i ? { ...row, rate: Number(e.target.value) } : row))}
+                        style={numIn(60)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LP.</div>
           </div>
         </Card>
 
-        <Card title="Agent Advance Rate Schedule" subtitle="Agent bank reference rates used for BB delta calculation">
+        {/* 2 — Agent Advance Rate Schedule */}
+        <Card
+          title="Agent Advance Rate Schedule"
+          subtitle="Agent bank reference rates used for BB delta calculation"
+          action={
+            <Button size="sm" disabled={busy} onClick={() => handleSave('agent', [['agent_tiers', agentTiers], ['agent_rate_params', agentParams]])}>
+              {saving === 'agent' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
           <div style={{ padding: '0 18px 16px' }}>
-            <RateTable rows={cfg.AGENT_TIERS} />
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--tbl)' }}>
+                  <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
+                  <th style={{ ...TH, textAlign: 'right', width: 80 }}>Rate (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentTiers.map((r, i) => (
+                  <tr key={r.cls}>
+                    <td style={{ ...TD, fontWeight: 600 }}>{r.cls}</td>
+                    <td style={{ ...TD, textAlign: 'right' }}>
+                      <input
+                        type="number" min={0} max={100} step={1}
+                        value={r.rate}
+                        onChange={e => setAgentTiers(prev => prev.map((row, j) => j === i ? { ...row, rate: Number(e.target.value) } : row))}
+                        style={numIn(60)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {cfg.AGENT_RATE_PARAMS.map(({ label, value }) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+              {agentParams.map(({ label, value }, i) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--navy)', fontWeight: 600 }}>{label}</span>
-                  <span style={{ fontFamily: 'monospace' }}>{value}</span>
+                  {typeof value === 'number' ? (
+                    <input
+                      type="number" min={0} step={1}
+                      value={value}
+                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: Number(e.target.value) } : p))}
+                      style={numIn(130)}
+                    />
+                  ) : label === 'Minimum Rated Rating Threshold' ? (
+                    <select
+                      value={String(value)}
+                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: e.target.value } : p))}
+                      style={{ ...txtIn(165), cursor: 'pointer' }}
+                    >
+                      {RATING_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={String(value)}
+                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: e.target.value } : p))}
+                      style={txtIn(150)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
           </div>
         </Card>
 
-        <Card title="Eligibility Rules" subtitle="LP-level inclusion and exclusion criteria">
+        {/* 3 — Eligibility Rules */}
+        <Card
+          title="Eligibility Rules"
+          subtitle="LP-level inclusion and exclusion criteria"
+          action={
+            <Button size="sm" disabled={busy} onClick={() => handleSave('elig_rules', [['elig_rules', eligRules]])}>
+              {saving === 'elig_rules' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
           <div style={{ padding: '0 18px 16px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--tbl)' }}>
                   <th style={{ ...TH, textAlign: 'left' }}>Rule</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Value</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Active</th>
+                  <th style={{ ...TH, textAlign: 'right', width: 110 }}>Value</th>
+                  <th style={{ ...TH, textAlign: 'center', width: 56 }}>Active</th>
                 </tr>
               </thead>
               <tbody>
-                {cfg.ELIG_RULES.map(r => (
+                {eligRules.map((r, i) => (
                   <tr key={r.id}>
                     <td style={{ ...TD, fontWeight: 600 }}>{r.rule}</td>
-                    <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace' }}>{r.value}</td>
                     <td style={{ ...TD, textAlign: 'right' }}>
-                      <span style={{ fontWeight: 700, color: r.active ? 'var(--green)' : 'var(--muted)' }}>
-                        {r.active ? 'Yes' : 'No'}
-                      </span>
+                      {typeof r.value === 'number' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                          {r.unit === '$' && unit('$')}
+                          <input
+                            type="number" min={0} step={r.unit === '$' ? 1000 : 1}
+                            value={r.value}
+                            onChange={e => setEligRules(prev => prev.map((row, j) => j === i ? { ...row, value: Number(e.target.value) } : row))}
+                            style={numIn(r.unit === '$' ? 90 : 50)}
+                          />
+                          {r.unit === '%' && unit('%')}
+                        </span>
+                      ) : (
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--muted)', padding: '2px 6px' }}>
+                          {String(r.value)}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ ...TD, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={r.active}
+                        onChange={() => setEligRules(prev => prev.map((row, j) => j === i ? { ...row, active: !row.active } : row))}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -108,22 +264,45 @@ export default function Configuration() {
           </div>
         </Card>
 
-        <Card title="Concentration Limits" subtitle="Portfolio-level collateral concentration thresholds">
+        {/* 4 — Concentration Limits */}
+        <Card
+          title="Concentration Limits"
+          subtitle="Portfolio-level collateral concentration thresholds"
+          action={
+            <Button size="sm" disabled={busy} onClick={() => handleSave('conc_limits', [['conc_limits', concLimits]])}>
+              {saving === 'conc_limits' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
           <div style={{ padding: '0 18px 16px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--tbl)' }}>
                   <th style={{ ...TH, textAlign: 'left' }}>Limit</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Cap</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Basis</th>
+                  <th style={{ ...TH, textAlign: 'right', width: 70 }}>Cap (%)</th>
+                  <th style={{ ...TH, textAlign: 'right', width: 155 }}>Basis</th>
                 </tr>
               </thead>
               <tbody>
-                {cfg.CONC_LIMITS.map(r => (
+                {concLimits.map((r, i) => (
                   <tr key={r.label}>
                     <td style={{ ...TD, fontWeight: 600 }}>{r.label}</td>
-                    <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace' }}>{r.value}</td>
-                    <td style={{ ...TD, textAlign: 'right', color: 'var(--muted)' }}>{r.basis}</td>
+                    <td style={{ ...TD, textAlign: 'right' }}>
+                      <input
+                        type="number" min={0} max={100} step={1}
+                        value={r.value}
+                        onChange={e => setConcLimits(prev => prev.map((row, j) => j === i ? { ...row, value: Number(e.target.value) } : row))}
+                        style={numIn(50)}
+                      />
+                    </td>
+                    <td style={{ ...TD, textAlign: 'right' }}>
+                      <input
+                        type="text"
+                        value={r.basis}
+                        onChange={e => setConcLimits(prev => prev.map((row, j) => j === i ? { ...row, basis: e.target.value } : row))}
+                        style={txtIn(145)}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -134,16 +313,69 @@ export default function Configuration() {
 
       </div>
 
-      <Card title="Global Settings" subtitle="Platform-wide defaults applied to all facilities">
+      {/* 5 — Global Settings */}
+      <Card
+        title="Global Settings"
+        subtitle="Platform-wide defaults applied to all facilities"
+        action={
+          <Button size="sm" disabled={busy} onClick={() => handleSave('global_settings', [['global_settings', globalSettings]])}>
+            {saving === 'global_settings' ? 'Saving…' : 'Save'}
+          </Button>
+        }
+      >
         <div style={{ padding: '4px 18px 16px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px 24px' }}>
-          {cfg.GLOBAL_SETTINGS.map(({ id, label, value }) => (
+          {globalSettings.map(({ id, label, value }, i) => (
             <div key={id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
+              {id === 'snapshot-freq' ? (
+                <select
+                  value={Number(value)}
+                  onChange={e => setGlobalSettings(prev => prev.map((s, j) => j === i ? { ...s, value: Number(e.target.value) } : s))}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 6px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {SNAPSHOT_FREQ_OPTIONS.map(({ label, days }) => (
+                    <option key={days} value={days}>{label}</option>
+                  ))}
+                </select>
+              ) : id === 'report-watermark' ? (
+                <select
+                  value={String(value)}
+                  onChange={e => setGlobalSettings(prev => prev.map((s, j) => j === i ? { ...s, value: e.target.value } : s))}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 6px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {WATERMARK_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              ) : id === 'audit-retention' ? (
+                <select
+                  value={Number(value)}
+                  onChange={e => setGlobalSettings(prev => prev.map((s, j) => j === i ? { ...s, value: Number(e.target.value) } : s))}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 6px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {RETENTION_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n} {n === 1 ? 'year' : 'years'}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={typeof value === 'number' ? 'number' : 'text'}
+                  min={typeof value === 'number' ? 0 : undefined}
+                  max={typeof value === 'number' ? 100 : undefined}
+                  step={typeof value === 'number' ? 1 : undefined}
+                  value={value}
+                  onChange={e => setGlobalSettings(prev => prev.map((s, j) => j === i ? {
+                    ...s,
+                    value: typeof s.value === 'number' ? Number(e.target.value) : e.target.value
+                  } : s))}
+                  style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 4, padding: '3px 6px', fontSize: 12, fontWeight: 600, fontFamily: typeof value === 'number' ? 'monospace' : 'inherit' }}
+                />
+              )}
             </div>
           ))}
         </div>
       </Card>
+
     </div>
   )
 }

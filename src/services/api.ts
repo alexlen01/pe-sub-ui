@@ -250,12 +250,14 @@ export const api = {
       post<void>('/api/audit/login'),
   },
 
-  // ── Config (read-only, mirrors pe-sub-platform configService / classificationService) ──
+  // ── Config ────────────────────────────────────────────────────────────────────
   config: {
     classification: () =>
       get('/api/config/classification'),
     eligibility: () =>
       get('/api/config/eligibility'),
+    setEligibility: (section: string, data: unknown) =>
+      put<unknown>(`/api/config/eligibility?section=${encodeURIComponent(section)}`, data),
     wizard: () =>
       get('/api/config/wizard'),
     audit: () =>
