@@ -16,6 +16,8 @@ import { ALL_CANONICAL_FIELDS } from '../../data/fieldMappingData'
 type ExtractedRow = (typeof EXTRACTED_LPS)[0]
 type UnrecogRow = (typeof UNRECOGNIZED_COLUMNS)[0] & { suggestedCanonical: string; dismissed: boolean }
 
+// All fields shown in Row Detail panel (superset of table columns).
+// Trf. and Fitch are excluded from the table but kept here for full row inspection.
 const LP_FIELDS = [
   { key: 'name',       extracted: 'Investor Name (Agent Records)' },
   { key: 'parent',     extracted: 'Parent / Sponsor'              },
@@ -29,6 +31,8 @@ const LP_FIELDS = [
   { key: 'moodys',     extracted: "Moody's"                       },
   { key: 'fitch',      extracted: 'Fitch'                         },
   { key: 'agentRate',  extracted: 'Advance Rate'                  },
+  { key: 'agentBBFmt', extracted: 'Borrowing Base Contribution'   },
+  { key: 'pctBBFmt',   extracted: '% of Borrowing Base'          },
   { key: 'agentConc',  extracted: 'Concentration Limit'           },
 ]
 
@@ -295,16 +299,15 @@ const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) 
               <thead>
                 <tr>
                   <th style={{ width: 300 }}>Investor Name</th>
-                  <th style={{ width: 48, textAlign: 'center' }}>Trf.</th>
                   <th style={{ width: 130 }}>LP Classification</th>
                   <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
                   <th style={{ width: 120, textAlign: 'right' }}>Uncalled</th>
                   <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
-                  <th style={{ width: 68, textAlign: 'right' }}>NAV</th>
                   <th style={{ width: 52, textAlign: 'center' }}>S&P</th>
                   <th style={{ width: 62, textAlign: 'center' }}>Moody's</th>
-                  <th style={{ width: 52, textAlign: 'center' }}>Fitch</th>
                   <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
+                  <th style={{ width: 110, textAlign: 'right' }}>BB Contrib.</th>
+                  <th style={{ width: 78, textAlign: 'right' }}>% of BB</th>
                   <th style={{ width: 78, textAlign: 'center', paddingRight: 20 }}>Conc.</th>
                 </tr>
               </thead>
@@ -312,16 +315,15 @@ const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) 
                 {pageItems.map(r => (
                   <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
                     <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.name}>{r.name}</div></td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 11, color: r.transferee === 'Y' ? 'var(--amber)' : 'var(--muted)' }}>{r.transferee || '—'}</td>
                     <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
                     <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
-                    <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.fitch ? 'var(--navy)' : 'var(--muted)' }}>{r.fitch || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
+                    <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
                     <td style={{ textAlign: 'center', fontSize: 11, paddingRight: 20 }}>{r.agentConc}</td>
                   </tr>
                 ))}

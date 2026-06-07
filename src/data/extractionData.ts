@@ -41,6 +41,14 @@ function fmtM(s: string): string {
   return '$' + Math.round(n * (mult[m[2].toUpperCase()] ?? 1)).toLocaleString('en-US')
 }
 
+function parseShortM(s: string): number {
+  const m = (s || '').match(/\$([0-9.]+)([BMTKbmtk]?)/)
+  if (!m) return 0
+  const n = parseFloat(m[1])
+  const mult: Record<string, number> = { B: 1e9, M: 1e6, T: 1e12, K: 1e3, '': 1 }
+  return n * (mult[m[2].toUpperCase()] ?? 1)
+}
+
 function buildExtractedLPs() {
   let _s = 0xdeadbeef
   const rng = () => { _s = (Math.imul(1664525, _s) + 1013904223) | 0; return (_s >>> 0) / 0x100000000 }
@@ -54,16 +62,22 @@ function buildExtractedLPs() {
     if (i < 617) score = 95 + Math.floor(rng() * 5)
     else         score = 80 + Math.floor(rng() * 15)
     const name = agentName(lp.name, score, rng)
-    result.push({ id, name, parent: lp.parent || '', commit: fmtM(lp.capCommit), uncalled: fmtM(lp.uc), aum: lp.aum !== 'N/A' ? lp.aum : '', nav: lp.nav !== 'N/A' ? lp.nav : '', agentClass: lpType(lp), sp: lp.sp === 'NR' ? '' : lp.sp, moodys: lp.mdy === 'NR' ? '' : lp.mdy, fitch: lp.fitch === 'NR' ? '' : lp.fitch, transferee: lp.tf ? 'Y' : '', agentRate: lp.agentRate || '', agentConc: lp.agentConc || '0.0%', conf: score })
+    const agentBBRaw = Math.round(parseShortM(lp.uc) * (parseFloat(lp.agentRate) / 100 || 0))
+    result.push({ id, name, parent: lp.parent || '', commit: fmtM(lp.capCommit), uncalled: fmtM(lp.uc), aum: lp.aum !== 'N/A' ? lp.aum : '', nav: lp.nav !== 'N/A' ? lp.nav : '', agentClass: lpType(lp), sp: lp.sp === 'NR' ? '' : lp.sp, moodys: lp.mdy === 'NR' ? '' : lp.mdy, fitch: lp.fitch === 'NR' ? '' : lp.fitch, transferee: lp.tf ? 'Y' : '', agentRate: lp.agentRate || '', agentConc: lp.agentConc || '0.0%', agentBBRaw, conf: score })
     id++
   })
   const newCount = Math.min(NEW_LP_NAMES.length, 135)
   for (let i = 0; i < newCount; i++) {
     const score = 35 + Math.floor(rng() * 35)
-    result.push({ id, name: NEW_LP_NAMES[i], parent: '', commit: `$${Math.round(50e6 + rng() * 450e6).toLocaleString('en-US')}`, uncalled: `$${Math.round(10e6 + rng() * 90e6).toLocaleString('en-US')}`, aum: '', nav: '', agentClass: 'Institutional Investor', sp: '', moodys: '', fitch: '', transferee: '', agentRate: '', agentConc: '5.0%', conf: score })
+    result.push({ id, name: NEW_LP_NAMES[i], parent: '', commit: `$${Math.round(50e6 + rng() * 450e6).toLocaleString('en-US')}`, uncalled: `$${Math.round(10e6 + rng() * 90e6).toLocaleString('en-US')}`, aum: '', nav: '', agentClass: 'Institutional Investor', sp: '', moodys: '', fitch: '', transferee: '', agentRate: '', agentConc: '5.0%', agentBBRaw: 0, conf: score })
     id++
   }
-  return result
+  const totalBBRaw = result.reduce((s, r) => s + r.agentBBRaw, 0)
+  return result.map(r => ({
+    ...r,
+    agentBBFmt: r.agentBBRaw ? '$' + r.agentBBRaw.toLocaleString('en-US') : '',
+    pctBBFmt:   totalBBRaw && r.agentBBRaw ? (r.agentBBRaw / totalBBRaw * 100).toFixed(2) + '%' : '',
+  }))
 }
 
 export const EXTRACTED_LPS = buildExtractedLPs()
@@ -80,20 +94,21 @@ export const EXTRACTION_FIELD_MAP = [
   { extracted: 'S&P',                            canonical: 'Ratings - S&P Rating',                            group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
   { extracted: "Moody's",                        canonical: "Ratings - Moody's Rating",                        group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
   { extracted: 'Fitch',                          canonical: 'Ratings - Fitch Rating',                          group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
-  { extracted: 'Advance Rate',                   canonical: 'Borrowing Base - Agent Advance Rate',             group: 'Borrowing Base',  note: 'Agent-applied rate; compared to BUSA rate',  tier: 'Core' },
-  { extracted: 'Concentration Limit',            canonical: 'Borrowing Base - Agent Concentration Limit',      group: 'Borrowing Base',  note: 'Per-LP agent limit; compared to UBS limit',  tier: 'Core' },
+  { extracted: 'Advance Rate',                   canonical: 'Borrowing Base - Agent Advance Rate',             group: 'Borrowing Base',  note: 'Agent-applied rate; compared to BUSA rate',                                              tier: 'Core' },
+  { extracted: 'Borrowing Base Contribution',    canonical: 'Borrowing Base - Agent Borrowing Base',           group: 'Borrowing Base',  note: 'LP uncalled × agent advance rate; agent-calculated; cross-checked vs UBS engine output', tier: 'Core' },
+  { extracted: '% of Borrowing Base',            canonical: 'Borrowing Base - % of Borrowing Base',           group: 'Borrowing Base',  note: 'LP BB contribution as % of total facility BB; agent-calculated informational column',    tier: 'Core' },
+  { extracted: 'Concentration Limit',            canonical: 'Concentration - Agent Concentration Limit',       group: 'Concentration',   note: 'Per-LP agent limit; compared to UBS limit',                                              tier: 'Core' },
 ]
 
 export const UNRECOGNIZED_COLUMNS = [
-  { extracted: '% Called',            reason: 'Derived ratio (Called ÷ Commitment) — computable from extracted fields. No canonical target; discard.' },
-  { extracted: '% of Borrowing Base', reason: 'Agent-computed BB contribution per LP — output value, not a raw input. No canonical target; discard.' },
+  { extracted: '% Called', reason: 'Derived ratio (Called ÷ Commitment) — computable from extracted fields. No canonical target; discard.' },
 ]
 
 export const DOC_RECOGNITION = [
-  { label: 'Document',          value: 'Agent-BB-Blue-Owl-GP-Stakes-V-Apr-2026.xlsx' },
+  { label: 'Document',          value: 'Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx' },
   { label: 'Format',            value: 'Excel Workbook (.xlsx)' },
   { label: 'Tables identified', value: '1 borrowing-base table (Sheet: Borrowing Base)' },
-  { label: 'Table location',    value: 'Rows 8-907 · Columns A-J' },
-  { label: 'Header row',        value: 'Row 7 · 11 columns matched · 2 unmatched' },
+  { label: 'Table location',    value: 'Rows 8-907 · Columns A-L' },
+  { label: 'Header row',        value: 'Row 7 · 13 columns matched · 1 unmatched' },
   { label: 'LP rows extracted', value: '900' },
 ]

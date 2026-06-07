@@ -31,7 +31,7 @@ npm run typecheck          # tsc --noEmit
 npm run clean              # delete dist/
 npm run package            # build + create dist/pe-sub-ui-v<version>.tar.gz (PowerShell)
 npm run package:sh         # same via bash
-npm run generate:agent-bb  # generate public/Agent-BB-Sample-May-2026.xlsx for upload testing
+npm run generate:agent-bb  # generate public/Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx for upload testing
 ```
 
 ## Live vs mock mode
@@ -43,7 +43,7 @@ The app detects whether `pe-sub-api` is reachable on startup. When the API is av
 The main workflow is a three-step wizard:
 
 1. **Upload** — select facility, agent bank, period, and file; optional notes
-2. **Review Extraction** — verify canonical field mapping; map or discard unrecognised columns (triggers automatic re-extraction); confirm to advance
+2. **Review Extraction** — verify canonical field mapping (15 matched columns, 1 unmatched); map or discard unrecognised columns; extracted LP table shows name, LP classification, commitment, uncalled capital, AUM, S&P / Moody's, advance rate, BB contribution, % of BB, concentration limit; click any row for full field detail including NAV, Fitch, Transferee, Parent / Sponsor
 3. **LP Match Queue** — review fuzzy name-match decisions for each extracted LP row
 
 ## Project structure
