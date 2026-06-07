@@ -68,10 +68,6 @@ function buildExtractedLPs() {
 
 export const EXTRACTED_LPS = buildExtractedLPs()
 
-const _highConf   = EXTRACTED_LPS.filter(r => r.conf >= 95).length
-const _needReview = EXTRACTED_LPS.length - _highConf
-const _avgConf    = Math.round(EXTRACTED_LPS.reduce((s, r) => s + r.conf, 0) / EXTRACTED_LPS.length)
-
 export const EXTRACTION_FIELD_MAP = [
   { extracted: 'Investor Name (Agent Records)', canonical: 'LP Master - Investor Name',                        group: 'Identity',        note: 'Matched via alias dictionary',              tier: 'Core' },
   { extracted: 'Parent / Sponsor',              canonical: 'Identity & Classification - Parent / Sponsor',    group: 'Identity & Classification', note: 'Secondary identity signal used in LP name matching', tier: 'Core' },
@@ -94,11 +90,10 @@ export const UNRECOGNIZED_COLUMNS = [
 ]
 
 export const DOC_RECOGNITION = [
-  { label: 'Document',              value: 'Agent-BB-Blue-Owl-GP-Stakes-V-Apr-2026.xlsx' },
-  { label: 'Format',                value: 'Excel Workbook (.xlsx)' },
-  { label: 'Tables identified',     value: '1 borrowing-base table (Sheet: Borrowing Base)' },
-  { label: 'Table location',        value: 'Rows 8-907 · Columns A-J' },
-  { label: 'Header row',            value: 'Row 7 · 11 columns matched · 2 unmatched' },
-  { label: 'LP rows extracted',     value: '900' },
-  { label: 'Extraction confidence', value: `Overall ${_avgConf}% · ${_highConf} rows ≥95% · ${_needReview} rows require review` },
+  { label: 'Document',          value: 'Agent-BB-Blue-Owl-GP-Stakes-V-Apr-2026.xlsx' },
+  { label: 'Format',            value: 'Excel Workbook (.xlsx)' },
+  { label: 'Tables identified', value: '1 borrowing-base table (Sheet: Borrowing Base)' },
+  { label: 'Table location',    value: 'Rows 8-907 · Columns A-J' },
+  { label: 'Header row',        value: 'Row 7 · 11 columns matched · 2 unmatched' },
+  { label: 'LP rows extracted', value: '900' },
 ]

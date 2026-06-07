@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -31,17 +32,24 @@ type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentN
 type Override = { cls: string; busaRatePct: number | ''; agentRatePct: number | ''; concLimitM: number; ucM: number | '' }
 
 export default function RunShadowBB() {
-  const { toast, navigate, lpData, bbParams, activeSubmission, abortSubmission } = useApp()
+  const { toast, navigate, lpData, bbParams, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [matchQueue, setMatchQueue] = useState(MATCH_QUEUE)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
   const [bbSnapshot] = useState<Record<string, unknown> | null>(null)
   const [summaryHidden, setSummaryHidden] = useState(false)
   const [abortOpen, setAbortOpen] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
-    getMatchQueue().then(q => setMatchQueue(q as typeof MATCH_QUEUE))
-  }, [])
+    if (mode === 'detecting') return
+    setLoadError(null)
+    getMatchQueue(live, activeSubmissionId ?? 0)
+      .then(q => setMatchQueue(q as typeof MATCH_QUEUE))
+      .catch(e => setLoadError(String(e)))
+  }, [mode])
 
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
     return matchQueue.map(mq => {
@@ -118,6 +126,7 @@ export default function RunShadowBB() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={4} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 

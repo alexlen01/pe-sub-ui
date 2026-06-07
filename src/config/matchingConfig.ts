@@ -58,9 +58,16 @@ export const ABBREV_REGEX_MAP: Record<string, string> = {
 
 // Well-known acronym expansions used before matching
 export const KNOWN_ABBREVIATIONS: KnownAbbreviation[] = [
+  // Sovereign / institutional investors
   { token: 'GIC',     expansion: 'Government Investment Corporation'               },
   { token: 'ADIA',    expansion: 'Abu Dhabi Investment Authority'                  },
   { token: 'CPPIB',   expansion: 'Canada Pension Plan Investment Board'            },
   { token: 'OTPP',    expansion: 'Ontario Teachers Pension Plan'                   },
   { token: 'CalPERS', expansion: 'California Public Employees Retirement System'   },
+  // Agent banks (also appear as LPs in co-invest / NAV structures)
+  { token: 'JPM',     expansion: 'JPMorgan Chase'                                  },
+  { token: 'BofA',    expansion: 'Bank of America'                                 },
+  { token: 'BAML',    expansion: 'Bank of America Merrill Lynch'                   },
+  { token: 'WF',      expansion: 'Wells Fargo'                                     },
+  { token: 'PNC',     expansion: 'PNC Bank'                                        },
 ]

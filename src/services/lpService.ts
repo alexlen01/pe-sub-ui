@@ -1,6 +1,5 @@
 import { LP_DATA, DONUT_DATA } from '../data/lpData'
 import { formatLastRun } from './facilityService'
-import { reportApiMode } from './apiStatus'
 import { api } from './api'
 
 export type LPRecord = (typeof LP_DATA)[0]
@@ -23,37 +22,19 @@ function _localGetDonutData() {
 
 // ── API-first exports ─────────────────────────────────────────────────────────
 
-export async function getLPs(): Promise<LPRecord[]> {
-  try {
-    const data = (await api.lps.list({})) as unknown as LPRecord[]
-    reportApiMode('live')
-    return data
-  } catch {
-    reportApiMode('prototype')
-    return _localGetLPs()
-  }
+export async function getLPs(live: boolean): Promise<LPRecord[]> {
+  if (!live) return _localGetLPs()
+  return (await api.lps.list({})) as unknown as LPRecord[]
 }
 
-export async function getLPById(rank: number): Promise<LPRecord | null> {
-  try {
-    const data = (await api.lps.get(rank)) as unknown as LPRecord
-    reportApiMode('live')
-    return data
-  } catch {
-    reportApiMode('prototype')
-    return _localGetLPById(rank)
-  }
+export async function getLPById(live: boolean, rank: number): Promise<LPRecord | null> {
+  if (!live) return _localGetLPById(rank)
+  return (await api.lps.get(rank)) as unknown as LPRecord
 }
 
-export async function getLPsForFacility(facilityId: number): Promise<LPRecord[]> {
-  try {
-    const data = (await api.lps.list({ facilityId })) as unknown as LPRecord[]
-    reportApiMode('live')
-    return data
-  } catch {
-    reportApiMode('prototype')
-    return _localGetLPsForFacility()
-  }
+export async function getLPsForFacility(live: boolean, facilityId: number): Promise<LPRecord[]> {
+  if (!live) return _localGetLPsForFacility()
+  return (await api.lps.list({ facilityId })) as unknown as LPRecord[]
 }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }

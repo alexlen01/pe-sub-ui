@@ -15,6 +15,7 @@ export interface FacilityRow {
 }
 
 export interface SubmissionRow {
+  id?:       number
   facility:  string
   date:      string
   status:    string

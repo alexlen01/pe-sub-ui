@@ -45,9 +45,11 @@ export const AGENT_TIERS: RateTier[] = [
   { cls: 'Excluded',         rate:  0 },
 ]
 
-export const AGENT_RATE_PARAMS: Array<{ label: string; value: string | number }> = [
-  { label: 'Minimum Rated Rating Threshold', value: 'BBB- / Baa3'  },
-  { label: 'Agent Unrated AUM Floor',        value: 1_000_000_000  },
+export const AGENT_RATE_PARAMS: Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }> = [
+  { label: "Minimum S&P Rating",    value: 'BBB-', agency: 'sp'    },
+  { label: "Minimum Moody's Rating", value: 'Baa3', agency: 'mdy'  },
+  { label: 'Minimum Fitch Rating',  value: 'BBB-', agency: 'fitch' },
+  { label: 'Agent Unrated AUM Floor', value: 1_000_000_000         },
 ]
 
 export const ELIG_RULES: EligRule[] = [

@@ -7,6 +7,7 @@ import InfoTip     from '../../components/ui/InfoTip'
 import { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS } from '../../config/classificationConfig'
 import { BUSA_RATE_MAP, AGENT_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
 import { getFacilities } from '../../services/facilityService'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 
@@ -390,10 +391,15 @@ function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: (
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
   const { toast, lpData, updateLPRecord, currentUser } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const canEdit = currentUser?.role === 'Credit Officer' || currentUser?.role === 'Supervisor'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
-  useEffect(() => { getFacilities().then(setFacilities) }, [])
+  useEffect(() => {
+    if (mode === 'detecting') return
+    getFacilities(live).then(setFacilities).catch(() => {})
+  }, [mode])
 
   // view: 'grid' = facility picker, 'list' = LP table
   const [view,      setView]      = useState<'grid' | 'list'>('grid')

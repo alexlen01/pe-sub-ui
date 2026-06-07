@@ -99,6 +99,7 @@ body {
 .tag-processed   { background: var(--green-lt);   color: var(--green); }
 .tag-processing  { background: #fef3c7;           color: #92400e; }
 .tag-draft       { background: var(--amber-lt);   color: var(--amber); }
+.tag-aborted     { background: #f1f5f9;           color: var(--muted); }
 .rcl-badge      { display: inline-block; padding: 1px 5px; background: var(--amber-lt); color: var(--amber); border-radius: 2px; font-size: 9px; font-weight: 700; margin-left: 4px; }
 .tf-badge       { display: inline-block; padding: 1px 5px; background: #f3e8ff; color: #7c3aed; border-radius: 2px; font-size: 9px; font-weight: 700; margin-left: 4px; }
 

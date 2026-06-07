@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields } from '../../services/extractionService'
+import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLUMNS } from '../../data/extractionData'
 import { ALL_CANONICAL_FIELDS } from '../../data/fieldMappingData'
@@ -36,7 +38,6 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
-const confColor = (c: number) => c >= 95 ? 'var(--green)' : c >= 80 ? 'var(--amber)' : 'var(--red)'
 
 function LPDetailPanel({ row, onClose, fieldMap }: { row: ExtractedRow; onClose: () => void; fieldMap: typeof EXTRACTION_FIELD_MAP }) {
   return (
@@ -49,9 +50,6 @@ function LPDetailPanel({ row, onClose, fieldMap }: { row: ExtractedRow; onClose:
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>✕</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-          Extraction confidence: <span style={{ color: confColor(row.conf) }}>{row.conf}%</span>
-        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {LP_FIELDS.map(({ key, extracted: col }, i) => {
             const mapping = fieldMap.find(m => m.extracted === col)
@@ -82,6 +80,8 @@ const CollapseBtn = ({ collapsed, onToggle }: { collapsed: boolean; onToggle: ()
 
 export default function ExtractionPreview() {
   const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [extracted,    setExtracted]    = useState<ExtractedRow[]>(EXTRACTED_LPS)
   const [fieldMap,     setFieldMap]     = useState(EXTRACTION_FIELD_MAP)
   const [docRec,       setDocRec]       = useState(DOC_RECOGNITION)
@@ -91,44 +91,117 @@ export default function ExtractionPreview() {
   const [selectedLPId, setSelectedLPId] = useState<number | null>(null)
   const [docCollapsed, setDocCollapsed] = useState(false)
   const [mapCollapsed, setMapCollapsed] = useState(false)
+  const [loadError,    setLoadError]    = useState<string | null>(null)
+  const [remapping,    setRemapping]    = useState<Set<string>>(new Set())
   const [unrecog, setUnrecog] = useState<UnrecogRow[]>(
     UNRECOGNIZED_COLUMNS.map(c => ({ ...c, suggestedCanonical: '', dismissed: false }))
   )
 
+  const loadData = async (sid: number) => {
+    try {
+      const [rows, cf, cols, fm, dr] = await Promise.all([
+        getExtractedLPs(live, sid),
+        getAllCanonicalFields(live),
+        getUnrecognizedColumns(live, sid),
+        getExtractionFieldMap(live, sid),
+        getDocRecognition(live, sid),
+      ])
+      setExtracted(rows as unknown as ExtractedRow[])
+      setCanonicals(cf as unknown as typeof ALL_CANONICAL_FIELDS)
+      setUnrecog(prev => {
+        const dismissed = new Set(prev.filter(c => c.dismissed).map(c => c.extracted))
+        return (cols as typeof UNRECOGNIZED_COLUMNS).map(c => ({
+          ...c,
+          suggestedCanonical: prev.find(p => p.extracted === c.extracted)?.suggestedCanonical ?? '',
+          dismissed: dismissed.has(c.extracted),
+        }))
+      })
+      setFieldMap(fm as typeof EXTRACTION_FIELD_MAP)
+      setDocRec(dr as typeof DOC_RECOGNITION)
+    } catch (e) {
+      setLoadError(String(e))
+    }
+  }
+
   useEffect(() => {
-    getExtractedLPs(activeSubmissionId ?? 0).then(rows => setExtracted(rows as unknown as ExtractedRow[]))
-    getAllCanonicalFields().then(f => setCanonicals(f as unknown as typeof ALL_CANONICAL_FIELDS))
-    getUnrecognizedColumns().then(cols => setUnrecog((cols as typeof UNRECOGNIZED_COLUMNS).map(c => ({ ...c, suggestedCanonical: '', dismissed: false }))))
-    setFieldMap(getExtractionFieldMap())
-    setDocRec(getDocRecognition())
-  }, [])
+    if (mode === 'detecting') return
+    if (live && activeSubmissionId == null) {
+      setLoadError('No active submission — please start from the upload step.')
+      return
+    }
+    setLoadError(null)
+    loadData(activeSubmissionId ?? 0)
+  }, [mode])
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(extracted)
 
-  const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
+const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
-  const suggestMapping = (extractedKey: string) => {
+  const suggestMapping = async (extractedKey: string) => {
     const col = unrecog.find(c => c.extracted === extractedKey)
     if (!col?.suggestedCanonical) return
-    setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
-    toast(`"${extractedKey}" added as alias in Field Mapping Dictionary.`)
+    if (!live || activeSubmissionId == null) {
+      setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
+      toast(`"${extractedKey}" mapped to ${col.suggestedCanonical}.`)
+      return
+    }
+    setRemapping(prev => new Set(prev).add(extractedKey))
+    try {
+      await api.extraction.remap(activeSubmissionId, extractedKey, col.suggestedCanonical)
+      await api.extraction.reextract(activeSubmissionId)
+      setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
+      await loadData(activeSubmissionId)
+      toast(`"${extractedKey}" mapped → ${col.suggestedCanonical}. LP records updated.`)
+    } catch (e) {
+      toast(`Remap failed: ${String(e)}`)
+    } finally {
+      setRemapping(prev => { const s = new Set(prev); s.delete(extractedKey); return s })
+    }
   }
 
-  const dismissUnrecog = (extractedKey: string) => {
+  const dismissUnrecog = async (extractedKey: string) => {
     setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
-    toast('Column dismissed.')
+    toast('Column discarded.')
+    if (live && activeSubmissionId != null) {
+      try {
+        await api.extraction.reextract(activeSubmissionId)
+        await loadData(activeSubmissionId)
+      } catch (e) {
+        toast(`Re-extraction failed: ${String(e)}`)
+      }
+    }
   }
 
-  const handleConfirm = () => {
+  const handleAbort = async () => {
+    if (live && activeSubmissionId != null) {
+      try { await api.submissions.abort(activeSubmissionId) }
+      catch (e) { toast(`Abort failed: ${String(e)}`); return }
+    } else {
+      abortSubmission(activeSubmission ?? '')
+    }
+    setAbortOpen(false)
+    toast('Submission aborted.')
+    navigate('upload')
+  }
+
+  const handleConfirm = async () => {
     setConfirmed(true)
+    if (live && activeSubmissionId != null) {
+      try {
+        const res = await api.submissions.confirm(activeSubmissionId)
+        if (res?.templateSaved) {
+          toast(`Template saved for ${res.agentBank} — future submissions will use exact sheet and header row.`)
+        }
+      } catch {
+        // non-fatal: proceed even if confirm call fails
+      }
+    }
     toast('Extraction confirmed. Running LP name matching...')
-    const autoMatched = extracted.filter(r => r.conf >= 95).length
-    const needsReview = extracted.length - autoMatched
     setTimeout(() => {
-      toast(`LP matching complete. ${autoMatched} auto-matched · ${needsReview} require review.`)
+      toast(`LP matching complete. ${extracted.length} records sent to match queue.`)
       navigate('match-queue')
     }, 2000)
   }
@@ -136,14 +209,15 @@ export default function ExtractionPreview() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
+      {loadError && <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={2} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 40px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         <Card title="Document Recognition" subtitle="Borrowing-base tables identified by pattern recognition engine" action={<CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />}>
           {!docCollapsed && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px 24px', padding: '4px 18px 16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px 24px', padding: '4px 18px 16px' }}>
               {docRec.map(({ label, value }) => (
-                <div key={label} style={{ gridColumn: label === 'Extraction confidence' || label === 'Tables identified' ? 'span 2' : 'span 1' }}>
+                <div key={label}>
                   <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
                 </div>
@@ -191,12 +265,14 @@ export default function ExtractionPreview() {
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                         <select value={col.suggestedCanonical} onChange={e => setUnrecog(prev => prev.map(c => c.extracted === col.extracted ? { ...c, suggestedCanonical: e.target.value } : c))} style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px' }}>
                           <option value="">— select mapping —</option>
-                          {canonicals.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                          {(canonicals as Array<{ value: string; label: string; extractable?: boolean }>)
+                            .filter(f => f.extractable !== false)
+                            .map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                         </select>
                       </td>
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <Button size="sm" onClick={() => suggestMapping(col.extracted)} disabled={!col.suggestedCanonical}>Map</Button>
+                          <Button size="sm" onClick={() => suggestMapping(col.extracted)} disabled={!col.suggestedCanonical || remapping.has(col.extracted)}>{remapping.has(col.extracted) ? 'Mapping...' : 'Map'}</Button>
                           <Button size="sm" variant="secondary" onClick={() => dismissUnrecog(col.extracted)}>Discard</Button>
                         </div>
                       </td>
@@ -218,7 +294,7 @@ export default function ExtractionPreview() {
             <table className="data-table" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th>Investor Name</th>
+                  <th style={{ width: 300 }}>Investor Name</th>
                   <th style={{ width: 48, textAlign: 'center' }}>Trf.</th>
                   <th style={{ width: 130 }}>LP Classification</th>
                   <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
@@ -229,8 +305,7 @@ export default function ExtractionPreview() {
                   <th style={{ width: 62, textAlign: 'center' }}>Moody's</th>
                   <th style={{ width: 52, textAlign: 'center' }}>Fitch</th>
                   <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
-                  <th style={{ width: 62, textAlign: 'center' }}>Conc.</th>
-                  <th style={{ width: 64, textAlign: 'center' }}>Conf.</th>
+                  <th style={{ width: 78, textAlign: 'center', paddingRight: 20 }}>Conc.</th>
                 </tr>
               </thead>
               <tbody>
@@ -247,14 +322,13 @@ export default function ExtractionPreview() {
                     <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.fitch ? 'var(--navy)' : 'var(--muted)' }}>{r.fitch || '—'}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
-                    <td style={{ textAlign: 'center', fontSize: 11 }}>{r.agentConc}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: confColor(r.conf) }}>{r.conf}%</td>
+                    <td style={{ textAlign: 'center', fontSize: 11, paddingRight: 20 }}>{r.agentConc}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="tbl-footer">
-              <span>Showing {from}–{to} of {extracted.length} · {extracted.filter(r => r.conf >= 95).length} high · {extracted.filter(r => r.conf >= 80 && r.conf < 95).length} med · {extracted.filter(r => r.conf < 80).length} low</span>
+              <span>Showing {from}–{to} of {extracted.length} · {extracted.filter(r => r.commit && r.uncalled).length} complete · {extracted.filter(r => !r.commit || !r.uncalled).length} with missing fields</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
                   {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
@@ -279,7 +353,7 @@ export default function ExtractionPreview() {
     </div>
 
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
-      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('Submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
+      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
     </Modal>
     </>

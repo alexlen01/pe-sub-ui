@@ -8,6 +8,8 @@ import type { LPRecord } from '../services/lpService'
 
 export { SCREEN_MAP as SCREENS }
 
+export type ScreenMode = 'detecting' | 'live' | 'prototype'
+
 export interface ToastItem { id: number; msg: string }
 export interface User { name: string; initials: string; role: string; department: string; notifications: number }
 
@@ -33,6 +35,8 @@ interface AppState {
   abortSubmission: (facility: string) => void
   targetFacility: string | null
   setTargetFacility: (f: string | null) => void
+  screenMode: ScreenMode
+  setScreenMode: (mode: ScreenMode) => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -48,17 +52,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeFacilityId,   setActiveFacilityId] = useState<number | null>(null)
   const [abortedFacilities,  setAbortedFacilities] = useState<string[]>([])
   const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
+  const [screenMode,         setScreenMode]        = useState<ScreenMode>('detecting')
 
   useEffect(() => {
     if (activeFacilityId == null) return
+    if (screenMode === 'detecting') return
     setLpLoading(true)
-    getLPsForFacility(activeFacilityId)
+    getLPsForFacility(screenMode === 'live', activeFacilityId)
       .then(setLpData)
       .finally(() => setLpLoading(false))
-  }, [activeFacilityId])
+  }, [activeFacilityId, screenMode])
 
   const navigate = useCallback((name: string) => {
-    if (SCREEN_MAP[name]) { setScreen(name); setToasts([]) }
+    if (SCREEN_MAP[name]) { setScreenMode('detecting'); setScreen(name); setToasts([]) }
   }, [])
 
   const toast = useCallback((msg: string, duration = 3200) => {
@@ -89,6 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeFacilityId, setActiveFacilityId,
       abortedFacilities, abortSubmission,
       targetFacility, setTargetFacility,
+      screenMode, setScreenMode,
     }}>
       {children}
     </AppContext.Provider>

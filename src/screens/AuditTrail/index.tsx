@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp }  from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import Button       from '../../components/ui/Button'
 import Tag          from '../../components/ui/Tag'
 import { getAuditLog } from '../../services/facilityService'
@@ -9,17 +10,23 @@ import type { AuditRow } from '../../services/facilityService'
 
 export default function AuditTrail() {
   const { toast } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [auditLog,   setAuditLog]   = useState<AuditRow[]>([])
   const [search,     setSearch]     = useState('')
   const [evtFilter,  setEvtFilter]  = useState('')
   const [userFilter, setUserFilter] = useState('')
+  const [loadError,  setLoadError]  = useState<string | null>(null)
 
   useEffect(() => {
-    const load = () => getAuditLog().then(setAuditLog)
+    if (mode === 'detecting') return
+    setLoadError(null)
+    const load = () => getAuditLog(live).then(setAuditLog).catch(e => setLoadError(String(e)))
     load()
+    if (!live) return
     const interval = setInterval(load, 10_000)
     return () => clearInterval(interval)
-  }, [])
+  }, [mode])
 
   const rows = useMemo(() => {
     const q = search.toLowerCase()
@@ -36,6 +43,7 @@ export default function AuditTrail() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
       <div className="filter-bar">
         <input type="text" placeholder="Search event detail, facility..." style={{ width: 280 }} value={search} onChange={e => setSearch(e.target.value)} />
         <select style={{ width: 180 }} value={evtFilter} onChange={e => setEvtFilter(e.target.value)}>

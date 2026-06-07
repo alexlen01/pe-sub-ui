@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import StepBar from '../../components/ui/StepBar'
 import { getMatchQueue } from '../../services/matchingService'
+import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, ABBREV_REGEX_MAP } from '../../config/matchingConfig'
 import { MATCH_QUEUE } from '../../data/matchQueueData'
@@ -155,15 +157,24 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
 }
 
 export default function MatchQueue() {
-  const { toast, navigate, activeSubmission, abortSubmission } = useApp()
+  const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [queue, setQueue] = useState<QueueRow[]>(MATCH_QUEUE as QueueRow[])
   const [statusFilter, setStatusFilter] = useState('Pending')
   const [bandFilter, setBandFilter] = useState('')
   const [checked, setChecked] = useState(new Set<number>())
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  useEffect(() => { getMatchQueue().then(q => setQueue(q as QueueRow[])) }, [])
+  useEffect(() => {
+    if (mode === 'detecting') return
+    setLoadError(null)
+    getMatchQueue(live, activeSubmissionId ?? 0)
+      .then(q => setQueue(q as QueueRow[]))
+      .catch(e => setLoadError(String(e)))
+  }, [mode, activeSubmissionId])
 
   const filtered = useMemo(() => queue.filter(r => {
     const matchStatus = !statusFilter || r.status === statusFilter
@@ -180,8 +191,13 @@ export default function MatchQueue() {
     setQueue(prev => prev.map(r => ids.has(r.id) ? { ...r, status: action } : r))
     setChecked(new Set())
     toast(`${ids.size} match${ids.size > 1 ? 'es' : ''} ${action === 'Accepted' ? 'accepted' : 'rejected'}.`)
+    ids.forEach(id => api.matching.decide(id, action).catch(() => {}))
   }
-  const resolveOne = (id: number, action: string) => { setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r)); toast(`Match ${action.toLowerCase()}.`) }
+  const resolveOne = (id: number, action: string) => {
+    setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r))
+    toast(`Match ${action.toLowerCase()}.`)
+    api.matching.decide(id, action).catch(() => {})
+  }
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
   const pending = queue.filter(r => r.status === 'Pending').length
@@ -192,6 +208,7 @@ export default function MatchQueue() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={3} />
       {autoAccepted > 0 && (
         <div style={{ padding: '7px 20px', background: 'var(--blue-lt)', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 6 }}>

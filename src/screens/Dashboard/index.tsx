@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useApp }    from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import KpiCard        from '../../components/ui/KpiCard'
 import Card           from '../../components/ui/Card'
 import DataTable      from '../../components/ui/DataTable'
@@ -9,7 +10,7 @@ import Button         from '../../components/ui/Button'
 import InfoTip        from '../../components/ui/InfoTip'
 import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
 import { getLPsForFacility } from '../../services/lpService'
-import type { FacilityRow } from '../../services/facilityService'
+import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 
 // Derive Executive Summary rows from a selected facility record.
 // TUC is the same denominator for both UBS and Agent; only advance rates differ.
@@ -64,36 +65,45 @@ const CLS_SEGMENTS = [
 ]
 
 export default function Dashboard() {
-  const { navigate, currentUser, setActiveSubmission, screen } = useApp()
+  const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, screen } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [facilities,       setFacilities]       = useState<FacilityRow[]>([])
   const [selectedFacility, setSelectedFacility] = useState<FacilityRow | null>(null)
   const [statusFilter,     setStatusFilter]     = useState('All')
-  const [activityFeed,     setActivityFeed]     = useState<ReturnType<typeof getActivityFeed>>([])
+  const [activityFeed,     setActivityFeed]     = useState<ActivityRow[]>([])
   const [loading,          setLoading]          = useState(false)
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
+  const [error,            setError]            = useState<string | null>(null)
 
   const selectedFacilityId = (selectedFacility as unknown as { id?: number })?.id ?? null
 
   useEffect(() => {
-    if (!selectedFacilityId) { setFacilityLPs([]); return }
-    getLPsForFacility(selectedFacilityId).then(lps => setFacilityLPs(lps as { cls?: string }[]))
-  }, [selectedFacilityId])
+    if (!selectedFacilityId || mode === 'detecting') { setFacilityLPs([]); return }
+    getLPsForFacility(live, selectedFacilityId)
+      .then(lps => setFacilityLPs(lps as { cls?: string }[]))
+      .catch(e => { if (live) setError(String(e)) })
+  }, [selectedFacilityId, mode])
 
   const load = () => {
     setLoading(true)
-    getFacilities().then(data => {
+    setError(null)
+    Promise.all([getFacilities(live), getActivityFeed(live)]).then(([data, activity]) => {
       setFacilities(data)
       setSelectedFacility(prev => prev ? (data.find(f => f.name === prev.name) ?? data[0] ?? null) : (data[0] ?? null))
-      setActivityFeed(data.length > 0 ? getActivityFeed() : [])
-    }).finally(() => setLoading(false))
+      setActivityFeed(data.length > 0 ? activity : [])
+    })
+    .catch(e => setError(String(e)))
+    .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    if (screen !== 'dashboard') return
+    if (screen !== 'dashboard' || mode === 'detecting') return
     load()
+    if (!live) return
     const interval = setInterval(load, 20_000)
     return () => clearInterval(interval)
-  }, [screen])
+  }, [screen, mode])
 
   const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
   const donut = useMemo(() => {
@@ -132,6 +142,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      {error && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {error}</div>}
       <div className="kpi-grid">
         {kpis.map(k => (
           <KpiCard key={k.label} label={k.label} value={k.value} sub={k.sub} color={k.color} />
@@ -207,14 +218,16 @@ export default function Dashboard() {
               ) : f?.status === 'Needs Review' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
+                  setActiveSubmissionId((f as any).latestSubmissionId ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>Review Submission ›</Button>
               ) : f?.status === 'In Progress' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
+                  setActiveSubmissionId((f as any).latestSubmissionId ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>View Submission ›</Button>
-              ) : f?.status === 'Not Started' ? (
+              ) : (f?.status === 'Not Started' || f?.status === 'Active') ? (
                 canAct
                   ? <Button size="sm" variant="action" onClick={() => navigate('upload')}>Start Submission ›</Button>
                   : null
@@ -222,7 +235,7 @@ export default function Dashboard() {
 
               return (
                 <>
-                  {(f?.status === 'Not Started' || f?.status === 'In Progress') ? (
+                  {(f?.status === 'Not Started' || f?.status === 'In Progress' || f?.status === 'Active') ? (
                     <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
                       <span style={{ fontSize: 22, opacity: .35 }}>&#x25AB;</span>
                       <span style={{ fontWeight: 600, color: 'var(--text)' }}>No certified BB this cycle</span>
@@ -272,7 +285,7 @@ export default function Dashboard() {
 
       <div style={{ padding: '12px 24px 24px' }}>
         <Card title="Recent Activity" action={<Button variant="secondary" size="sm" onClick={() => navigate('audit')}>View All</Button>}>
-          {activityFeed.map((a, i) => (
+          {activityFeed.slice(0, 10).map((a, i) => (
             <div className="activity-item" key={i}>
               <span className="act-time">{a.time}</span>
               <span className="act-dot" style={{ background: a.color }} />

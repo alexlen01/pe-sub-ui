@@ -14,6 +14,9 @@ const CLS_MAP: Record<string, string> = {
   'Processed':      'tag-processed',
   'Processing':     'tag-processing',
   'Draft':          'tag-draft',
+  'Aborted':        'tag-aborted',
+  'Cancelled':      'tag-aborted',
+  'Error':          'tag-excl',
 }
 
 import type { CSSProperties } from 'react'

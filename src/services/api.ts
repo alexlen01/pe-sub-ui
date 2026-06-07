@@ -30,6 +30,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
+  if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -89,7 +90,7 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 
 export interface Submission {
   id: number; facilityId: number; facilityName: string; agentBank: string; periodMonth: string
-  status: string; fileName: string; uploadedBy: number | null
+  status: string; fileName: string; uploadedBy: number | null; notes: string | null
   createdAt: string; updatedAt: string
 }
 
@@ -99,8 +100,11 @@ export interface ExtractedLP {
 }
 
 export interface DocRecognition {
-  agentBank: string | null; sheetNames: string[]; headerRow: number | null
-  totalRows: number; confidence: number
+  document: string; format: string
+  tablesIdentified: string; tableLocation: string
+  headerRow: number; totalRows: number
+  mappedColumns: number; unmatchedColumns: number
+  headerInfo: string
 }
 
 export interface AliasEntry { id: number; text: string; tier: string; bank: string | null }
@@ -111,8 +115,9 @@ export interface AliasGroup {
 }
 
 export interface MatchQueueItem {
-  id: number; submissionId: number; agentName: string; masterName: string | null
-  score: number; decision: 'pending' | 'accepted' | 'rejected' | 'manual' | null; isNew: boolean
+  id: number; submissionId: number; facilityId?: number; facilityName?: string
+  agentName: string; masterName: string | null
+  score: number; decision: string | null; status?: string; isNew: boolean; reasons?: string[]
 }
 
 export interface MatchingThresholds {
@@ -184,14 +189,19 @@ export const api = {
       get<Submission[]>(`/api/submissions${qs(params)}`),
     get: (id: number) =>
       get<Submission>(`/api/submissions/${id}`),
-    create: (facilityId: number, agentBank: string, periodMonth: string, file: File) => {
+    create: (facilityId: number, agentBank: string, periodMonth: string, file: File, notes?: string) => {
       const form = new FormData()
       form.append('facilityId', String(facilityId))
       form.append('agentBank', agentBank)
       form.append('periodMonth', periodMonth)
       form.append('file', file)
+      if (notes?.trim()) form.append('notes', notes.trim())
       return postForm<Submission>('/api/submissions', form)
     },
+    abort: (id: number) =>
+      post<void>(`/api/submissions/${id}/abort`, {}),
+    confirm: (id: number) =>
+      post<{ templateSaved: boolean; agentBank: string }>(`/api/submissions/${id}/confirm`, {}),
   },
 
   // ── Extraction ────────────────────────────────────────────────────────────────
@@ -199,11 +209,15 @@ export const api = {
     extractedLPs: (submissionId: number) =>
       get<ExtractedLP[]>(`/api/submissions/${submissionId}/extracted-lps`),
     fieldMap: (submissionId: number) =>
-      get<Record<string, string>>(`/api/submissions/${submissionId}/field-map`),
+      get<Array<{ extracted: string; canonical: string; group: string; note: string; tier: string }>>(`/api/submissions/${submissionId}/field-map`),
     docRecognition: (submissionId: number) =>
       get<DocRecognition>(`/api/submissions/${submissionId}/doc-recognition`),
     unrecognizedColumns: (submissionId: number) =>
       get<string[]>(`/api/submissions/${submissionId}/unrecognized-columns`),
+    remap: (submissionId: number, extractedHeader: string, canonical: string) =>
+      post<void>(`/api/submissions/${submissionId}/remap`, { extractedHeader, canonical }),
+    reextract: (submissionId: number) =>
+      post<void>(`/api/submissions/${submissionId}/reextract`, {}),
   },
 
   // ── Field Mapping ─────────────────────────────────────────────────────────────
@@ -211,7 +225,7 @@ export const api = {
     aliasGroups: () =>
       get<AliasGroup[]>('/api/field-mapping/alias-groups'),
     canonicalFields: () =>
-      get<Array<{ value: string; label: string }>>('/api/field-mapping/canonical-fields'),
+      get<Array<{ value: string; label: string; extractable: boolean }>>('/api/field-mapping/canonical-fields'),
     blocklist: () =>
       get<Array<{ id: number; qualifier: string; reason: string }>>('/api/field-mapping/blocklist'),
     suggestions: () =>
@@ -240,6 +254,11 @@ export const api = {
       get<MatchingConfig>('/api/matching/thresholds'),
     setThresholds: (t: MatchingConfig) =>
       patch<MatchingConfig>('/api/matching/thresholds', t),
+  },
+
+  // ── Health ────────────────────────────────────────────────────────────────────
+  health: {
+    ping: () => get<{ status: string }>('/api/ping'),
   },
 
   // ── Audit ─────────────────────────────────────────────────────────────────────

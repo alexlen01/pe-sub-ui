@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import { api } from '../../services/api'
 import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../../config/eligibilityConfig'
 import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
@@ -26,18 +27,36 @@ const WATERMARK_OPTIONS = [
   'FINAL',
 ]
 
-const RATING_OPTIONS = [
-  'BBB- / Baa3',
-  'BBB / Baa2',
-  'BBB+ / Baa1',
-  'A- / A3',
-  'A / A2',
-  'A+ / A1',
-  'AA- / Aa3',
-  'AA / Aa2',
-  'AA+ / Aa1',
-  'AAA / Aaa',
-]
+// S&P / Fitch scale — IG boundary is BBB- and above
+const SP_RATING_OPTS_IG    = ['BBB-', 'BBB', 'BBB+', 'A-', 'A', 'A+', 'AA-', 'AA', 'AA+', 'AAA']
+const SP_RATING_OPTS_SUBIG = ['BB+', 'BB', 'BB-', 'B+', 'B', 'B-']
+
+// Moody's scale — IG boundary is Baa3 and above
+const MDY_RATING_OPTS_IG    = ['Baa3', 'Baa2', 'Baa1', 'A3', 'A2', 'A1', 'Aa3', 'Aa2', 'Aa1', 'Aaa']
+const MDY_RATING_OPTS_SUBIG = ['Ba1', 'Ba2', 'Ba3', 'B1', 'B2', 'B3']
+
+function RatingSelect({ value, agency, onChange }: {
+  value: string
+  agency: 'sp' | 'mdy' | 'fitch'
+  onChange: (v: string) => void
+}) {
+  const igOpts    = agency === 'mdy' ? MDY_RATING_OPTS_IG    : SP_RATING_OPTS_IG
+  const subigOpts = agency === 'mdy' ? MDY_RATING_OPTS_SUBIG : SP_RATING_OPTS_SUBIG
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 12, cursor: 'pointer', width: 110 }}
+    >
+      <optgroup label="Investment Grade">
+        {igOpts.map(r => <option key={r} value={r}>{r}</option>)}
+      </optgroup>
+      <optgroup label="Below Investment Grade">
+        {subigOpts.map(r => <option key={r} value={r}>{r}</option>)}
+      </optgroup>
+    </select>
+  )
+}
 
 const TH: React.CSSProperties = { padding: '6px 10px', color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }
 const TD: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid var(--border)', fontSize: 12 }
@@ -53,17 +72,23 @@ const unit = (s: string) => (
 
 export default function Configuration() {
   const { toast } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
 
   const [busa,           setBusa]           = useState<RateTier[]>(BUSA_TIERS)
   const [agentTiers,     setAgentTiers]     = useState<RateTier[]>(AGENT_TIERS)
-  const [agentParams,    setAgentParams]    = useState<Array<{ label: string; value: string | number }>>(AGENT_RATE_PARAMS)
+  const [agentParams,    setAgentParams]    = useState<Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }>>(AGENT_RATE_PARAMS)
   const [eligRules,      setEligRules]      = useState<EligRule[]>(ELIG_RULES)
   const [concLimits,     setConcLimits]     = useState<ConcLimit[]>(CONC_LIMITS)
   const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>(GLOBAL_SETTINGS)
   const [loading,        setLoading]        = useState(true)
   const [saving,         setSaving]         = useState<string | null>(null)
+  const [loadError,      setLoadError]      = useState<string | null>(null)
 
   useEffect(() => {
+    if (mode === 'detecting') return
+    setLoadError(null)
+    if (!live) { setLoading(false); return }
     api.config.eligibility()
       .then((result: any) => {
         if (result.BUSA_TIERS)        setBusa(result.BUSA_TIERS)
@@ -73,9 +98,9 @@ export default function Configuration() {
         if (result.CONC_LIMITS)       setConcLimits(result.CONC_LIMITS)
         if (result.GLOBAL_SETTINGS)   setGlobalSettings(result.GLOBAL_SETTINGS)
       })
-      .catch(() => { /* keep defaults */ })
+      .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [mode])
 
   const handleSave = useCallback(async (section: string, saves: Array<[string, unknown]>) => {
     setSaving(section)
@@ -99,6 +124,7 @@ export default function Configuration() {
 
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {loadError && <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
@@ -175,7 +201,7 @@ export default function Configuration() {
               </tbody>
             </table>
             <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {agentParams.map(({ label, value }, i) => (
+              {agentParams.map(({ label, value, agency }, i) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ color: 'var(--navy)', fontWeight: 600 }}>{label}</span>
                   {typeof value === 'number' ? (
@@ -185,16 +211,12 @@ export default function Configuration() {
                       onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: Number(e.target.value) } : p))}
                       style={numIn(130)}
                     />
-                  ) : label === 'Minimum Rated Rating Threshold' ? (
-                    <select
+                  ) : agency ? (
+                    <RatingSelect
                       value={String(value)}
-                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: e.target.value } : p))}
-                      style={{ ...txtIn(165), cursor: 'pointer' }}
-                    >
-                      {RATING_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                      agency={agency}
+                      onChange={v => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: v } : p))}
+                    />
                   ) : (
                     <input
                       type="text"

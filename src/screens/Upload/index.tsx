@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApp }        from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import StepBar            from '../../components/ui/StepBar'
 import Card               from '../../components/ui/Card'
 import Button             from '../../components/ui/Button'
@@ -34,16 +35,17 @@ const SUB_COLS = [
 // ── Status legend ─────────────────────────────────────────────────────────────
 
 const SUBMISSION_STATUS_ITEMS = [
-  { label: 'Processing', desc: 'System is running extraction and LP matching. No action available yet.' },
   { label: 'Review',     desc: 'Requires credit officer action. Open LP Classification & Shadow BB to continue.' },
   { label: 'Processed',  desc: 'Shadow BB complete. Open LP Classification & Shadow BB to review or re-run.' },
+  { label: 'Error',      desc: 'Extraction failed — pe-sub-extraction was unreachable. Re-upload to retry.' },
 ]
 
 // ── Submission Detail Panel ───────────────────────────────────────────────────
 
-function SubmissionDetailPanel({ sub, onClose, navigate }: { sub: SubmissionRow; onClose: () => void; navigate: (screen: string) => void }) {
+function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: SubmissionRow; onClose: () => void; navigate: (screen: string) => void; onAbort: (sub: SubmissionRow) => void }) {
   const labelStyle: React.CSSProperties = { fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }
   const valueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--text)' }
+  const canAbort = sub.status !== 'Processed' && sub.status !== 'Aborted' && sub.status !== 'Cancelled'
   return (
     <Card
       title="Submission Detail"
@@ -78,11 +80,17 @@ function SubmissionDetailPanel({ sub, onClose, navigate }: { sub: SubmissionRow;
           {sub.status === 'Processing' && (
             <span style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>Processing in progress…</span>
           )}
+          {sub.status === 'Error' && (
+            <span style={{ fontSize: 12, color: 'var(--red)', fontStyle: 'italic', alignSelf: 'center' }}>Extraction failed — pe-sub-extraction was unreachable during processing.</span>
+          )}
           {sub.status === 'Review' && (
             <Button size="sm" onClick={() => navigate(sub.step === 4 ? 'match-queue' : sub.step === 5 ? 'run-shadow-bb' : 'extraction-preview')}>View Submission</Button>
           )}
           {sub.status === 'Processed' && (
             <Button size="sm" onClick={() => navigate('shadow-bb')}>View Shadow BB</Button>
+          )}
+          {canAbort && (
+            <Button size="sm" variant="danger" onClick={() => onAbort(sub)}>Abort Submission</Button>
           )}
         </div>
       </div>
@@ -203,22 +211,29 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
 const NEW_SENTINEL = '__new__'
 
 export default function Upload() {
-  const { toast, navigate, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, abortedFacilities } = useApp()
+  const { toast, navigate, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, abortedFacilities, abortSubmission } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
   const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
+  const [loadError,      setLoadError]      = useState<string | null>(null)
 
   useEffect(() => {
-    getSubmissions().then(setAllSubmissions)
-    getFacilities().then(fs => {
-      const mapped = fs.map(f => ({
+    if (mode === 'detecting') return
+    setLoadError(null)
+    Promise.all([
+      getSubmissions(live),
+      getFacilities(live),
+    ]).then(([subs, fs]) => {
+      setAllSubmissions(subs)
+      setFacilities(fs.map(f => ({
         id:        (f as unknown as { id?: number }).id,
         name:      f.name,
         agentBank: f.agentBank ?? '',
-      }))
-      setFacilities(mapped)
-    })
-  }, [])
+      })))
+    }).catch(e => setLoadError(String(e)))
+  }, [mode])
 
   const submissions = allSubmissions.filter(s => !abortedFacilities.includes(s.facility))
 
@@ -234,7 +249,31 @@ export default function Upload() {
   const [notes,      setNotes]      = useState('')
   const [processing, setProcessing] = useState(false)
   const [error,      setError]      = useState('')
-  const [selectedSub, setSelectedSub] = useState<SubmissionRow | null>(null)
+  const [selectedSub,  setSelectedSub]  = useState<SubmissionRow | null>(null)
+  const [abortOpen,    setAbortOpen]    = useState(false)
+  const [abortTarget,  setAbortTarget]  = useState<SubmissionRow | null>(null)
+  const [aborting,     setAborting]     = useState(false)
+
+  const handleAbort = async () => {
+    if (!abortTarget) return
+    setAborting(true)
+    try {
+      if (live && abortTarget.id != null) {
+        await api.submissions.abort(abortTarget.id)
+        setAllSubmissions(prev => prev.map(s => s.id === abortTarget.id ? { ...s, status: 'Aborted', action: '—' } : s))
+      } else {
+        abortSubmission(abortTarget.facility)
+      }
+      setSelectedSub(null)
+      toast(`Submission for ${abortTarget.facility} has been aborted.`)
+    } catch (e) {
+      toast(`Abort failed: ${String(e)}`)
+    } finally {
+      setAborting(false)
+      setAbortOpen(false)
+      setAbortTarget(null)
+    }
+  }
 
   const handleFacilityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     if (e.target.value === NEW_SENTINEL) {
@@ -276,7 +315,7 @@ export default function Upload() {
     setError('')
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
-      const sub = await api.submissions.create(facilityId, agentBank, subDate, file)
+      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
       setActiveSubmission(facility)
       setActiveSubmissionId(sub.id)
       setActiveFacilityId(facilityId)
@@ -292,6 +331,7 @@ export default function Upload() {
 
   return (
     <div>
+      {loadError && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={1} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: 12, padding: '12px 24px 24px' }}>
@@ -383,7 +423,8 @@ export default function Upload() {
             <SubmissionDetailPanel
               sub={selectedSub}
               onClose={() => setSelectedSub(null)}
-              navigate={(screen) => { setActiveSubmission(selectedSub?.facility ?? null); navigate(screen) }}
+              navigate={(screen) => { setActiveSubmission(selectedSub?.facility ?? null); setActiveSubmissionId(selectedSub?.id ?? null); navigate(screen) }}
+              onAbort={s => { setAbortTarget(s); setAbortOpen(true) }}
             />
           ) : (
             <Card bodyStyle={{ padding: '14px 18px' }}>
@@ -408,6 +449,23 @@ export default function Upload() {
         existingNames={facilities.map(f => f.name)}
         defaultAgentBank={agentBank}
       />
+
+      <Modal
+        open={abortOpen}
+        onClose={() => { if (!aborting) { setAbortOpen(false); setAbortTarget(null) } }}
+        title="Abort Submission?"
+        subtitle={`${abortTarget?.facility} · ${abortTarget?.date}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setAbortOpen(false); setAbortTarget(null) }} disabled={aborting}>Keep</Button>
+            <Button variant="danger" onClick={handleAbort} disabled={aborting}>{aborting ? 'Aborting…' : 'Abort Submission'}</Button>
+          </>
+        }
+      >
+        <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+          The uploaded file will be deleted and the submission will be marked <strong>Aborted</strong> in history. Any extracted LP data will also be removed. This cannot be undone.
+        </div>
+      </Modal>
     </div>
   )
 }

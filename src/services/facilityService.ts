@@ -52,7 +52,6 @@ const CYCLE_BDAYS = businessDaysBefore(17, '2026-05-24')
 const OWNERS = ['J. Smith', 'M. Chen', 'L. Torres']
 
 const STATUS_OVERRIDES: Record<string, string> = {
-  'Blue Owl GP Stakes V':         'Not Started',
   'Apollo Natural Resources III': 'Needs Review',
   'Ares Capital IX':              'Needs Review',
   'Carlyle Partners VIII':        'Needs Review',
@@ -123,61 +122,74 @@ function _localGetDonutData() {
 
 // ── API-first exports ─────────────────────────────────────────────────────────
 
-import { reportApiMode } from './apiStatus'
-
 export type FacilityRow = ReturnType<typeof _localGetFacilities>[0]
 export type SubmissionRow = ReturnType<typeof _localGetSubmissions>[0]
 export type ActivityRow   = ReturnType<typeof _localGetActivityFeed>[0]
 export type AuditRow      = ReturnType<typeof _localGetAuditLog>[0]
 
-export async function getFacilities(): Promise<FacilityRow[]> {
-  try {
-    const data = (await api.facilities.list()) as unknown as FacilityRow[]
-    reportApiMode('live')
-    return data
-  } catch {
-    reportApiMode('prototype')
-    return _localGetFacilities()
-  }
+export async function getFacilities(live: boolean): Promise<FacilityRow[]> {
+  if (!live) return _localGetFacilities()
+  const [facilities, submissions] = await Promise.all([api.facilities.list(), api.submissions.list()])
+  const latestById = new Map<number, number>()
+  submissions.forEach(s => {
+    const cur = latestById.get(s.facilityId)
+    if (!cur || s.id > cur) latestById.set(s.facilityId, s.id)
+  })
+  return facilities.map(f => ({ ...f, latestSubmissionId: latestById.get(f.id) })) as unknown as FacilityRow[]
 }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }
 
-export async function getSubmissions(): Promise<SubmissionRow[]> {
-  try {
-    const data = await api.submissions.list()
-    reportApiMode('live')
-    return data.map(s => ({
-      facility:  s.facilityName || `Facility ${s.facilityId}`,
-      date:      new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      status:    s.status,
-      action:    s.status === 'Processing' ? 'Pending' : s.status === 'Review' ? 'Resolve' : 'View',
-      step:      1,
-      file:      s.fileName,
-      agentBank: s.agentBank,
-      notes:     '',
-    }))
-  } catch {
-    return []
-  }
+export async function getSubmissions(live: boolean): Promise<SubmissionRow[]> {
+  if (!live) return _localGetSubmissions()
+  const data = await api.submissions.list()
+  return data.map(s => ({
+    id:        s.id,
+    facility:  s.facilityName || `Facility ${s.facilityId}`,
+    date:      new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    status:    s.status,
+    action:    s.status === 'Review' ? 'Resolve' : s.status === 'Error' ? 'Failed' : s.status === 'Aborted' ? '—' : 'View',
+    step:      1,
+    file:      s.fileName,
+    agentBank: s.agentBank,
+    notes:     s.notes ?? '',
+  }))
 }
 
-export function getActivityFeed(): ActivityRow[] { return [] }
+const ACTIVITY_EXCLUDED = new Set(['Login', 'Config Change', 'Export'])
 
-export async function getAuditLog(): Promise<AuditRow[]> {
-  try {
-    const data = await api.audit.list()
-    reportApiMode('live')
-    return data.map(r => ({ ...r, ts: formatAuditTs(r.ts) }))
-  } catch {
-    return []
-  }
+function activityColor(event: string): string {
+  if (event === 'Upload') return '#2E75B6'
+  if (event.includes('BB') || event.includes('Shadow') || event.includes('Calculated')) return '#007A38'
+  if (event.includes('LP')) return '#C65C00'
+  return '#767676'
+}
+
+export async function getActivityFeed(live: boolean): Promise<ActivityRow[]> {
+  if (!live) return _localGetActivityFeed()
+  const data = await api.audit.list()
+  return data
+    .filter(r => !ACTIVITY_EXCLUDED.has(r.event) && !r.event.endsWith('Exported'))
+    .slice(0, 20)
+    .map(r => ({
+      ts:     r.ts,
+      event:  r.event,
+      detail: r.facility && r.facility !== '—' ? `${r.facility} · ${r.detail}` : r.detail,
+      user:   r.user,
+      color:  activityColor(r.event),
+      time:   formatActivityTime(r.ts),
+    }))
+}
+
+export async function getAuditLog(live: boolean): Promise<AuditRow[]> {
+  if (!live) return _localGetAuditLog()
+  const data = await api.audit.list()
+  return data.map(r => ({ ...r, ts: formatAuditTs(r.ts) }))
 }
 
 export async function createFacility(name: string, agentBank: string): Promise<{ ok: true; id?: number } | { ok: false; error: string }> {
   try {
     const facility = await api.facilities.create(name, agentBank) as { id?: number }
-    reportApiMode('live')
     return { ok: true, id: facility?.id }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)

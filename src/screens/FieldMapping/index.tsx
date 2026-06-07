@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useApp }   from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import Button        from '../../components/ui/Button'
 import { getAliasGroups } from '../../services/fieldMappingService'
 import { api } from '../../services/api'
@@ -16,6 +17,8 @@ const inputStyle: React.CSSProperties = { border: '1px solid var(--border)', bor
 
 export default function FieldMapping() {
   const { toast, navigate } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [groups,      setGroups]      = useState<AliasGroup>([])
   const [addingTo,    setAddingTo]    = useState<{ groupName: string; fieldIdx: number } | null>(null)
   const [newAlias,    setNewAlias]    = useState('')
@@ -23,8 +26,13 @@ export default function FieldMapping() {
   const [editingId,   setEditingId]   = useState<number | null>(null)
   const [editText,    setEditText]    = useState('')
   const [editBank,    setEditBank]    = useState('')
+  const [loadError,   setLoadError]   = useState<string | null>(null)
 
-  useEffect(() => { getAliasGroups().then(setGroups) }, [])
+  useEffect(() => {
+    if (mode === 'detecting') return
+    setLoadError(null)
+    getAliasGroups(live).then(setGroups).catch(e => setLoadError(String(e)))
+  }, [mode])
 
   const updateAliases = (groupName: string, fieldIdx: number, fn: (aliases: AliasGroup[0]['fields'][0]['aliases']) => AliasGroup[0]['fields'][0]['aliases']) =>
     setGroups(prev => prev.map(g => g.group !== groupName ? g : {
@@ -81,6 +89,7 @@ export default function FieldMapping() {
 
   return (
     <div style={{ padding: '20px 24px 40px' }}>
+      {loadError && <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <div style={{ marginBottom: 16 }}>
         <Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button>
       </div>

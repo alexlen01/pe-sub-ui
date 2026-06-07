@@ -1,5 +1,5 @@
 import { useApp, SCREENS } from '../../context/AppContext'
-import { useApiMode } from '../../hooks/useApiMode'
+import type { ScreenMode } from '../../context/AppContext'
 
 const ROLE_COLOR: Record<string, string> = {
   'Credit Officer': 'var(--navy)',
@@ -7,17 +7,28 @@ const ROLE_COLOR: Record<string, string> = {
   'Admin':          'var(--blue)',
 }
 
-const MODE_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+const MODE_STYLE: Record<ScreenMode, { bg: string; color: string; label: string }> = {
   live:      { bg: '#e6f4ea', color: '#1e7e34', label: '● Live'      },
   prototype: { bg: '#fff3cd', color: '#856404', label: '● Prototype' },
-  unknown:   { bg: 'var(--tbl)', color: 'var(--muted)', label: '○ Checking' },
+  detecting: { bg: 'var(--tbl)', color: 'var(--muted)', label: '○ Checking' },
+}
+
+const MODE_TITLE: Record<ScreenMode, string> = {
+  live:      'Live — all data from API. Click to switch to Prototype.',
+  prototype: 'Prototype — all data hardcoded. Click to switch to Live.',
+  detecting: 'Checking API…',
 }
 
 export default function TopBar() {
-  const { screen, currentUser } = useApp()
-  const apiMode = useApiMode()
-  const info = SCREENS[screen] ?? { title: screen, sub: '' }
-  const modeStyle = MODE_STYLE[apiMode]
+  const { screen, currentUser, screenMode, setScreenMode } = useApp()
+  const info      = SCREENS[screen] ?? { title: screen, sub: '' }
+  const modeStyle = MODE_STYLE[screenMode]
+  const clickable = screenMode !== 'detecting'
+
+  function handleToggle() {
+    if (screenMode === 'live')      setScreenMode('prototype')
+    else if (screenMode === 'prototype') setScreenMode('live')
+  }
 
   return (
     <header className="topbar">
@@ -28,8 +39,15 @@ export default function TopBar() {
       <div className="topbar-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div
-            title={apiMode === 'prototype' ? 'API unavailable — showing prototype data' : apiMode === 'live' ? 'Connected to live API' : 'Checking API…'}
-            style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10, background: modeStyle.bg, color: modeStyle.color, letterSpacing: '0.03em', whiteSpace: 'nowrap' }}
+            title={MODE_TITLE[screenMode]}
+            onClick={clickable ? handleToggle : undefined}
+            style={{
+              fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10,
+              background: modeStyle.bg, color: modeStyle.color, letterSpacing: '0.03em',
+              whiteSpace: 'nowrap',
+              cursor: clickable ? 'pointer' : 'default',
+              userSelect: 'none',
+            }}
           >
             {modeStyle.label}
           </div>

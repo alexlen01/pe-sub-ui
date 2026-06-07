@@ -4,6 +4,7 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Tag from '../../components/ui/Tag'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import { computePortfolioBB, fmtM, getFacilityBBSnapshot, getFacilitySummaryExt } from '../../services/bbCalculationService'
 import { getLPsForFacility } from '../../services/lpService'
 import { getFacilities } from '../../services/facilityService'
@@ -139,6 +140,8 @@ type BBResult = ReturnType<typeof computePortfolioBB>
 
 export default function ShadowBB() {
   const { bbParams, toast } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
   const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string }[]>([])
   const [facility,        setFacility]        = useState('')
   const [facilityId,      setFacilityId]      = useState<number | null>(null)
@@ -148,20 +151,24 @@ export default function ShadowBB() {
   const [summaryExtApi, setSummaryExtApi] = useState<BBSummaryExt | null>(null)
   const [result,        setResult]        = useState<BBResult>(() => computePortfolioBB([], bbParams))
   const [calcMeta,      setCalcMeta]      = useState<{ facility: string; ts: Date } | null>(null)
+  const [loadError,     setLoadError]     = useState<string | null>(null)
 
   useEffect(() => {
-    getFacilities().then(fs => {
+    if (mode === 'detecting') return
+    setLoadError(null)
+    getFacilities(live).then(fs => {
       const opts = fs.map(f => ({ id: (f as unknown as { id?: number }).id, name: f.name }))
       setFacilityOptions(opts)
       if (opts.length > 0) { setFacility(opts[0].name); setFacilityId(opts[0].id ?? null) }
-    })
-  }, [])
+    }).catch(e => setLoadError(String(e)))
+  }, [mode])
 
   useEffect(() => {
-    if (!facilityId) return
-    getLPsForFacility(facilityId).then(lps => {
+    if (!facilityId || mode === 'detecting') return
+    setLoadError(null)
+    getLPsForFacility(live, facilityId).then(lps => {
       const computed = computePortfolioBB(lps as LPRecord[], { ...bbParams })
-      getFacilityBBSnapshot(facilityId).then(snapshot => {
+      getFacilityBBSnapshot(live, facilityId).then(snapshot => {
         const snapshotData = (snapshot as unknown as Record<string, unknown>) ?? {}
         const patched = Object.keys(snapshotData).length
           ? { ...computed, summary: { ...computed.summary, ...snapshotData }, breaches: [] }
@@ -171,9 +178,9 @@ export default function ShadowBB() {
         setSelectedLP(null)
         setClsFilter('')
       })
-    })
-    getFacilitySummaryExt(facilityId).then(ext => setSummaryExtApi(ext))
-  }, [facility])
+    }).catch(e => setLoadError(String(e)))
+    getFacilitySummaryExt(live, facilityId).then(ext => setSummaryExtApi(ext)).catch(() => {})
+  }, [facility, mode])
 
   const filtered = useMemo(() => clsFilter ? result.lps.filter(r => r.cls === clsFilter) : result.lps, [result.lps, clsFilter])
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
@@ -215,6 +222,7 @@ export default function ShadowBB() {
 
   return (
     <div>
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
       <div className="subbar">
         <span className="subbar-label">Facility</span>
         <select style={{ width: 240 }} value={facility} onChange={e => {

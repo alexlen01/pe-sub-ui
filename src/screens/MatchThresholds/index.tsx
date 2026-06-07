@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../../context/AppContext'
+import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { api } from '../../services/api'
@@ -14,6 +15,8 @@ const DEFAULT_CONFIG: MatchingConfig = {
 
 export default function MatchThresholds() {
   const { toast, navigate } = useApp()
+  const mode = useScreenMode()
+  const live = mode === 'live'
 
   const [thresholds,    setThresholds]    = useState<MatchingThresholds>(DEFAULT_THRESHOLDS)
   const [suffixes,      setSuffixes]      = useState<LegalSuffix[]>(LEGAL_SUFFIXES)
@@ -23,17 +26,21 @@ export default function MatchThresholds() {
   const [testName,      setTestName]      = useState('')
   const [testResult,    setTestResult]    = useState<MatchTestResult | null>(null)
   const [testLoading,   setTestLoading]   = useState(false)
+  const [loadError,     setLoadError]     = useState<string | null>(null)
 
   useEffect(() => {
+    if (mode === 'detecting') return
+    setLoadError(null)
+    if (!live) { setLoading(false); return }
     api.config.matching()
       .then(cfg => {
         setThresholds(cfg.thresholds)
         setSuffixes(cfg.legalSuffixes)
         setAbbreviations(cfg.knownAbbreviations)
       })
-      .catch(() => { /* keep defaults */ })
+      .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [mode])
 
   const buildConfig = useCallback((): MatchingConfig => ({
     thresholds,
@@ -93,6 +100,7 @@ export default function MatchThresholds() {
 
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {loadError && <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <div><Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button></div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
