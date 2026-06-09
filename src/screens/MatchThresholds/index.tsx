@@ -4,7 +4,7 @@ import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { api } from '../../services/api'
-import type { MatchingThresholds, LegalSuffix, KnownAbbreviation, MatchTestResult } from '../../services/api'
+import type { MatchingThresholds, MatchingConfig, LegalSuffix, KnownAbbreviation, MatchTestResult } from '../../services/api'
 import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS } from '../../config/matchingConfig'
 
 export default function MatchThresholds() {
