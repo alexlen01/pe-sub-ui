@@ -11,7 +11,7 @@ export function useScreenMode(): ScreenMode {
     if (screenMode !== 'detecting') return
     api.health.ping()
       .then(() => setScreenMode('live'))
-      .catch(() => setScreenMode('prototype'))
+      .catch(() => { window.location.replace('http://localhost:5173') })
   }, [screenMode, setScreenMode])
 
   return screenMode

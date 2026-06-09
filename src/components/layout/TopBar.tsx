@@ -27,9 +27,12 @@ export default function TopBar() {
 
   function handleToggle() {
     if (screenMode !== 'live' && screenMode !== 'prototype') return
-    const next = screenMode === 'live' ? 'prototype' : 'live'
+    if (screenMode === 'live') {
+      window.location.replace('http://localhost:5173')
+      return
+    }
     resetAppState()
-    setScreenMode(next)
+    setScreenMode('live')
   }
 
   return (
