@@ -4,14 +4,8 @@ import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { api } from '../../services/api'
-import type { MatchingConfig, MatchingThresholds, LegalSuffix, KnownAbbreviation, MatchTestResult } from '../../services/api'
+import type { MatchingThresholds, LegalSuffix, KnownAbbreviation, MatchTestResult } from '../../services/api'
 import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS } from '../../config/matchingConfig'
-
-const DEFAULT_CONFIG: MatchingConfig = {
-  thresholds:         DEFAULT_THRESHOLDS,
-  legalSuffixes:      LEGAL_SUFFIXES,
-  knownAbbreviations: KNOWN_ABBREVIATIONS,
-}
 
 export default function MatchThresholds() {
   const { toast, navigate } = useApp()

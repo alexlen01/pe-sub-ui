@@ -2,9 +2,36 @@ import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLU
 import { ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 import { api, type DocRecognition } from './api'
 
+function parseMoney(s: string): number {
+  const cleaned = (s || '').replace(/[$,]/g, '')
+  const m = cleaned.match(/^([0-9.]+)([BMTKbmtk]?)$/)
+  if (!m) return 0
+  const mult: Record<string, number> = { B: 1e9, M: 1e6, T: 1e12, K: 1e3, '': 1 }
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] ?? 1)
+}
+
+function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const withRaw = rows.map(r => {
+    if (r.agentBBFmt !== undefined) return r
+    const bbRaw = Math.round(parseMoney(r.uncalled as string) * (parseFloat((r.agentRate as string || '').replace('%', '')) / 100 || 0))
+    return { ...r, agentBBRaw: bbRaw }
+  })
+  const totalBB = withRaw.reduce((s, r) => s + ((r.agentBBRaw as number) || 0), 0)
+  return withRaw.map(r => {
+    if (r.agentBBFmt !== undefined) return r
+    const bb = (r.agentBBRaw as number) || 0
+    return {
+      ...r,
+      agentBBFmt: bb ? '$' + bb.toLocaleString('en-US') : '',
+      pctBBFmt:   totalBB && bb ? (bb / totalBB * 100).toFixed(2) + '%' : '',
+    }
+  })
+}
+
 export async function getExtractedLPs(live: boolean, submissionId: number) {
   if (!live) return EXTRACTED_LPS
-  return await api.extraction.extractedLPs(submissionId)
+  const rows = await api.extraction.extractedLPs(submissionId)
+  return enrichBBFields(rows as unknown as Record<string, unknown>[])
 }
 
 export async function getExtractionFieldMap(live: boolean, submissionId: number) {

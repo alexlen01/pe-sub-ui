@@ -59,8 +59,8 @@ export default function FieldMapping() {
       updateAliases(groupName, fieldIdx, aliases => [...aliases, created])
       setNewAlias(''); setNewBank(''); setAddingTo(null)
       toast('Alias added.')
-    } catch {
-      toast('Failed to add alias.')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to add alias.')
     }
   }
 
@@ -80,8 +80,8 @@ export default function FieldMapping() {
       )
       setEditingId(null)
       toast('Alias updated.')
-    } catch {
-      toast('Failed to update alias.')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to update alias.')
     }
   }
 

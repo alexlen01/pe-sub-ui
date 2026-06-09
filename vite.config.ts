@@ -1,9 +1,14 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import type { ClientRequest, IncomingMessage, ServerResponse } from 'node:http'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'node',
+    include: ['src/__tests__/**/*.test.ts'],
+  },
   server: {
     port: 3000,
     proxy: {

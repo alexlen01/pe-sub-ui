@@ -83,9 +83,9 @@ function buildExtractedLPs() {
 export const EXTRACTED_LPS = buildExtractedLPs()
 
 export const EXTRACTION_FIELD_MAP = [
-  { extracted: 'Investor Name (Agent Records)', canonical: 'LP Master - Investor Name',                        group: 'Identity',        note: 'Matched via alias dictionary',              tier: 'Core' },
+  { extracted: 'Investor Name (Agent Records)', canonical: 'Identity & Classification - Investor Name',        group: 'Identity & Classification', note: 'Matched via alias dictionary',              tier: 'Core' },
   { extracted: 'Parent / Sponsor',              canonical: 'Identity & Classification - Parent / Sponsor',    group: 'Identity & Classification', note: 'Secondary identity signal used in LP name matching', tier: 'Core' },
-  { extracted: 'Transferee',                    canonical: 'Identity - Transferee',                            group: 'Identity',        note: 'Y where LP received a transferred commitment; blank if not applicable', tier: 'Core' },
+  { extracted: 'Transferee',                    canonical: 'Identity & Classification - Transferee',           group: 'Identity & Classification', note: 'Y where LP received a transferred commitment; blank if not applicable', tier: 'Core' },
   { extracted: 'LP Classification',              canonical: 'Identity & Classification - LP Classification',    group: 'Identity & Classification', note: 'Agent-assigned category; cross-checked vs UBS classification', tier: 'Core' },
   { extracted: 'Commitment (USD)',               canonical: 'Commitment Data - Capital Commitments',            group: 'Commitment Data', note: 'Matched via bank alias (BNY template)',      tier: 'Bank' },
   { extracted: 'Uncalled Capital (USD)',         canonical: 'Uncalled Data - Uncalled Capital',                 group: 'Uncalled Data',   note: 'Matched via bank alias (BNY template)',      tier: 'Bank' },

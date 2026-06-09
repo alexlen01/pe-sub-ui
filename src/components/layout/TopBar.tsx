@@ -20,14 +20,16 @@ const MODE_TITLE: Record<ScreenMode, string> = {
 }
 
 export default function TopBar() {
-  const { screen, currentUser, screenMode, setScreenMode } = useApp()
+  const { screen, currentUser, screenMode, setScreenMode, resetAppState } = useApp()
   const info      = SCREENS[screen] ?? { title: screen, sub: '' }
   const modeStyle = MODE_STYLE[screenMode]
   const clickable = screenMode !== 'detecting'
 
   function handleToggle() {
-    if (screenMode === 'live')      setScreenMode('prototype')
-    else if (screenMode === 'prototype') setScreenMode('live')
+    if (screenMode !== 'live' && screenMode !== 'prototype') return
+    const next = screenMode === 'live' ? 'prototype' : 'live'
+    resetAppState()
+    setScreenMode(next)
   }
 
   return (

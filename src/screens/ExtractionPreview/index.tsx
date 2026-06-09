@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
 import { useScreenMode } from '../../hooks/useScreenMode'
@@ -16,8 +16,6 @@ import { ALL_CANONICAL_FIELDS } from '../../data/fieldMappingData'
 type ExtractedRow = (typeof EXTRACTED_LPS)[0]
 type UnrecogRow = (typeof UNRECOGNIZED_COLUMNS)[0] & { suggestedCanonical: string; dismissed: boolean }
 
-// All fields shown in Row Detail panel (superset of table columns).
-// Trf. and Fitch are excluded from the table but kept here for full row inspection.
 const LP_FIELDS = [
   { key: 'name',       extracted: 'Investor Name (Agent Records)' },
   { key: 'parent',     extracted: 'Parent / Sponsor'              },
@@ -42,10 +40,26 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
+// Sum of all explicit <th> widths (300+130+120+120+68+52+62+72+110+78+78) + gap + detail panel
+const SIDE_BY_SIDE_MIN = 1562
 
-function LPDetailPanel({ row, onClose, fieldMap }: { row: ExtractedRow; onClose: () => void; fieldMap: typeof EXTRACTION_FIELD_MAP }) {
+function LPDetailPanel({
+  row, onClose, fieldMap, overlay = false,
+}: {
+  row: ExtractedRow
+  onClose: () => void
+  fieldMap: typeof EXTRACTION_FIELD_MAP
+  overlay?: boolean
+}) {
   return (
-    <div style={{ width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)' }}>
+    <div
+      className={overlay ? 'lp-detail-overlay' : undefined}
+      style={overlay ? undefined : {
+        width: 360, flexShrink: 0,
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+        display: 'flex', flexDirection: 'column', background: 'var(--card)',
+      }}
+    >
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Row #{row.id} — Field Detail</div>
@@ -86,20 +100,23 @@ export default function ExtractionPreview() {
   const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
-  const [extracted,    setExtracted]    = useState<ExtractedRow[]>(EXTRACTED_LPS)
-  const [fieldMap,     setFieldMap]     = useState(EXTRACTION_FIELD_MAP)
-  const [docRec,       setDocRec]       = useState(DOC_RECOGNITION)
-  const [canonicals,   setCanonicals]   = useState(ALL_CANONICAL_FIELDS)
-  const [confirmed,    setConfirmed]    = useState(false)
-  const [abortOpen,    setAbortOpen]    = useState(false)
-  const [selectedLPId, setSelectedLPId] = useState<number | null>(null)
-  const [docCollapsed, setDocCollapsed] = useState(false)
-  const [mapCollapsed, setMapCollapsed] = useState(false)
-  const [loadError,    setLoadError]    = useState<string | null>(null)
-  const [remapping,    setRemapping]    = useState<Set<string>>(new Set())
+  const [extracted,      setExtracted]    = useState<ExtractedRow[]>(EXTRACTED_LPS)
+  const [fieldMap,       setFieldMap]     = useState(EXTRACTION_FIELD_MAP)
+  const [docRec,         setDocRec]       = useState(DOC_RECOGNITION)
+  const [canonicals,     setCanonicals]   = useState(ALL_CANONICAL_FIELDS)
+  const [confirmed,      setConfirmed]    = useState(false)
+  const [abortOpen,      setAbortOpen]    = useState(false)
+  const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
+  const [docCollapsed,   setDocCollapsed] = useState(false)
+  const [mapCollapsed,   setMapCollapsed] = useState(false)
+  const [loadError,      setLoadError]    = useState<string | null>(null)
+  const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
+  const [containerWidth, setContainerWidth] = useState(Infinity)
   const [unrecog, setUnrecog] = useState<UnrecogRow[]>(
     UNRECOGNIZED_COLUMNS.map(c => ({ ...c, suggestedCanonical: '', dismissed: false }))
   )
+
+  const layoutRef = useRef<HTMLDivElement>(null)
 
   const loadData = async (sid: number) => {
     try {
@@ -137,10 +154,19 @@ export default function ExtractionPreview() {
     loadData(activeSubmissionId ?? 0)
   }, [mode])
 
+  useEffect(() => {
+    const el = layoutRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(extracted)
 
-const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
+  const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
+  const useOverlay    = containerWidth < SIDE_BY_SIDE_MIN
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
@@ -288,47 +314,70 @@ const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) 
           )}
         </Card>
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        {/* LP data table + detail panel — layout switches based on available width */}
+        <div
+          ref={layoutRef}
+          style={useOverlay ? undefined : { display: 'flex', gap: 12, alignItems: 'flex-start' }}
+        >
           <Card
             title={`Extracted LP Data — ${extracted.length} Records`}
-            subtitle={selectedLP ? `Row #${selectedLP.id} selected` : 'Click any row to review extracted fields'}
-            style={{ flex: 1, minWidth: 0 }}
+            subtitle={
+              selectedLP
+                ? useOverlay
+                  ? `Row #${selectedLP.id} selected — click × to close detail`
+                  : `Row #${selectedLP.id} selected`
+                : 'Click any row to review extracted fields'
+            }
+            style={useOverlay ? undefined : { flex: 1, minWidth: 0 }}
             action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
           >
-            <table className="data-table" style={{ tableLayout: 'fixed' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 300 }}>Investor Name</th>
-                  <th style={{ width: 130 }}>LP Classification</th>
-                  <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
-                  <th style={{ width: 120, textAlign: 'right' }}>Uncalled</th>
-                  <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
-                  <th style={{ width: 52, textAlign: 'center' }}>S&P</th>
-                  <th style={{ width: 62, textAlign: 'center' }}>Moody's</th>
-                  <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
-                  <th style={{ width: 110, textAlign: 'right' }}>BB Contrib.</th>
-                  <th style={{ width: 78, textAlign: 'right' }}>% of BB</th>
-                  <th style={{ width: 78, textAlign: 'center', paddingRight: 20 }}>Conc.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map(r => (
-                  <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
-                    <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.name}>{r.name}</div></td>
-                    <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
-                    <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
-                    <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
-                    <td style={{ textAlign: 'center', fontSize: 11, paddingRight: 20 }}>{r.agentConc}</td>
+            {/* position:relative here anchors the overlay to the table rows, not the footer */}
+            <div style={{ position: 'relative' }}>
+              <table className="data-table" style={{ tableLayout: 'fixed' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 300 }}>Investor Name</th>
+                    <th style={{ width: 130 }}>LP Classification</th>
+                    <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
+                    <th style={{ width: 120, textAlign: 'right' }}>Uncalled</th>
+                    <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
+                    <th style={{ width: 52, textAlign: 'center' }}>S&P</th>
+                    <th style={{ width: 62, textAlign: 'center' }}>Moody's</th>
+                    <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
+                    <th style={{ width: 110, textAlign: 'right' }}>BB Contrib.</th>
+                    <th style={{ width: 78, textAlign: 'right' }}>% of BB</th>
+                    <th style={{ width: 78, textAlign: 'center', paddingRight: 20 }}>Conc. Limit</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pageItems.map(r => (
+                    <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
+                      <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.name}>{r.name}</div></td>
+                      <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
+                      <td style={{ textAlign: 'center', fontSize: 11, paddingRight: 20 }}>{r.agentConc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {useOverlay && selectedLP && (
+                <LPDetailPanel
+                  row={selectedLP}
+                  onClose={() => setSelectedLPId(null)}
+                  fieldMap={fieldMap}
+                  overlay
+                />
+              )}
+            </div>
+
             <div className="tbl-footer">
               <span>Showing {from}–{to} of {extracted.length} · {extracted.filter(r => r.commit && r.uncalled).length} complete · {extracted.filter(r => !r.commit || !r.uncalled).length} with missing fields</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -341,16 +390,19 @@ const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) 
             </div>
           </Card>
 
-          {selectedLP ? (
-            <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} fieldMap={fieldMap} />
-          ) : (
-            <div style={{ width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
-              <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>Row Detail</div>
-              <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to see extracted field values and their canonical mappings.</div>
-            </div>
+          {!useOverlay && (
+            selectedLP ? (
+              <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} fieldMap={fieldMap} />
+            ) : (
+              <div style={{ width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
+                <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>Row Detail</div>
+                <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to see extracted field values and their canonical mappings.</div>
+              </div>
+            )
           )}
         </div>
+
       </div>
     </div>
 

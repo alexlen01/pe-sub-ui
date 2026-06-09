@@ -256,6 +256,17 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--blue); }
 .act-user       { color: var(--muted); font-size: 10px; margin-top: 1px; }
 
 /* ── LP Detail panel ───────────────────────────────────────── */
+.lp-detail-overlay {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 360px;
+  background: var(--card); border-left: 2px solid var(--border);
+  box-shadow: -6px 0 24px rgba(0,0,0,.12);
+  display: flex; flex-direction: column; overflow: hidden; z-index: 2;
+  animation: lpOverlayIn .15s ease-out;
+}
+@keyframes lpOverlayIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 .lp-detail-hdr  { padding: 14px 16px; background: var(--navy); color: #fff; }
 .lp-detail-name { font-weight: 700; font-size: 13px; }
 .lp-detail-meta { font-size: 11px; opacity: .7; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

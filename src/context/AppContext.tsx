@@ -37,6 +37,7 @@ interface AppState {
   setTargetFacility: (f: string | null) => void
   screenMode: ScreenMode
   setScreenMode: (mode: ScreenMode) => void
+  resetAppState: () => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -64,7 +65,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [activeFacilityId, screenMode])
 
   const navigate = useCallback((name: string) => {
-    if (SCREEN_MAP[name]) { setScreenMode('detecting'); setScreen(name); setToasts([]) }
+    if (SCREEN_MAP[name]) { setScreen(name); setToasts([]) }
   }, [])
 
   const toast = useCallback((msg: string, duration = 3200) => {
@@ -79,6 +80,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const abortSubmission = useCallback((facility: string) => {
     if (facility) setAbortedFacilities(prev => [...prev, facility])
+  }, [])
+
+  const resetAppState = useCallback(() => {
+    setScreen('dashboard')
+    setToasts([])
+    setLpData([])
+    setLpLoading(false)
+    setBbParams(DEFAULT_FACILITY_PARAMS)
+    setActiveSubmission(null)
+    setActiveSubmissionId(null)
+    setActiveFacilityId(null)
+    setAbortedFacilities([])
+    setTargetFacility(null)
   }, [])
 
   useServerEvents(toast)
@@ -96,6 +110,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       abortedFacilities, abortSubmission,
       targetFacility, setTargetFacility,
       screenMode, setScreenMode,
+      resetAppState,
     }}>
       {children}
     </AppContext.Provider>
