@@ -60,10 +60,7 @@ function buildCandidates(r: QueueRow) {
     const jw3 = jwSim(normAgent, normaliseName(d2)), lv3 = levSim(normAgent, normaliseName(d2)), co3 = combineScores(jw3, lv3)
     return [{ name: r.masterName, jw: jw1, lev: lv1, combined: co1, verdict: verdictFor(co1) }, { name: d1, jw: jw2, lev: lv2, combined: co2, verdict: 'Discarded' }, { name: d2, jw: jw3, lev: lv3, combined: co3, verdict: 'Discarded' }]
   }
-  const aWords = r.agentName.split(/\s+/), c1 = makeDecoyName(r.agentName, aWords, 'α'), c2 = makeDecoyName(r.agentName, aWords, 'β')
-  const jw1 = jwSim(normAgent, normaliseName(c1)), lv1 = levSim(normAgent, normaliseName(c1)), co1 = combineScores(jw1, lv1)
-  const jw2 = jwSim(normAgent, normaliseName(c2)), lv2 = levSim(normAgent, normaliseName(c2)), co2 = combineScores(jw2, lv2)
-  return [{ name: c1, jw: jw1, lev: lv1, combined: co1, verdict: 'Below threshold' }, { name: c2, jw: jw2, lev: lv2, combined: co2, verdict: 'Discarded' }, { name: '— no further candidates —', jw: null as number | null, lev: null as number | null, combined: null as number | null, verdict: '—' }]
+  return []
 }
 
 const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--red)'
@@ -123,27 +120,29 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
         </div>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Candidate Matches</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead><tr style={{ background: 'var(--tbl)' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {candidates.map((c, i) => (
-                <tr key={i} style={{ background: i === 0 && row.masterName ? 'var(--blue-lt)' : 'transparent' }}>
-                  <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', fontWeight: i === 0 ? 600 : 400 }}>{c.name}</td>
-                  <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? `${c.jw}%` : c.jw}</td>
-                  <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? `${c.lev}%` : c.lev}</td>
-                  <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: typeof c.combined === 'number' ? scoreColor(c.combined) : 'var(--muted)' }}>{typeof c.combined === 'number' ? `${c.combined}%` : c.combined}</td>
-                  <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: verdictColor(c.verdict), fontWeight: 600, fontSize: 10 }}>{c.verdict}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {candidates.length === 0
+            ? <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', padding: '6px 0' }}>No candidates found in LP Master</div>
+            : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead><tr style={{ background: 'var(--tbl)' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {candidates.map((c, i) => (
+                    <tr key={i} style={{ background: i === 0 && row.masterName ? 'var(--blue-lt)' : 'transparent' }}>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', fontWeight: i === 0 ? 600 : 400 }}>{c.name}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? `${c.jw}%` : c.jw}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? `${c.lev}%` : c.lev}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: typeof c.combined === 'number' ? scoreColor(c.combined) : 'var(--muted)' }}>{typeof c.combined === 'number' ? `${c.combined}%` : c.combined}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: verdictColor(c.verdict), fontWeight: 600, fontSize: 10 }}>{c.verdict}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>}
         </div>
         <div style={{ background: 'var(--tbl)', borderRadius: 6, padding: '10px 12px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Algorithm Decision</div>
-          <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>Combined = JW×{thresholds.jwWeight} + Lev×{thresholds.levWeight}{typeof topCandidate.combined === 'number' && <span> = <strong style={{ color: scoreColor(topCandidate.combined) }}>{topCandidate.combined}%</strong></span>}</div>
-          {row.masterName
+          {topCandidate && <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>Combined = JW×{thresholds.jwWeight} + Lev×{thresholds.levWeight}{typeof topCandidate.combined === 'number' && <span> = <strong style={{ color: scoreColor(topCandidate.combined) }}>{topCandidate.combined}%</strong></span>}</div>}
+          {topCandidate
             ? <div style={{ fontSize: 12 }}>Combined score <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong> — {topCandidate.verdict === 'Auto-accept' ? 'above auto-accept threshold · committed without review.' : 'proposed for review.'}<div style={{ marginTop: 6, color: 'var(--muted)', fontSize: 11 }}>Proposed match: <strong style={{ color: 'var(--text)' }}>{row.masterName}</strong></div></div>
-            : <div style={{ fontSize: 12 }}>Best candidate scored <strong style={{ color: 'var(--red)' }}>{topCandidate.combined}%</strong>, below review threshold of <strong>{thresholds.reviewQueue}%</strong>. No match linked — a <strong>new LP record</strong> will be created.</div>}
+            : <div style={{ fontSize: 12 }}>No candidates found in LP Master — a <strong>new LP record</strong> will be created.</div>}
         </div>
       </div>
       {onResolve && row.status !== 'Auto-accept' && (

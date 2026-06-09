@@ -225,15 +225,18 @@ export default function ExtractionPreview() {
         if (res?.templateSaved) {
           toast(`Template saved for ${res.agentBank} — future submissions will use exact sheet and header row.`)
         }
-      } catch {
-        // non-fatal: proceed even if confirm call fails
+        navigate('match-queue')
+      } catch (e) {
+        toast(`Confirm failed: ${String(e)}`)
+        setConfirmed(false)
       }
+    } else {
+      toast('Extraction confirmed. Running LP name matching...')
+      setTimeout(() => {
+        toast(`LP matching complete. ${extracted.length} records sent to match queue.`)
+        navigate('match-queue')
+      }, 2000)
     }
-    toast('Extraction confirmed. Running LP name matching...')
-    setTimeout(() => {
-      toast(`LP matching complete. ${extracted.length} records sent to match queue.`)
-      navigate('match-queue')
-    }, 2000)
   }
 
   return (
