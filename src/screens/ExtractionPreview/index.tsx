@@ -346,7 +346,7 @@ export default function ExtractionPreview() {
                     <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
                     <th style={{ width: 110, textAlign: 'right' }}>BB Contrib.</th>
                     <th style={{ width: 78, textAlign: 'right' }}>% of BB</th>
-                    <th style={{ width: 78, textAlign: 'center', paddingRight: 20 }}>Conc. Limit</th>
+                    <th style={{ width: 92, textAlign: 'center', paddingRight: 20 }}>Conc. Limit</th>
                   </tr>
                 </thead>
                 <tbody>
