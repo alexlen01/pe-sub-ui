@@ -215,6 +215,9 @@ export default function MatchQueue() {
       setAllRejectedOpen(true)
     } else {
       toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed — loading submission summary…`)
+      if (live && activeSubmissionId) {
+        api.submissions.saveShadowBbState(activeSubmissionId, null).catch(() => {})
+      }
       navigate('run-shadow-bb')
     }
   }

@@ -15,15 +15,16 @@ export interface FacilityRow {
 }
 
 export interface SubmissionRow {
-  id?:       number
-  facility:  string
-  date:      string
-  status:    string
-  action:    string
-  step:      number
-  file:      string
-  agentBank: string
-  notes:     string
+  id?:        number
+  facilityId?: number
+  facility:   string
+  date:       string
+  status:     string
+  action:     string
+  step:       number
+  file:       string
+  agentBank:  string
+  notes:      string
 }
 
 export interface ActivityRow {

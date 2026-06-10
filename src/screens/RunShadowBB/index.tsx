@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
 import { useScreenMode } from '../../hooks/useScreenMode'
@@ -176,11 +176,33 @@ export default function RunShadowBB() {
   const resetOverrides = () =>
     setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
 
+  // Tracks whether we have already applied saved overrides from the DB for this session.
+  // Prevents the rebuild effect below from overwriting user edits after initial data load.
+  const savedOverridesApplied = useRef(false)
+
   // Rebuild overrides whenever submissionLPs changes (matchQueue load or extractedMap arriving).
   // Safe because matchQueue + extractedMap both settle before users begin editing.
   useEffect(() => {
+    if (savedOverridesApplied.current) return
     setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
   }, [submissionLPs])
+
+  // Once both submissionLPs and submissionDetails are available, apply saved overrides once.
+  // Saved overrides win over freshly-computed defaults for any LP key that exists in both.
+  useEffect(() => {
+    if (savedOverridesApplied.current) return
+    if (submissionLPs.length === 0) return
+    const saved = submissionDetails?.shadowBbOverrides
+    if (!saved || Object.keys(saved).length === 0) return
+    savedOverridesApplied.current = true
+    setOverrides(prev => {
+      const merged = { ...prev }
+      for (const [key, val] of Object.entries(saved)) {
+        if (key in merged) merged[key] = val as Override
+      }
+      return merged
+    })
+  }, [submissionLPs, submissionDetails])
 
   // ── Submission summary — live: from API; prototype: from context + queue ────
 
@@ -313,7 +335,15 @@ export default function RunShadowBB() {
                 {unclassified > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>{unclassified} unclassified</span>}
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
-                <Button size="sm" onClick={() => toast('Classifications saved.')} disabled={running}>Save</Button>
+                <Button size="sm" onClick={() => {
+                  if (live && activeSubmissionId) {
+                    api.submissions.saveShadowBbState(activeSubmissionId, overrides as Record<string, unknown>)
+                      .then(() => toast('Classifications saved.', 3200, 'success'))
+                      .catch(() => toast('Save failed — please try again.'))
+                  } else {
+                    toast('Classifications saved.')
+                  }
+                }} disabled={running}>Save</Button>
                 <Button size="sm" onClick={run} disabled={running}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
@@ -326,7 +356,6 @@ export default function RunShadowBB() {
                     <th style={{ width: 72, textAlign: 'center' }}>High Quality</th>
                     <th style={{ width: 60 }}>S&amp;P</th>
                     <th style={{ width: 66 }}>Moody's</th>
-                    <th style={{ width: 60 }}>Fitch</th>
                     <th className="num" style={{ width: 86 }}>NAV/AUM</th>
                     <th style={{ width: 80, textAlign: 'center' }}>UBS Included</th>
                     <th className="num" style={{ width: 92 }}>Commitment</th>
@@ -366,9 +395,6 @@ export default function RunShadowBB() {
 
                         {/* Moody's */}
                         <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.mdy || '—'}</td>
-
-                        {/* Fitch */}
-                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.fitch || '—'}</td>
 
                         {/* NAV/AUM — show AUM when NAV is absent */}
                         <td className="num">{(lp.nav?.trim() || lp.aum?.trim()) || '—'}</td>
