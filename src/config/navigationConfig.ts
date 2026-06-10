@@ -12,12 +12,10 @@ export interface User {
 export const APP_TITLE    = 'PE Sub Platform'
 export const APP_SUBTITLE = 'Borrowing Base & Collateral Analysis'
 
-// TODO: replace with OAuth/SSO token decode when auth is added
 export const USERS: User[] = [
-  { name: 'J. Smith',  initials: 'JS', role: 'Credit Officer', department: 'PE Sub Finance', notifications: 3 },
-  { name: 'M. Chen',   initials: 'MC', role: 'Credit Officer', department: 'PE Sub Finance', notifications: 1 },
-  { name: 'L. Torres', initials: 'LT', role: 'Supervisor',     department: 'PE Sub Finance', notifications: 5 },
-  { name: 'R. Patel',  initials: 'RP', role: 'Admin',          department: 'Platform Admin', notifications: 0 },
+  { name: 'J. Smith',  initials: 'JS', role: 'Credit Administrator', department: 'PE Sub Finance', notifications: 3 },
+  { name: 'M. Chen',   initials: 'MC', role: 'Credit Administrator', department: 'PE Sub Finance', notifications: 1 },
+  { name: 'L. Torres', initials: 'LT', role: 'Supervisor',           department: 'PE Sub Finance', notifications: 5 },
 ]
 
 export const DEFAULT_USER: User = USERS[0]

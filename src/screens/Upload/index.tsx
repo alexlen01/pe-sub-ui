@@ -228,7 +228,7 @@ export default function Upload() {
     ]).then(([subs, fs]) => {
       setAllSubmissions(subs)
       setFacilities(fs.map(f => ({
-        id:        (f as unknown as { id?: number }).id,
+        id:        f.id,
         name:      f.name,
         agentBank: f.agentBank ?? '',
       })))

@@ -7,16 +7,21 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
-import { getSubmissionSummary } from '../../services/matchingService'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { BUSA_RATES, computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
-import { MATCH_QUEUE } from '../../data/matchQueueData'
+import { MATCH_QUEUE, SUBMISSION_SUMMARY } from '../../data/matchQueueData'
+import { EXTRACTED_LPS } from '../../data/extractionData'
 import { getMatchQueue } from '../../services/matchingService'
+import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
+import type { Submission, AgentExtractedRow } from '../../services/api'
 
-const submissionSummary = getSubmissionSummary()
-const CLS_OPTIONS = ['', 'Rated', 'Unrated >2bn', 'Unrated 1–2bn', 'Eligible', 'Excluded']
-const DEFAULT_CL_M = 25
+function parseDollars(s: string): number {
+  return parseInt((s ?? '').replace(/[$,]/g, ''), 10) || 0
+}
+
+const DEFAULT_CL_M   = 25   // fallback for BB engine (dollar-based)
+const DEFAULT_CL_PCT = 7.5  // default concentration limit as % of total uncalled
 
 function parsePct(str: string | undefined | null): number | '' {
   if (!str || str === '—') return ''
@@ -28,8 +33,55 @@ function parseUCM(str: string | undefined | null): number | '' {
   return m ? parseFloat(m[1].replace(',', '')) : ''
 }
 
-type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string; lei?: string }
-type Override = { cls: string; busaRatePct: number | ''; agentRatePct: number | ''; concLimitM: number; ucM: number | '' }
+const YesNo = ({ val }: { val: boolean }) => (
+  <span style={{
+    fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10,
+    background: val ? '#e6f4ea' : 'var(--tbl)',
+    color: val ? 'var(--green)' : 'var(--muted)',
+  }}>
+    {val ? 'Yes' : 'No'}
+  </span>
+)
+
+// Per-row formula engine — all monetary values in $M
+function calcRow(
+  ubsAdvRatePct: number | '',
+  concLimitPct: number | '',
+  ucM: number | '',
+  commitM: number,
+  totalCommitM: number,
+  totalUncalledM: number,
+) {
+  const advRate  = typeof ubsAdvRatePct === 'number' ? ubsAdvRatePct / 100 : 0
+  const clPct    = typeof concLimitPct  === 'number' ? concLimitPct  / 100 : 0
+  const uc       = typeof ucM           === 'number' ? ucM           : 0
+
+  const cmtPct          = totalCommitM  > 0 ? commitM / totalCommitM : 0
+  const ubsEligUncalled = Math.min(uc, totalUncalledM * clPct)
+  const ubsBBCalc       = ubsEligUncalled * advRate
+  const ubsIncluded     = ubsBBCalc > 0
+  const highQuality     = Math.abs(advRate - 0.9) < 0.0001
+  const inclExcess      = ubsIncluded ? uc - ubsEligUncalled : 0
+
+  return { cmtPct, ubsEligUncalled, ubsBBCalc, ubsIncluded, highQuality, inclExcess }
+}
+
+// inc: override of LP Master contractual eligibility flag; auto-derived from cls but user-editable
+function deriveInc(cls: string, isNew: boolean, masterInc: boolean | undefined): boolean {
+  if (!cls || cls === 'Excluded') return false
+  return isNew ? true : !!(masterInc)
+}
+
+type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
+type Override = {
+  cls: string
+  sp: string; mdy: string; fitch: string
+  ubsAdvRatePct: number | ''
+  agentRatePct: number | ''
+  concLimitPct: number | ''
+  ucM: number | ''
+  inc: boolean
+}
 
 export default function RunShadowBB() {
   const { toast, navigate, lpData, bbParams, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
@@ -42,62 +94,174 @@ export default function RunShadowBB() {
   const [summaryHidden, setSummaryHidden] = useState(false)
   const [abortOpen, setAbortOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
+  const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
 
   useEffect(() => {
     if (mode === 'detecting') return
     setLoadError(null)
-    getMatchQueue(live, activeSubmissionId ?? 0)
-      .then(q => setMatchQueue(q as typeof MATCH_QUEUE))
+    const queuePromise = getMatchQueue(live, activeSubmissionId ?? 0)
+    const rowsPromise = (live && activeSubmissionId)
+      ? api.extraction.agentRows(activeSubmissionId).catch(() => [] as AgentExtractedRow[])
+      : Promise.resolve([] as AgentExtractedRow[])
+    Promise.all([queuePromise, rowsPromise])
+      .then(([q, rows]) => {
+        setMatchQueue(q as typeof MATCH_QUEUE)
+        const map: Record<string, AgentExtractedRow> = {}
+        for (const r of rows) { if (r.name) map[r.name.toLowerCase()] = r }
+        setExtractedMap(map)
+      })
       .catch(e => setLoadError(String(e)))
   }, [mode])
+
+  // In live mode, fetch submission details for the summary card
+  useEffect(() => {
+    if (!live || !activeSubmissionId) return
+    api.submissions.get(activeSubmissionId)
+      .then(setSubmissionDetails)
+      .catch(() => {})
+  }, [live, activeSubmissionId])
 
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
     return matchQueue.map(mq => {
       const master = lpData.find(lp => lp.name === mq.masterName)
-      return master
-        ? { ...master, _key: `lp-${master.rank}`, _isNew: false, _agentName: mq.agentName }
-        : { _key: `new-${mq.id}`, _isNew: true, _agentName: mq.agentName, name: mq.agentName, cls: 'Eligible', agentRate: '', uc: '', abb: '$0', inc: true, rcl: false, rank: undefined, region: '' as LPRecord['region'], ig: false, sp: '', mdy: '', fitch: '', aum: '', nav: '', capCommit: '', notes: '' }
+      const ext = extractedMap[(mq.agentName || '').toLowerCase()]
+      if (master) {
+        return {
+          ...master,
+          aum:       ext?.aum      || master.aum,
+          nav:       ext?.nav      || master.nav,
+          capCommit: ext?.commit   || master.capCommit,
+          uc:        ext?.uncalled || master.uc,
+          _key: `lp-${master.rank}`, _isNew: false, _agentName: mq.agentName,
+        }
+      }
+      return {
+        _key: `new-${mq.id}`, _isNew: true, _agentName: mq.agentName,
+        name: mq.agentName, cls: 'Eligible',
+        agentRate: ext?.agentRate || '', uc: ext?.uncalled || '', abb: '$0',
+        capCommit: ext?.commit || '', aum: ext?.aum || '', nav: ext?.nav || '',
+        inc: true, rcl: false, rank: undefined, region: '' as LPRecord['region'],
+        ig: false, sp: '', mdy: '', fitch: '', pension: '', notes: '',
+      }
     })
-  }, [lpData, matchQueue])
+  }, [lpData, matchQueue, extractedMap])
+
+  const buildOverride = (lp: SubmissionLP): Override => {
+    const ext = extractedMap[(lp._agentName || lp.name || '').toLowerCase()]
+    const toRating = (extracted: string | undefined, master: string | undefined) => {
+      const v = extracted || master || ''
+      return v !== 'NR' ? v : ''
+    }
+    return {
+      cls:           lp.cls ?? '',
+      sp:            toRating(ext?.sp,     lp.sp),
+      mdy:           toRating(ext?.moodys, lp.mdy),
+      fitch:         toRating(ext?.fitch,  lp.fitch),
+      ubsAdvRatePct: lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
+      agentRatePct:  parsePct(ext?.agentRate || lp.agentRate),
+      concLimitPct:  parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
+      ucM:           parseUCM(lp.uc),
+      inc:           deriveInc(lp.cls ?? '', lp._isNew, lp.inc),
+    }
+  }
 
   const [overrides, setOverrides] = useState<Record<string, Override>>(() =>
-    Object.fromEntries(submissionLPs.map(lp => [lp._key, {
-      cls:          lp.cls ?? '',
-      busaRatePct:  lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
-      agentRatePct: parsePct(lp.agentRate),
-      concLimitM:   bbParams.concLimitM ?? DEFAULT_CL_M,
-      ucM:          parseUCM(lp.uc),
-    }]))
+    Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)]))
   )
 
   const setOverride = (key: string, field: keyof Override, value: unknown) =>
     setOverrides(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
 
-  const handleClsChange = (key: string, newCls: string) => {
-    const derivedRate = newCls ? (BUSA_RATES[newCls] ?? 0) * 100 : ''
-    setOverrides(prev => ({ ...prev, [key]: { ...prev[key], cls: newCls, busaRatePct: derivedRate } }))
-  }
+  const resetOverrides = () =>
+    setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
 
-  const resetOverrides = () => setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, {
-    cls:          lp.cls ?? '',
-    busaRatePct:  lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
-    agentRatePct: parsePct(lp.agentRate),
-    concLimitM:   bbParams.concLimitM ?? DEFAULT_CL_M,
-    ucM:          parseUCM(lp.uc),
-  }])))
+  // Rebuild overrides whenever submissionLPs changes (matchQueue load or extractedMap arriving).
+  // Safe because matchQueue + extractedMap both settle before users begin editing.
+  useEffect(() => {
+    setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
+  }, [submissionLPs])
+
+  // ── Submission summary — live: from API; prototype: from context + queue ────
+
+  const submissionSummary = useMemo(() => {
+    const facilityName = submissionDetails?.facilityName
+      ?? activeSubmission
+      ?? (SUBMISSION_SUMMARY.find(r => r.label === 'Facility')?.value ?? '—')
+
+    let asOfDate = SUBMISSION_SUMMARY.find(r => r.label === 'As of Date')?.value ?? '—'
+    if (submissionDetails?.periodMonth) {
+      const [y, m] = submissionDetails.periodMonth.split('-')
+      asOfDate = new Date(parseInt(y), parseInt(m) - 1, 1)
+        .toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })
+    }
+
+    const agentBank    = submissionDetails?.agentBank ?? (SUBMISSION_SUMMARY.find(r => r.label === 'Agent Bank')?.value ?? '—')
+    const totalLPs     = matchQueue.length
+    const newCount     = matchQueue.filter(mq => !mq.masterName).length
+    const uncalledM = live
+      ? Object.values(overrides).reduce((s, ov) => s + (typeof ov.ucM === 'number' ? ov.ucM : 0), 0)
+      : EXTRACTED_LPS.reduce((s, lp) => s + parseDollars(lp.uncalled), 0) / 1e6
+    const commitM = live
+      ? submissionLPs.reduce((s, lp) => { const v = parseUCM(lp.capCommit); return s + (typeof v === 'number' ? v : 0) }, 0)
+      : EXTRACTED_LPS.reduce((s, lp) => s + parseDollars(lp.commit), 0) / 1e6
+    const totalUncalled = uncalledM > 0
+      ? `$${Math.round(uncalledM * 1_000_000).toLocaleString()}`
+      : (SUBMISSION_SUMMARY.find(r => r.label === 'Total Uncalled')?.value ?? '—')
+    const totalCommitment = commitM > 0
+      ? `$${Math.round(commitM * 1_000_000).toLocaleString()}`
+      : (SUBMISSION_SUMMARY.find(r => r.label === 'Total Commitment')?.value ?? '—')
+
+    return [
+      { label: 'Facility',          value: String(facilityName) },
+      { label: 'As of Date',        value: asOfDate },
+      { label: 'Agent Bank',        value: String(agentBank) },
+      { label: 'LPs in Submission', value: String(totalLPs) },
+      { label: 'New LP Records',    value: newCount > 0 ? `${newCount} (will be created)` : '0' },
+      { label: 'Total Commitment',  value: totalCommitment },
+      { label: 'Total Uncalled',    value: totalUncalled },
+    ]
+  }, [submissionDetails, activeSubmission, matchQueue, submissionLPs, overrides, live])
 
   const newLPs        = submissionLPs.filter(lp => lp._isNew)
   const overrideCount = submissionLPs.filter(lp => !lp._isNew && overrides[lp._key]?.cls !== lp.cls).length
   const unclassified  = submissionLPs.filter(lp => !overrides[lp._key]?.cls).length
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(submissionLPs)
 
+  // Facility-level totals used by formula columns
+  const totalCommitM = useMemo(() =>
+    submissionLPs.reduce((s, lp) => {
+      const v = parseUCM(lp.capCommit)
+      return s + (typeof v === 'number' ? v : 0)
+    }, 0)
+  , [submissionLPs])
+
+  const totalUncalledM = useMemo(() =>
+    submissionLPs.reduce((s, lp) => {
+      const ov = overrides[lp._key]
+      const v  = typeof ov?.ucM === 'number' ? ov.ucM : parseUCM(lp.uc)
+      return s + (typeof v === 'number' ? v : 0)
+    }, 0)
+  , [submissionLPs, overrides])
+
   const run = () => {
     setRunning(true)
     if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`)
     toast('Shadow BB calculation started…')
     const overriddenLPs = submissionLPs.map(lp => {
-      const ov = overrides[lp._key] ?? {}
-      return { ...lp, cls: ov.cls || 'Excluded', ucM: typeof ov.ucM === 'number' ? ov.ucM : 0, uc: typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : '$0', concLimitM: ov.concLimitM ?? DEFAULT_CL_M, inc: lp._isNew ? (!!ov.cls && ov.cls !== 'Excluded') : lp.inc, abb: lp.abb ?? '$0' }
+      const ov        = overrides[lp._key] ?? {}
+      const ucM       = typeof ov.ucM === 'number' ? ov.ucM : 0
+      const concLimitM = typeof ov.concLimitPct === 'number'
+        ? (ov.concLimitPct / 100) * totalUncalledM
+        : DEFAULT_CL_M
+      const rate = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? '0%')
+      return {
+        ...lp,
+        cls: ov.cls || 'Excluded',
+        sp: ov.sp ?? lp.sp ?? '', mdy: ov.mdy ?? lp.mdy ?? '', fitch: ov.fitch ?? lp.fitch ?? '',
+        rate, ucM, uc: `$${ucM.toFixed(1)}M`,
+        concLimitM, inc: ov.inc ?? false, abb: lp.abb ?? '$0',
+      }
     })
     setTimeout(() => {
       const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams)
@@ -143,7 +307,7 @@ export default function RunShadowBB() {
 
         {!result && (
           <Card title="LP Classification & Rate Assignment"
-            subtitle={`Step 3b–3c · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'}`}
+            subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'}`}
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {unclassified > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>{unclassified} unclassified</span>}
@@ -155,31 +319,93 @@ export default function RunShadowBB() {
             }
           >
             <div className="data-table-wrap">
-              <table className="data-table compact" style={{ minWidth: 912, tableLayout: 'fixed' }}>
-                <colgroup><col style={{ width: 230 }} /><col style={{ width: 80 }} /><col style={{ width: 152 }} /><col style={{ width: 92 }} /><col style={{ width: 92 }} /><col style={{ width: 110 }} /><col style={{ width: 110 }} /><col style={{ width: 52 }} /></colgroup>
+              <table className="data-table" style={{ minWidth: 1132 }}>
                 <thead>
                   <tr>
-                    <th>Investor Name</th><th>LEI / ID</th><th>UBS Classification</th>
-                    <th style={{ textAlign: 'center' }}>BUSA Rate %</th><th style={{ textAlign: 'center' }}>Agent Rate %</th>
-                    <th style={{ textAlign: 'center' }}>Conc. Limit $M</th><th style={{ textAlign: 'center' }}>Uncalled Cap. $M</th>
-                    <th style={{ textAlign: 'center' }}>Incl.</th>
+                    <th style={{ minWidth: 160 }}>Investor Name</th>
+                    <th style={{ width: 72, textAlign: 'center' }}>High Quality</th>
+                    <th style={{ width: 60 }}>S&amp;P</th>
+                    <th style={{ width: 66 }}>Moody's</th>
+                    <th style={{ width: 60 }}>Fitch</th>
+                    <th className="num" style={{ width: 86 }}>NAV/AUM</th>
+                    <th style={{ width: 80, textAlign: 'center' }}>UBS Included</th>
+                    <th className="num" style={{ width: 92 }}>Commitment</th>
+                    <th className="num" style={{ width: 62 }}>Cmt. %</th>
+                    <th className="num" style={{ width: 96 }}>Uncalled Cap.</th>
+                    <th className="num" style={{ width: 90 }}>UBS Cont. Limit</th>
+                    <th className="num" style={{ width: 90 }}>UBS Adv Rate</th>
+                    <th className="num" style={{ width: 116 }}>UBS BB</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageItems.map(lp => {
-                    const key = lp._key; const ov = overrides[key] ?? {} as Override
-                    const cls = ov.cls ?? ''; const included = cls && cls !== 'Excluded' && (lp._isNew ? true : lp.inc)
-                    const changed = !lp._isNew && cls !== (lp.cls ?? ''); const missing = !cls
+                    const key     = lp._key
+                    const ov      = overrides[key] ?? {} as Override
+                    const missing = !ov.cls
+                    const commitM = (() => { const v = parseUCM(lp.capCommit); return typeof v === 'number' ? v : 0 })()
+                    const c = calcRow(ov.ubsAdvRatePct, ov.concLimitPct, ov.ucM, commitM, totalCommitM, totalUncalledM)
+
                     return (
-                      <tr key={key} style={{ background: missing ? 'color-mix(in srgb, var(--red) 6%, transparent)' : changed ? 'var(--amber-lt)' : undefined }}>
-                        <td><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><strong style={{ fontSize: 12 }}>{lp.name}</strong>{lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}{changed && <span style={{ fontSize: 10, color: 'var(--amber)' }}>was: {lp.cls}</span>}</div></td>
-                        <td style={{ fontFamily: 'monospace', fontSize: 10, color: (lp as LPRecord & { lei?: string }).lei ? 'var(--muted)' : 'var(--border)', letterSpacing: '0.02em' }}>{(lp as LPRecord & { lei?: string }).lei || '—'}</td>
-                        <td><select value={cls} onChange={e => handleClsChange(key, e.target.value)} disabled={running} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 3, border: missing ? '1px solid var(--red)' : '1px solid var(--border)', background: 'var(--card)', width: 148 }}><option value="">{lp._isNew ? '— select —' : '— select —'}</option>{CLS_OPTIONS.filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}</select></td>
-                        <td style={{ textAlign: 'center' }}><input type="number" value={ov.busaRatePct ?? ''} onChange={e => setOverride(key, 'busaRatePct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running} placeholder="0" style={{ width: 52, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={5} /><span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 2 }}>%</span></td>
-                        <td style={{ textAlign: 'center' }}><input type="number" value={ov.agentRatePct ?? ''} onChange={e => setOverride(key, 'agentRatePct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running} placeholder="0" style={{ width: 52, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={5} /><span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 2 }}>%</span></td>
-                        <td style={{ textAlign: 'center' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><span style={{ fontSize: 10, color: 'var(--muted)' }}>$</span><input type="number" value={ov.concLimitM ?? ''} onChange={e => setOverride(key, 'concLimitM', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running} placeholder={String(DEFAULT_CL_M)} style={{ width: 48, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} step={5} /><span style={{ fontSize: 10, color: 'var(--muted)' }}>M</span></div></td>
-                        <td style={{ textAlign: 'center' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><span style={{ fontSize: 10, color: 'var(--muted)' }}>$</span><input type="number" value={ov.ucM ?? ''} onChange={e => setOverride(key, 'ucM', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running} placeholder="0" style={{ width: 52, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} step={0.1} /><span style={{ fontSize: 10, color: 'var(--muted)' }}>M</span></div></td>
-                        <td style={{ textAlign: 'center' }}>{cls ? <Tag variant={included ? 'active' : 'excl'}>{included ? 'Y' : 'N'}</Tag> : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}</td>
+                      <tr key={key} style={{ background: missing ? 'color-mix(in srgb, var(--red) 6%, transparent)' : undefined }}>
+
+                        {/* Investor Name */}
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>{lp.name ?? lp._agentName ?? '—'}</span>
+                              {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* High Quality — UBS Adv Rate == 90% */}
+                        <td style={{ textAlign: 'center' }}><YesNo val={c.highQuality} /></td>
+
+                        {/* S&P */}
+                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.sp || '—'}</td>
+
+                        {/* Moody's */}
+                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.mdy || '—'}</td>
+
+                        {/* Fitch */}
+                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.fitch || '—'}</td>
+
+                        {/* NAV/AUM — show AUM when NAV is absent */}
+                        <td className="num">{(lp.nav?.trim() || lp.aum?.trim()) || '—'}</td>
+
+                        {/* UBS Included — UBS BB > 0 */}
+                        <td style={{ textAlign: 'center' }}><YesNo val={c.ubsIncluded} /></td>
+
+                        {/* Commitment — read-only */}
+                        <td className="num">{lp.capCommit || '—'}</td>
+
+                        {/* Cmt. % — LP commitment / total commitment */}
+                        <td className="num">{fmtPct(c.cmtPct)}</td>
+
+                        {/* Uncalled Capital — read-only */}
+                        <td className="num">{lp.uc || '—'}</td>
+
+                        {/* UBS Cont. Limit — editable % */}
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                            <input type="number" value={ov.concLimitPct ?? ''} onChange={e => setOverride(key, 'concLimitPct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running}
+                              placeholder={String(DEFAULT_CL_PCT)} style={{ width: 46, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={0.5} />
+                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                          </div>
+                        </td>
+
+                        {/* UBS Adv Rate — editable % */}
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                            <input type="number" value={ov.ubsAdvRatePct ?? ''} onChange={e => setOverride(key, 'ubsAdvRatePct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running}
+                              placeholder="0" style={{ width: 46, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={5} />
+                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                          </div>
+                        </td>
+
+                        {/* UBS BB — ubsEligUncalled × advRate */}
+                        <td className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
+
                       </tr>
                     )
                   })}

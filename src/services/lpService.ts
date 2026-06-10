@@ -1,8 +1,9 @@
 import { LP_DATA, DONUT_DATA } from '../data/lpData'
 import { formatLastRun } from './facilityService'
 import { api } from './api'
+import type { LP } from '../types'
 
-export type LPRecord = (typeof LP_DATA)[0]
+export type LPRecord = LP
 
 function _localGetLPs(): LPRecord[] { return LP_DATA }
 function _localGetLPById(rank: number): LPRecord | null { return LP_DATA.find(lp => lp.rank === rank) ?? null }
@@ -24,19 +25,27 @@ function _localGetDonutData() {
 
 export async function getLPs(live: boolean): Promise<LPRecord[]> {
   if (!live) return _localGetLPs()
-  return (await api.lps.list({})) as unknown as LPRecord[]
+  return api.lps.list({})
 }
 
 export async function getLPById(live: boolean, rank: number): Promise<LPRecord | null> {
   if (!live) return _localGetLPById(rank)
-  return (await api.lps.get(rank)) as unknown as LPRecord
+  return api.lps.get(rank)
 }
 
 export async function getLPsForFacility(live: boolean, facilityId: number): Promise<LPRecord[]> {
   if (!live) return _localGetLPsForFacility()
-  return (await api.lps.list({ facilityId })) as unknown as LPRecord[]
+  return api.lps.list({ facilityId })
 }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }
 
 export function getDonutData() { return _localGetDonutData() }
+
+export async function lookupLPsByName(live: boolean, name: string): Promise<LPRecord[]> {
+  if (!live) {
+    const q = name.toLowerCase()
+    return LP_DATA.filter(lp => lp.name.toLowerCase().includes(q)).slice(0, 8)
+  }
+  return api.lps.lookup(name)
+}

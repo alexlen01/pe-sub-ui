@@ -4,21 +4,9 @@
 import type { LP } from '../types/lp'
 import { FACILITIES } from './facilityData'
 
-// Deterministic 8-char ID keyed on LP name (no shared RNG dependency)
-function genId(name: string): string {
-  const C = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let h = 0x811c9dc5
-  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 0x01000193)
-  h = h >>> 0
-  let id = '', s = h
-  for (let i = 0; i < 8; i++) { id += C[s % 36]; s = Math.imul(s ^ 0x9E3779B9, 1664525) >>> 0 }
-  return id
-}
-
 const BASE_LPS: LP[] = [
   {
     rank:1, name:'Monarch Alternative Capital LP', parent:'Monarch Alternative Capital Mgmt',
-    lei:'M4CA7R2X',
     spv:false, hq:true,
     type:'Institutional', cls:'Rated', clsTag:'tag-rated', ig:false,
     region:'North America',
@@ -31,7 +19,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:2, name:'GIC Special Investments Pte. Ltd.', parent:'GIC Private Limited',
-    lei:'G9B1K5PS',
     spv:false, hq:false,
     type:'Institutional', cls:'Rated', clsTag:'tag-rated', ig:true,
     region:'Asia-Pacific',
@@ -44,7 +31,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:3, name:'Sequoia Heritage Fund', parent:'Sequoia Capital',
-    lei:'S8HFND3Q',
     spv:true, hq:true,
     type:'HNW', cls:'Unrated >2bn', clsTag:'tag-un2', ig:false,
     region:'North America',
@@ -57,7 +43,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:4, name:'Norges Bank Investment Mgmt', parent:'Norges Bank',
-    lei:'N7BI6M2W',
     spv:false, hq:false,
     type:'Institutional', cls:'Rated', clsTag:'tag-rated', ig:true,
     region:'Europe',
@@ -70,7 +55,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:5, name:'Abu Dhabi Investment Authority', parent:'ADIA',
-    lei:'A5DIA9PK',
     spv:false, hq:false,
     type:'Institutional', cls:'Rated', clsTag:'tag-rated', ig:true,
     region:'Middle East',
@@ -83,7 +67,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:6, name:'Mubadala Investment Company', parent:'Mubadala',
-    lei:'MBD3IC7Y',
     spv:false, hq:false,
     type:'Institutional', cls:'Unrated >2bn', clsTag:'tag-un2', ig:false,
     region:'Middle East',
@@ -96,7 +79,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:7, name:'Tiger Global Management LLC', parent:'Tiger Global',
-    lei:'T4GL6M9R',
     spv:false, hq:true,
     type:'Institutional', cls:'Unrated 1–2bn', clsTag:'tag-un1', ig:false,
     region:'North America',
@@ -109,7 +91,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:8, name:'Rockefeller Family Office', parent:'Rockefeller & Co.',
-    lei:'RCFO5X2B',
     spv:true, hq:true,
     type:'HNW', cls:'Eligible', clsTag:'tag-elig', ig:false,
     region:'North America',
@@ -122,7 +103,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:9, name:'Hamilton Lane Fund II LP', parent:'Hamilton Lane',
-    lei:'H8LF2N1Q',
     spv:true, hq:true,
     type:'Institutional', cls:'Unrated >2bn', clsTag:'tag-un2', ig:false,
     region:'North America',
@@ -135,7 +115,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:10, name:'Makena Capital Management', parent:'Makena Capital',
-    lei:'MK3CM7WP',
     spv:false, hq:true,
     type:'HNW', cls:'Excluded', clsTag:'tag-excl', ig:false,
     region:'North America',
@@ -148,7 +127,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:11, name:'Pantheon Ventures (UK) LLP', parent:'Pantheon',
-    lei:'PV6UK4NE',
     spv:false, hq:false,
     type:'Institutional', cls:'Unrated >2bn', clsTag:'tag-un2', ig:false,
     region:'Europe',
@@ -161,7 +139,6 @@ const BASE_LPS: LP[] = [
   },
   {
     rank:12, name:'StepStone Group LP', parent:'StepStone',
-    lei:'SS9GRP2Z',
     spv:false, hq:true,
     type:'Institutional', cls:'Unrated >2bn', clsTag:'tag-un2', ig:false,
     region:'North America',
@@ -300,7 +277,7 @@ function generateBulk(): LP[] {
     const spv = info.type === 'HNW' ? rng() < 0.35 : rng() < 0.08
 
     return {
-      rank, name: info.name, parent: info.name, lei: genId(info.name),
+      rank, name: info.name, parent: info.name,
       spv, hq: info.hq, type: info.type, cls, clsTag: CLS_TAG[cls], ig,
       region: info.region,
       sp, mdy, fitch,

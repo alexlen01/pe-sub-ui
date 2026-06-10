@@ -56,10 +56,11 @@ function buildMatchQueue() {
 export const MATCH_QUEUE = buildMatchQueue()
 
 export const SUBMISSION_SUMMARY = [
-  { label: 'Facility',          value: 'Blue Owl GP Stakes V'         },
-  { label: 'As of Date',        value: '30 Apr 2026'                  },
-  { label: 'Agent Bank',        value: 'Goldman Sachs Bank USA'       },
-  { label: 'LPs in Submission', value: '900'                          },
-  { label: 'New LP Records',    value: '135 (will be created)'        },
-  { label: 'Total Uncalled',    value: '$36,529,009,954'              },
+  { label: 'Facility',          value: 'Blue Owl GP Stakes V'  },
+  { label: 'As of Date',        value: '30 Apr 2026'           },
+  { label: 'Agent Bank',        value: 'Goldman Sachs Bank USA'},
+  { label: 'LPs in Submission', value: '900'                   },
+  { label: 'New LP Records',    value: '135 (will be created)' },
+  { label: 'Total Commitment',  value: '$141,995,118,250'      },
+  { label: 'Total Uncalled',    value: '$36,529,009,954'       },
 ]

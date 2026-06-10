@@ -94,7 +94,7 @@ function LPDetailPanel({ lp, onClose }: { lp: ComputedLPRecord; onClose: () => v
   const toggle = (s: string) => setOpen(o => ({ ...o, [s]: !o[s] }))
   const sections = [
     { title: 'Identity & Classification', rows: [{ k: 'Investor Name', v: lp.name ?? '—' }, { k: 'Rank', v: String(lp.rank ?? '—') }, { k: 'LP Classification', v: lp.cls ?? '—' }, { k: 'Parent', v: na(lp.parent) }, { k: 'SPV', v: yn(lp.spv) }, { k: 'Institutional vs HNW', v: lp.type ?? '—' }, { k: 'Region / Location', v: lp.region ?? '—' }, { k: 'HQ', v: yn(lp.hq) }, { k: 'Investment Grade', v: yn(lp.ig) }] },
-    { title: 'Ratings', rows: [{ k: 'S&P', v: lp.sp || '—' }, { k: "Moody's", v: lp.mdy || '—' }, { k: 'Fitch', v: lp.fitch || '—' }] },
+    { title: 'Ratings', rows: [{ k: 'S&P', v: (lp.sp && lp.sp !== 'NR') ? lp.sp : '—' }, { k: "Moody's", v: (lp.mdy && lp.mdy !== 'NR') ? lp.mdy : '—' }, { k: 'Fitch', v: (lp.fitch && lp.fitch !== 'NR') ? lp.fitch : '—' }] },
     { title: 'Financial Scale', rows: [{ k: 'AUM', v: na(lp.aum) }, { k: 'NAV', v: na(lp.nav) }, { k: 'Pension Assets', v: na(lp.pension) }, { k: 'Pension Funded %', v: na(lp.pensionFunded) }] },
     { title: 'Borrowing Base Inputs', rows: [{ k: 'UBS Advance Rate', v: lp.rate ?? '—' }, { k: 'Agent Advance Rate', v: na(lp.agentRate) }] },
     { title: 'Commitment Data', rows: [{ k: 'Capital Commitments', v: na(lp.capCommit) }, { k: '% of Capital Commitments', v: na(lp.pctCapCommit) }, { k: 'Called Capital', v: na(lp.calledCap) }] },
@@ -157,7 +157,7 @@ export default function ShadowBB() {
     if (mode === 'detecting') return
     setLoadError(null)
     getFacilities(live).then(fs => {
-      const opts = fs.map(f => ({ id: (f as unknown as { id?: number }).id, name: f.name }))
+      const opts = fs.map(f => ({ id: f.id, name: f.name }))
       setFacilityOptions(opts)
       if (opts.length > 0) { setFacility(opts[0].name); setFacilityId(opts[0].id ?? null) }
     }).catch(e => setLoadError(String(e)))
@@ -166,20 +166,22 @@ export default function ShadowBB() {
   useEffect(() => {
     if (!facilityId || mode === 'detecting') return
     setLoadError(null)
-    getLPsForFacility(live, facilityId).then(lps => {
+    Promise.all([
+      getLPsForFacility(live, facilityId),
+      getFacilityBBSnapshot(live, facilityId),
+      getFacilitySummaryExt(live, facilityId),
+    ]).then(([lps, snapshot, ext]) => {
       const computed = computePortfolioBB(lps as LPRecord[], { ...bbParams })
-      getFacilityBBSnapshot(live, facilityId).then(snapshot => {
-        const snapshotData = (snapshot as unknown as Record<string, unknown>) ?? {}
-        const patched = Object.keys(snapshotData).length
-          ? { ...computed, summary: { ...computed.summary, ...snapshotData }, breaches: [] }
-          : computed
-        setResult(patched)
-        setCalcMeta({ facility, ts: new Date() })
-        setSelectedLP(null)
-        setClsFilter('')
-      })
+      const snapshotData = snapshot ?? {}
+      const patched = Object.keys(snapshotData).length
+        ? { ...computed, summary: { ...computed.summary, ...snapshotData }, breaches: [] }
+        : computed
+      setResult(patched)
+      setCalcMeta({ facility, ts: new Date() })
+      setSelectedLP(null)
+      setClsFilter('')
+      if (ext) setSummaryExtApi(ext)
     }).catch(e => setLoadError(String(e)))
-    getFacilitySummaryExt(live, facilityId).then(ext => setSummaryExtApi(ext)).catch(() => {})
   }, [facility, mode])
 
   const filtered = useMemo(() => clsFilter ? result.lps.filter(r => r.cls === clsFilter) : result.lps, [result.lps, clsFilter])

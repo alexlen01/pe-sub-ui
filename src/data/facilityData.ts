@@ -174,3 +174,40 @@ export const AUDIT_LOG: AuditLogRow[] = [
   { ts:'2026-05-19T08:28:00', event:'Login',           facility:'—',                            detail:'User login via SSO',                                                       user:'J. Smith',  ip:'10.0.1.44'   },
   { ts:'2026-05-18T14:55:00', event:'LP Reclassified', facility:'Apollo Global Fund XI',        detail:'Sequoia Heritage Fund · Unrated >2bn → Rated · S&P BBB assigned',         user:'M. Chen',   ip:'10.0.1.67'   },
 ]
+
+// ── Prototype overlay data ────────────────────────────────────────────────────
+// Used only by facilityService._localGetFacilities() to simulate a realistic
+// in-flight cycle when screenMode === 'prototype'. Not referenced in live mode.
+
+function businessDaysBefore(count: number, anchorIso: string): Date[] {
+  const dates: Date[] = []
+  const d = new Date(anchorIso + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  while (dates.length < count) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) dates.push(new Date(d))
+    d.setDate(d.getDate() - 1)
+  }
+  return dates
+}
+
+export const PROTOTYPE_CYCLE_BDAYS = businessDaysBefore(17, '2026-05-24')
+export const PROTOTYPE_OWNERS = ['J. Smith', 'M. Chen', 'L. Torres']
+
+export const PROTOTYPE_STATUS_OVERRIDES: Record<string, string> = {
+  'Apollo Natural Resources III': 'Needs Review',
+  'Ares Capital IX':              'Needs Review',
+  'Carlyle Partners VIII':        'Needs Review',
+  'Advent Global IX':             'In Progress',
+}
+
+export const PROTOTYPE_SUBMITTED_BY_OVERRIDES: Record<string, string> = {
+  'Blue Owl GP Stakes V': 'J. Smith',
+  'Advent Global IX':     'L. Torres',
+}
+
+export const PROTOTYPE_PINNED_RUN_DATES: Record<string, Date> = {
+  'Apollo Natural Resources III': new Date('2026-05-26T00:00:00'),
+  'Ares Capital IX':              new Date('2026-05-26T00:00:00'),
+  'Blackstone CRE VII':           new Date('2026-05-22T00:00:00'),
+  'Carlyle Partners VIII':        new Date('2026-05-25T00:00:00'),
+}

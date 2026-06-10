@@ -75,7 +75,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       type: lp.type, cls: lp.cls, ig: lp.ig,
       region: lp.region, hq: lp.hq,
       sp: lp.sp, mdy: lp.mdy, fitch: lp.fitch,
-      aum: lp.aum, nav: lp.nav, pension: (lp as unknown as Record<string, unknown>).pension ?? 'N/A', pensionFunded: (lp as unknown as Record<string, unknown>).pensionFunded ?? 'N/A',
+      aum: lp.aum, nav: lp.nav, pension: lp.pension || 'N/A', pensionFunded: lp.pensionFunded || 'N/A',
       capCommit: lp.capCommit, pctCapCommit: lp.pctCapCommit, calledCap: lp.calledCap,
       uc: lp.uc, pctUncalled: lp.pctUncalled, pctCalled: lp.pctCalled,
       agentConc: lp.agentConc, ubsConc: lp.ubsConc, abb: lp.abb, ubb: lp.ubb,
@@ -151,7 +151,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {sec('Identity & Classification')}
       {f('Investor Name', lp.name, 'name', { span2: true })}
       {f('Rank', lp.rank ?? '—', null, { ro: true })}
-      {f('LEI / ID', lp.lei || '—', null, { ro: true, span2: true })}
       {f('Parent / Sponsor', lp.parent, 'parent', { span2: true })}
       {f('SPV', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
       {f('Institutional vs HNW', lp.type, 'type', { opts: TYPE_OPTS })}
@@ -177,8 +176,8 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {sec('Financial Scale')}
       {f('AUM', lp.aum, 'aum')}
       {f('NAV', lp.nav, 'nav')}
-      {f('Pension Assets', (lp as unknown as Record<string, unknown>).pension as string, 'pension')}
-      {f('Pension Funded %', (lp as unknown as Record<string, unknown>).pensionFunded as string, 'pensionFunded')}
+      {f('Pension Assets', lp.pension, 'pension')}
+      {f('Pension Funded %', lp.pensionFunded, 'pensionFunded')}
 
       {sec('Commitment Data')}
       {f('Capital Commitments', lp.capCommit, 'capCommit')}
@@ -393,7 +392,7 @@ export default function LPMaster() {
   const { toast, lpData, updateLPRecord, currentUser } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
-  const canEdit = currentUser?.role === 'Credit Officer' || currentUser?.role === 'Supervisor'
+  const canEdit = currentUser?.role === 'Credit Administrator' || currentUser?.role === 'Supervisor'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
   useEffect(() => {
@@ -439,7 +438,7 @@ export default function LPMaster() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return lpData.filter(lp => {
-      const matchQ   = !q || lp.name.toLowerCase().includes(q) || lp.parent.toLowerCase().includes(q) || (lp.lei || '').toLowerCase().includes(q)
+      const matchQ   = !q || lp.name.toLowerCase().includes(q) || lp.parent.toLowerCase().includes(q)
       const matchCls = !clsFilter || lp.cls === clsFilter
       const matchInc = !incFilter || (incFilter === 'Y' ? lp.inc : !lp.inc)
       const matchFac = !facFilter || lpBelongsToFacility(lp, facFilter.name)
@@ -537,8 +536,8 @@ export default function LPMaster() {
           <thead>
             <tr>
               <th style={{ width: 40 }}>Rank</th>
-              <th style={{ width: '30%', maxWidth: 280 }}>Investor Name</th>
-              <th style={{ width: 80 }}>LEI / ID</th>
+              <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
+              <th style={{ width: '20%', maxWidth: 200 }}>Parent</th>
               <th style={{ width: 48, textAlign: 'center' }}>SPV</th>
               <th style={{ width: 110 }}>Classification</th>
               <th style={{ width: 44, textAlign: 'center' }}>HQ</th>
@@ -557,12 +556,12 @@ export default function LPMaster() {
             {pageItems.map(lp => (
               <tr key={lp.rank} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
                 <td style={{ color: 'var(--muted)' }}>{lp.rank}</td>
-                <td style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong title={lp.name}>{lp.name}</strong>
                   {lp.rcl && <span className="rcl-badge">R</span>}
                   {lp.tf  && <span className="tf-badge">T</span>}
                 </td>
-                <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.02em' }}>{lp.lei || '—'}</td>
+                <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }} title={lp.parent}>{lp.parent || '—'}</td>
                 <td style={{ textAlign: 'center' }}><YN val={lp.spv} /></td>
                 <td><Tag>{lp.cls}</Tag></td>
                 <td style={{ textAlign: 'center' }}><YN val={lp.hq} /></td>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, startTransition } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
 import { useScreenMode } from '../../hooks/useScreenMode'
@@ -220,12 +220,13 @@ export default function ExtractionPreview() {
   const handleConfirm = async () => {
     setConfirmed(true)
     if (live && activeSubmissionId != null) {
+      toast('Extraction confirmed. Running LP name matching...')
       try {
         const res = await api.submissions.confirm(activeSubmissionId)
         if (res?.templateSaved) {
           toast(`Template saved for ${res.agentBank} — future submissions will use exact sheet and header row.`)
         }
-        navigate('match-queue')
+        startTransition(() => navigate('match-queue'))
       } catch (e) {
         toast(`Confirm failed: ${String(e)}`)
         setConfirmed(false)
@@ -234,7 +235,7 @@ export default function ExtractionPreview() {
       toast('Extraction confirmed. Running LP name matching...')
       setTimeout(() => {
         toast(`LP matching complete. ${extracted.length} records sent to match queue.`)
-        navigate('match-queue')
+        startTransition(() => navigate('match-queue'))
       }, 2000)
     }
   }

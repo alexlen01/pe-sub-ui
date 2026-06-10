@@ -160,11 +160,12 @@ export default function MatchQueue() {
   const mode = useScreenMode()
   const live = mode === 'live'
   const [queue, setQueue] = useState<QueueRow[]>(MATCH_QUEUE as QueueRow[])
-  const [statusFilter, setStatusFilter] = useState('Pending')
+  const [statusFilter, setStatusFilter] = useState('')
   const [bandFilter, setBandFilter] = useState('')
   const [checked, setChecked] = useState(new Set<number>())
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
+  const [allRejectedOpen, setAllRejectedOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -200,8 +201,23 @@ export default function MatchQueue() {
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
   const pending = queue.filter(r => r.status === 'Pending').length
+  const acceptedCount = queue.filter(r => r.status === 'Accepted').length
   const autoAccepted = queue.filter(r => r.status === 'Accepted' && r.score >= 95).length
+  const canCommit = pending === 0
   const selectionIds = new Set([...checked].filter(id => filtered.some(r => r.id === id)))
+
+  const handleCommit = () => {
+    if (pending > 0) {
+      toast(`${pending} decision${pending !== 1 ? 's' : ''} still pending — resolve all matches before committing.`, 4000, 'warning')
+      return
+    }
+    if (acceptedCount === 0) {
+      setAllRejectedOpen(true)
+    } else {
+      toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed — loading submission summary…`)
+      navigate('run-shadow-bb')
+    }
+  }
   const selectedRow = selectedId ? queue.find(r => r.id === selectedId) ?? null : null
 
   return (
@@ -223,7 +239,7 @@ export default function MatchQueue() {
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{pending} pending · {filtered.length} shown</span>
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
-        <Button size="sm" onClick={() => { toast('Match decisions committed to lp_master.'); navigate('run-shadow-bb') }}>Commit Decisions</Button>
+        <Button size="sm" style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>Commit Decisions</Button>
       </div>
       <div style={{ flex: 1, display: 'flex', gap: 12 }}>
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
@@ -258,7 +274,7 @@ export default function MatchQueue() {
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
               {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
-              <Button size="sm" onClick={() => { toast('Match decisions committed to lp_master.'); navigate('run-shadow-bb') }}>Commit Decisions</Button>
+              <Button size="sm" style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>Commit Decisions</Button>
             </div>
           </div>
         </div>
@@ -270,6 +286,10 @@ export default function MatchQueue() {
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('Submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
+    </Modal>
+    <Modal open={allRejectedOpen} onClose={() => setAllRejectedOpen(false)} title="All LPs Rejected" subtitle="No LP matches have been accepted — the submission cannot proceed."
+      footer={<><Button variant="secondary" onClick={() => setAllRejectedOpen(false)}>Review Decisions</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('All LPs rejected — submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Every LP in this submission has been rejected, so there is nothing to commit to LP Master. The submission will be permanently removed. You can re-upload the Agent BB to start over.</div>
     </Modal>
     </>
   )

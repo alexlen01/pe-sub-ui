@@ -10,14 +10,14 @@ export { SCREEN_MAP as SCREENS }
 
 export type ScreenMode = 'detecting' | 'live' | 'prototype'
 
-export interface ToastItem { id: number; msg: string }
+export interface ToastItem { id: number; msg: string; variant?: 'warning' | 'success' }
 export interface User { name: string; initials: string; role: string; department: string; notifications: number }
 
 interface AppState {
   screen: string
   navigate: (name: string) => void
   toasts: ToastItem[]
-  toast: (msg: string, duration?: number) => void
+  toast: (msg: string, duration?: number, variant?: ToastItem['variant']) => void
   lpData: LPRecord[]
   lpLoading: boolean
   setLpData: (lps: LPRecord[]) => void
@@ -65,12 +65,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [activeFacilityId, screenMode])
 
   const navigate = useCallback((name: string) => {
-    if (SCREEN_MAP[name]) { setScreen(name); setToasts([]) }
+    if (SCREEN_MAP[name]) { setScreen(name) }
   }, [])
 
-  const toast = useCallback((msg: string, duration = 3200) => {
+  const toast = useCallback((msg: string, duration = 3200, variant?: ToastItem['variant']) => {
     const id = Date.now()
-    setToasts(prev => [...prev, { id, msg }])
+    setToasts(prev => [...prev, { id, msg, variant }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
   }, [])
 

@@ -40,8 +40,6 @@ export interface LP {
   delta: string
   // Uncalled Eligible Capital
   uec: string
-  // Identifier
-  lei: string
   // Status
   inc: boolean
   rcl: boolean

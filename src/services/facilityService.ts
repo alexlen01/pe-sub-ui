@@ -1,4 +1,8 @@
-import { FACILITIES, SUBMISSIONS, ACTIVITY, AUDIT_LOG } from '../data/facilityData'
+import {
+  FACILITIES, SUBMISSIONS, ACTIVITY, AUDIT_LOG,
+  PROTOTYPE_CYCLE_BDAYS, PROTOTYPE_OWNERS,
+  PROTOTYPE_STATUS_OVERRIDES, PROTOTYPE_SUBMITTED_BY_OVERRIDES, PROTOTYPE_PINNED_RUN_DATES,
+} from '../data/facilityData'
 import { DONUT_DATA } from '../data/lpData'
 import { api } from './api'
 
@@ -37,39 +41,6 @@ function formatActivityTime(isoTs: string): string {
 
 // ── Local computation ─────────────────────────────────────────────────────────
 
-function businessDaysBefore(count: number, anchorIso: string): Date[] {
-  const dates: Date[] = []
-  const d = new Date(anchorIso + 'T00:00:00')
-  d.setDate(d.getDate() - 1)
-  while (dates.length < count) {
-    if (d.getDay() !== 0 && d.getDay() !== 6) dates.push(new Date(d))
-    d.setDate(d.getDate() - 1)
-  }
-  return dates
-}
-
-const CYCLE_BDAYS = businessDaysBefore(17, '2026-05-24')
-const OWNERS = ['J. Smith', 'M. Chen', 'L. Torres']
-
-const STATUS_OVERRIDES: Record<string, string> = {
-  'Apollo Natural Resources III': 'Needs Review',
-  'Ares Capital IX':              'Needs Review',
-  'Carlyle Partners VIII':        'Needs Review',
-  'Advent Global IX':             'In Progress',
-}
-
-const SUBMITTED_BY_OVERRIDES: Record<string, string> = {
-  'Blue Owl GP Stakes V': 'J. Smith',
-  'Advent Global IX':     'L. Torres',
-}
-
-const PINNED_RUN_DATES: Record<string, Date> = {
-  'Apollo Natural Resources III': new Date('2026-05-26T00:00:00'),
-  'Ares Capital IX':              new Date('2026-05-26T00:00:00'),
-  'Blackstone CRE VII':           new Date('2026-05-22T00:00:00'),
-  'Carlyle Partners VIII':        new Date('2026-05-25T00:00:00'),
-}
-
 function _localGetFacilities() {
   const latestStep: Record<string, { date: string; step: number }> = {}
   SUBMISSIONS.forEach(s => {
@@ -79,14 +50,14 @@ function _localGetFacilities() {
   const STATUS_PRIORITY: Record<string, number> = { 'Not Started': 0, 'In Progress': 1, 'Needs Review': 2, 'Certified': 3 }
 
   return FACILITIES.map(f => {
-    const status = STATUS_OVERRIDES[f.name] ?? 'Certified'
+    const status = PROTOTYPE_STATUS_OVERRIDES[f.name] ?? 'Certified'
     const h = f.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
     const hasSubmission = status === 'Certified' || status === 'Needs Review' || status === 'In Progress'
-    const submittedBy   = hasSubmission ? (SUBMITTED_BY_OVERRIDES[f.name] ?? OWNERS[h % OWNERS.length]) : null
+    const submittedBy   = hasSubmission ? (PROTOTYPE_SUBMITTED_BY_OVERRIDES[f.name] ?? PROTOTYPE_OWNERS[h % PROTOTYPE_OWNERS.length]) : null
     const step          = latestStep[f.name]?.step ?? null
     if (status === 'Not Started') return { ...f, status, step: null, lastRun: '—', submittedBy: null, _sort: new Date(0) }
     if (status === 'In Progress')  return { ...f, status, step, lastRun: '—', submittedBy, _sort: new Date('2026-05-26T00:00:00') }
-    const runDate = PINNED_RUN_DATES[f.name] ?? CYCLE_BDAYS[h % CYCLE_BDAYS.length]
+    const runDate = PROTOTYPE_PINNED_RUN_DATES[f.name] ?? PROTOTYPE_CYCLE_BDAYS[h % PROTOTYPE_CYCLE_BDAYS.length]
     return { ...f, status, step, lastRun: formatRunDate(runDate), submittedBy, _sort: runDate }
   })
     .sort((a, b) => {
@@ -122,7 +93,11 @@ function _localGetDonutData() {
 
 // ── API-first exports ─────────────────────────────────────────────────────────
 
-export type FacilityRow = ReturnType<typeof _localGetFacilities>[0]
+export type FacilityRow = ReturnType<typeof _localGetFacilities>[0] & {
+  id?: number
+  lastRunAt?: string | null
+  latestSubmissionId?: number | null
+}
 export type SubmissionRow = ReturnType<typeof _localGetSubmissions>[0]
 export type ActivityRow   = ReturnType<typeof _localGetActivityFeed>[0]
 export type AuditRow      = ReturnType<typeof _localGetAuditLog>[0]
@@ -135,7 +110,26 @@ export async function getFacilities(live: boolean): Promise<FacilityRow[]> {
     const cur = latestById.get(s.facilityId)
     if (!cur || s.id > cur) latestById.set(s.facilityId, s.id)
   })
-  return facilities.map(f => ({ ...f, latestSubmissionId: latestById.get(f.id) })) as unknown as FacilityRow[]
+  return facilities.map(f => ({
+    name:                 f.name,
+    agentBank:            f.agentBank,
+    status:               f.status,
+    lps:                  f.lpCount,
+    facilitySize:         '—',
+    ubsParticipation:     '—',
+    ubsParticipationRate: '—',
+    creditAgreementRef:   '—',
+    agentBB:              '—',
+    ubsBB:                '—',
+    delta:                '—',
+    ear:                  '—',
+    lastRun:              f.lastRunAt ? formatLastRun(f.lastRunAt) : '—',
+    step:                 null as number | null,
+    submittedBy:          null as string | null,
+    id:                   f.id,
+    lastRunAt:            f.lastRunAt,
+    latestSubmissionId:   latestById.get(f.id) ?? null,
+  })) as FacilityRow[]
 }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }

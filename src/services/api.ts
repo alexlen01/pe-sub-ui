@@ -107,6 +107,14 @@ export interface ExtractedLP {
   confidence: number; fields: Record<string, unknown>
 }
 
+export interface AgentExtractedRow {
+  id: number; name: string
+  commit: string; uncalled: string; aum: string; nav: string
+  sp: string; moodys: string; fitch: string
+  agentRate: string; agentConc: string
+  agentBBFmt: string; pctBBFmt: string
+}
+
 export interface DocRecognition {
   document: string; format: string
   tablesIdentified: string; tableLocation: string
@@ -165,6 +173,8 @@ export const api = {
       get<LP>(`/api/lps/${id}`),
     update: (id: number, data: Partial<LP>) =>
       patch<LP>(`/api/lps/${id}`, data),
+    lookup: (name: string) =>
+      get<LP[]>(`/api/lps/lookup${qs({ name })}`),
   },
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────
@@ -216,6 +226,8 @@ export const api = {
   extraction: {
     extractedLPs: (submissionId: number) =>
       get<ExtractedLP[]>(`/api/submissions/${submissionId}/extracted-lps`),
+    agentRows: (submissionId: number) =>
+      get<AgentExtractedRow[]>(`/api/submissions/${submissionId}/extracted-lps`),
     fieldMap: (submissionId: number) =>
       get<Array<{ extracted: string; canonical: string; group: string; note: string; tier: string }>>(`/api/submissions/${submissionId}/field-map`),
     docRecognition: (submissionId: number) =>

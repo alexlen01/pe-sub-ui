@@ -11,32 +11,7 @@ import InfoTip        from '../../components/ui/InfoTip'
 import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
 import { getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
-
-// Derive Executive Summary rows from a selected facility record.
-// TUC is the same denominator for both UBS and Agent; only advance rates differ.
-function buildExecRows(f: FacilityRow | null) {
-  if (!f) return []
-  const parseM   = (s: string) => parseFloat((s ?? '0').replace(/[^0-9.]/g, ''))
-  const parsePct = (s: string) => parseFloat((s ?? '0').replace('%', '')) / 100
-  const fmtM     = (n: number) => `$${n.toFixed(1)}M`
-  const fmtPct   = (n: number) => `${(n * 100).toFixed(1)}%`
-  const fmtDeltaM   = (n: number) => `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(1)}M`
-  const fmtDeltaPct = (n: number) => `${n < 0 ? '-' : '+'}${Math.abs(n * 100).toFixed(1)}%`
-
-  const ubbM     = parseM(f.ubsBB)
-  const abbM     = parseM(f.agentBB)
-  const earF     = parsePct(f.ear)
-  const uecM     = earF > 0 ? ubbM / earF : 0
-  const agentEarF = uecM > 0 ? abbM / uecM : 0
-
-  return [
-    { metric: 'Total Eligible Uncalled', ubs: fmtM(uecM),                 agent: fmtM(uecM)           },
-    { metric: 'Total Borrowing Base',    ubs: f.ubsBB,                     agent: f.agentBB, bold: true },
-    { metric: 'BB Delta',                ubs: fmtDeltaM(ubbM - abbM),      agent: '',        delta: true },
-    { metric: 'Effective Advance Rate',  ubs: f.ear,                       agent: fmtPct(agentEarF)    },
-    { metric: 'EAR Delta',               ubs: fmtDeltaPct(earF-agentEarF), agent: '',        delta: true },
-  ]
-}
+import { buildExecRows } from '../../utils/execSummary'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Certified',    desc: 'Shadow BB signed off for this cycle. Certificate submitted to agent.' },
@@ -76,7 +51,7 @@ export default function Dashboard() {
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
   const [error,            setError]            = useState<string | null>(null)
 
-  const selectedFacilityId = (selectedFacility as unknown as { id?: number })?.id ?? null
+  const selectedFacilityId = selectedFacility?.id ?? null
 
   useEffect(() => {
     if (!selectedFacilityId || mode === 'detecting') { setFacilityLPs([]); return }
@@ -137,7 +112,7 @@ export default function Dashboard() {
     },
     { label: 'Total LP Records',   value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
     { label: 'Pending LP Reviews', value: '—', sub: selectedFacility?.name ?? '', color: 'amber' },
-    { label: 'Last BB Run',        value: selectedFacility ? formatLastRun((selectedFacility as unknown as { lastRunAt?: string }).lastRunAt) : '—', sub: selectedFacility?.name ?? '',          color: 'green' },
+    { label: 'Last BB Run',        value: selectedFacility ? formatLastRun(selectedFacility.lastRunAt) : '—', sub: selectedFacility?.name ?? '',          color: 'green' },
   ]
 
   return (
@@ -203,7 +178,7 @@ export default function Dashboard() {
             {(() => {
               const f = selectedFacility
               const isOwner = f?.submittedBy === currentUser.name
-              const isPrivileged = currentUser.role === 'Supervisor' || currentUser.role === 'Admin'
+              const isPrivileged = currentUser.role === 'Supervisor'
               const canAct = isOwner || isPrivileged
 
               const ownerTag = f?.submittedBy ? (
@@ -218,13 +193,13 @@ export default function Dashboard() {
               ) : f?.status === 'Needs Review' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
-                  setActiveSubmissionId((f as any).latestSubmissionId ?? null)
+                  setActiveSubmissionId(f.latestSubmissionId ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>Review Submission ›</Button>
               ) : f?.status === 'In Progress' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
-                  setActiveSubmissionId((f as any).latestSubmissionId ?? null)
+                  setActiveSubmissionId(f.latestSubmissionId ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>View Submission ›</Button>
               ) : (f?.status === 'Not Started' || f?.status === 'Active') ? (

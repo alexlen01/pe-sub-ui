@@ -5,7 +5,7 @@ export default function Toast() {
   return (
     <>
       {toasts.map((t, i) => (
-        <div key={t.id} className="toast toast-enter" style={{ bottom: 24 + i * 52 }}>{t.msg}</div>
+        <div key={t.id} className={`toast toast-enter${t.variant === 'warning' ? ' toast-warning' : ''}`} style={{ bottom: 24 + i * 52 }}>{t.msg}</div>
       ))}
     </>
   )

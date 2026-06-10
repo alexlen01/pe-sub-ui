@@ -7,6 +7,15 @@ import { api } from '../../services/api'
 import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../../config/eligibilityConfig'
 import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
 
+interface EligibilityConfig {
+  BUSA_TIERS?:        RateTier[]
+  AGENT_TIERS?:       RateTier[]
+  AGENT_RATE_PARAMS?: typeof AGENT_RATE_PARAMS
+  ELIG_RULES?:        EligRule[]
+  CONC_LIMITS?:       ConcLimit[]
+  GLOBAL_SETTINGS?:   GlobalSetting[]
+}
+
 const RETENTION_OPTIONS = [1, 2, 3, 5, 7, 10, 15]
 
 const SNAPSHOT_FREQ_OPTIONS: Array<{ label: string; days: number }> = [
@@ -90,13 +99,14 @@ export default function Configuration() {
     setLoadError(null)
     if (!live) { setLoading(false); return }
     api.config.eligibility()
-      .then((result: any) => {
-        if (result.BUSA_TIERS)        setBusa(result.BUSA_TIERS)
-        if (result.AGENT_TIERS)       setAgentTiers(result.AGENT_TIERS)
-        if (result.AGENT_RATE_PARAMS) setAgentParams(result.AGENT_RATE_PARAMS)
-        if (result.ELIG_RULES)        setEligRules(result.ELIG_RULES)
-        if (result.CONC_LIMITS)       setConcLimits(result.CONC_LIMITS)
-        if (result.GLOBAL_SETTINGS)   setGlobalSettings(result.GLOBAL_SETTINGS)
+      .then((result: unknown) => {
+        const config = result as EligibilityConfig
+        if (config.BUSA_TIERS)        setBusa(config.BUSA_TIERS)
+        if (config.AGENT_TIERS)       setAgentTiers(config.AGENT_TIERS)
+        if (config.AGENT_RATE_PARAMS) setAgentParams(config.AGENT_RATE_PARAMS)
+        if (config.ELIG_RULES)        setEligRules(config.ELIG_RULES)
+        if (config.CONC_LIMITS)       setConcLimits(config.CONC_LIMITS)
+        if (config.GLOBAL_SETTINGS)   setGlobalSettings(config.GLOBAL_SETTINGS)
       })
       .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
