@@ -324,6 +324,11 @@ export default function Upload() {
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
       const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
+      if (sub.status === 'Error') {
+        setProcessing(false)
+        setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
+        return
+      }
       setActiveSubmission(facility)
       setActiveSubmissionId(sub.id)
       setActiveFacilityId(facilityId)

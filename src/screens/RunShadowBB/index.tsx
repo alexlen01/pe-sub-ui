@@ -189,11 +189,16 @@ export default function RunShadowBB() {
 
   // Once both submissionLPs and submissionDetails are available, apply saved overrides once.
   // Saved overrides win over freshly-computed defaults for any LP key that exists in both.
+  // Guard: only proceed when the saved keys overlap with the current LP keys — if
+  // submissionDetails resolves before the match-queue API call, submissionLPs still holds
+  // prototype data whose keys won't match the real saved keys, so we wait for real data.
   useEffect(() => {
     if (savedOverridesApplied.current) return
     if (submissionLPs.length === 0) return
     const saved = submissionDetails?.shadowBbOverrides
     if (!saved || Object.keys(saved).length === 0) return
+    const currentKeys = new Set(submissionLPs.map(lp => lp._key))
+    if (!Object.keys(saved).some(k => currentKeys.has(k))) return
     savedOverridesApplied.current = true
     setOverrides(prev => {
       const merged = { ...prev }
