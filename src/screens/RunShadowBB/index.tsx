@@ -97,6 +97,18 @@ export default function RunShadowBB() {
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
 
+  const handleAbort = async () => {
+    if (live && activeSubmissionId != null) {
+      try { await api.submissions.abort(activeSubmissionId) }
+      catch (e) { toast(`Abort failed: ${String(e)}`); return }
+    } else {
+      abortSubmission(activeSubmission ?? '')
+    }
+    setAbortOpen(false)
+    toast('Submission aborted.')
+    navigate('upload')
+  }
+
   useEffect(() => {
     if (mode === 'detecting') return
     setLoadError(null)
@@ -468,7 +480,7 @@ export default function RunShadowBB() {
     </div>
 
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
-      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('Submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
+      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
     </Modal>
     </>
