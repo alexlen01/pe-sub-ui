@@ -110,26 +110,37 @@ export async function getFacilities(live: boolean): Promise<FacilityRow[]> {
     const cur = latestById.get(s.facilityId)
     if (!cur || s.id > cur) latestById.set(s.facilityId, s.id)
   })
-  return facilities.map(f => ({
-    name:                 f.name,
-    agentBank:            f.agentBank,
-    status:               f.status,
-    lps:                  f.lpCount,
-    facilitySize:         '—',
-    ubsParticipation:     '—',
-    ubsParticipationRate: '—',
-    creditAgreementRef:   '—',
-    agentBB:              '—',
-    ubsBB:                '—',
-    delta:                '—',
-    ear:                  '—',
-    lastRun:              f.lastRunAt ? formatLastRun(f.lastRunAt) : '—',
-    step:                 null as number | null,
-    submittedBy:          null as string | null,
-    id:                   f.id,
-    lastRunAt:            f.lastRunAt,
-    latestSubmissionId:   latestById.get(f.id) ?? null,
-  })) as FacilityRow[]
+  // For navigation: find the latest in-Review submission per facility to get its wizard step.
+  const latestReviewById = new Map<number, { id: number; wizardStep: number }>()
+  submissions
+    .filter(s => s.status === 'Review')
+    .forEach(s => {
+      const cur = latestReviewById.get(s.facilityId)
+      if (!cur || s.id > cur.id) latestReviewById.set(s.facilityId, { id: s.id, wizardStep: s.wizardStep })
+    })
+  return facilities.map(f => {
+    const review = f.id != null ? latestReviewById.get(f.id) : undefined
+    return {
+      name:                 f.name,
+      agentBank:            f.agentBank,
+      status:               f.status,
+      lps:                  f.lpCount,
+      facilitySize:         '—',
+      ubsParticipation:     '—',
+      ubsParticipationRate: '—',
+      creditAgreementRef:   '—',
+      agentBB:              '—',
+      ubsBB:                '—',
+      delta:                '—',
+      ear:                  '—',
+      lastRun:              f.lastRunAt ? formatLastRun(f.lastRunAt) : '—',
+      step:                 review?.wizardStep ?? null,
+      submittedBy:          null as string | null,
+      id:                   f.id,
+      lastRunAt:            f.lastRunAt,
+      latestSubmissionId:   review?.id ?? latestById.get(f.id) ?? null,
+    }
+  }) as FacilityRow[]
 }
 
 export function getFacilityNames(): string[] { return _localGetFacilityNames() }
@@ -138,15 +149,16 @@ export async function getSubmissions(live: boolean): Promise<SubmissionRow[]> {
   if (!live) return _localGetSubmissions()
   const data = await api.submissions.list()
   return data.map(s => ({
-    id:        s.id,
-    facility:  s.facilityName || `Facility ${s.facilityId}`,
-    date:      new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    status:    s.status,
-    action:    s.status === 'Review' ? 'Resolve' : s.status === 'Error' ? 'Failed' : s.status === 'Aborted' ? '—' : 'View',
-    step:      1,
-    file:      s.fileName,
-    agentBank: s.agentBank,
-    notes:     s.notes ?? '',
+    id:         s.id,
+    facilityId: s.facilityId,
+    facility:   s.facilityName || `Facility ${s.facilityId}`,
+    date:       new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    status:     s.status,
+    action:     s.status === 'Review' ? 'Resolve' : s.status === 'Error' ? 'Failed' : s.status === 'Aborted' ? '—' : 'View',
+    step:       s.wizardStep,
+    file:       s.fileName,
+    agentBank:  s.agentBank,
+    notes:      s.notes ?? '',
   }))
 }
 

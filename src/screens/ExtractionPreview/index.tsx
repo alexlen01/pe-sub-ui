@@ -100,10 +100,10 @@ export default function ExtractionPreview() {
   const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
-  const [extracted,      setExtracted]    = useState<ExtractedRow[]>(EXTRACTED_LPS)
-  const [fieldMap,       setFieldMap]     = useState(EXTRACTION_FIELD_MAP)
-  const [docRec,         setDocRec]       = useState(DOC_RECOGNITION)
-  const [canonicals,     setCanonicals]   = useState(ALL_CANONICAL_FIELDS)
+  const [extracted,      setExtracted]    = useState<ExtractedRow[]>([])
+  const [fieldMap,       setFieldMap]     = useState<typeof EXTRACTION_FIELD_MAP>([])
+  const [docRec,         setDocRec]       = useState<typeof DOC_RECOGNITION>([])
+  const [canonicals,     setCanonicals]   = useState<typeof ALL_CANONICAL_FIELDS>([])
   const [confirmed,      setConfirmed]    = useState(false)
   const [abortOpen,      setAbortOpen]    = useState(false)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
@@ -112,9 +112,7 @@ export default function ExtractionPreview() {
   const [loadError,      setLoadError]    = useState<string | null>(null)
   const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
   const [containerWidth, setContainerWidth] = useState(Infinity)
-  const [unrecog, setUnrecog] = useState<UnrecogRow[]>(
-    UNRECOGNIZED_COLUMNS.map(c => ({ ...c, suggestedCanonical: '', dismissed: false }))
-  )
+  const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
 
   const layoutRef = useRef<HTMLDivElement>(null)
 

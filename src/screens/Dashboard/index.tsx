@@ -40,7 +40,7 @@ const CLS_SEGMENTS = [
 ]
 
 export default function Dashboard() {
-  const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, screen } = useApp()
+  const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, screen } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
   const [facilities,       setFacilities]       = useState<FacilityRow[]>([])
@@ -194,12 +194,14 @@ export default function Dashboard() {
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
                   setActiveSubmissionId(f.latestSubmissionId ?? null)
+                  setActiveFacilityId(f.id ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
-                }}>Review Submission ›</Button>
+                }}>View Submission ›</Button>
               ) : f?.status === 'In Progress' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
                   setActiveSubmissionId(f.latestSubmissionId ?? null)
+                  setActiveFacilityId(f.id ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>View Submission ›</Button>
               ) : (f?.status === 'Not Started' || f?.status === 'Active') ? (

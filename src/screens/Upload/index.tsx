@@ -43,9 +43,17 @@ const SUBMISSION_STATUS_ITEMS = [
 // ── Submission Detail Panel ───────────────────────────────────────────────────
 
 function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: SubmissionRow; onClose: () => void; navigate: (screen: string) => void; onAbort: (sub: SubmissionRow) => void }) {
+  const { setActiveSubmission, setActiveSubmissionId, setActiveFacilityId } = useApp()
   const labelStyle: React.CSSProperties = { fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }
   const valueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--text)' }
   const canAbort = sub.status !== 'Processed' && sub.status !== 'Aborted' && sub.status !== 'Cancelled'
+
+  const resumeSubmission = (screen: string) => {
+    if (sub.id != null)         setActiveSubmissionId(sub.id)
+    if (sub.facilityId != null) setActiveFacilityId(sub.facilityId)
+    setActiveSubmission(sub.facility)
+    navigate(screen)
+  }
   return (
     <Card
       title="Submission Detail"
@@ -84,7 +92,7 @@ function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: Submi
             <span style={{ fontSize: 12, color: 'var(--red)', fontStyle: 'italic', alignSelf: 'center' }}>Extraction failed — pe-sub-extraction was unreachable during processing.</span>
           )}
           {sub.status === 'Review' && (
-            <Button size="sm" onClick={() => navigate(sub.step === 4 ? 'match-queue' : sub.step === 5 ? 'run-shadow-bb' : 'extraction-preview')}>View Submission</Button>
+            <Button size="sm" onClick={() => resumeSubmission(sub.step === 4 ? 'match-queue' : sub.step === 5 ? 'run-shadow-bb' : 'extraction-preview')}>View Submission</Button>
           )}
           {sub.status === 'Processed' && (
             <Button size="sm" onClick={() => navigate('shadow-bb')}>View Shadow BB</Button>
@@ -316,6 +324,11 @@ export default function Upload() {
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
       const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
+      if (sub.status === 'Error') {
+        setProcessing(false)
+        setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
+        return
+      }
       setActiveSubmission(facility)
       setActiveSubmissionId(sub.id)
       setActiveFacilityId(facilityId)

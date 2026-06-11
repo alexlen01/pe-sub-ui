@@ -99,6 +99,7 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 export interface Submission {
   id: number; facilityId: number; facilityName: string; agentBank: string; periodMonth: string
   status: string; fileName: string; uploadedBy: number | null; notes: string | null
+  wizardStep: number; shadowBbOverrides: Record<string, unknown> | null
   createdAt: string; updatedAt: string
 }
 
@@ -220,6 +221,8 @@ export const api = {
       post<void>(`/api/submissions/${id}/abort`, {}),
     confirm: (id: number) =>
       post<{ templateSaved: boolean; agentBank: string }>(`/api/submissions/${id}/confirm`, {}),
+    saveShadowBbState: (id: number, overrides: Record<string, unknown> | null) =>
+      patch<Submission>(`/api/submissions/${id}/shadow-bb-state`, { overrides }),
   },
 
   // ── Extraction ────────────────────────────────────────────────────────────────

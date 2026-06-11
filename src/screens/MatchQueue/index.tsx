@@ -168,6 +168,19 @@ export default function MatchQueue() {
   const [allRejectedOpen, setAllRejectedOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  const handleAbort = async (msg = 'Submission aborted.') => {
+    if (live && activeSubmissionId != null) {
+      try { await api.submissions.abort(activeSubmissionId) }
+      catch (e) { toast(`Abort failed: ${String(e)}`); return }
+    } else {
+      abortSubmission(activeSubmission ?? '')
+    }
+    setAbortOpen(false)
+    setAllRejectedOpen(false)
+    toast(msg)
+    navigate('upload')
+  }
+
   useEffect(() => {
     if (mode === 'detecting') return
     setLoadError(null)
@@ -215,6 +228,9 @@ export default function MatchQueue() {
       setAllRejectedOpen(true)
     } else {
       toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed — loading submission summary…`)
+      if (live && activeSubmissionId) {
+        api.submissions.saveShadowBbState(activeSubmissionId, null).catch(() => {})
+      }
       navigate('run-shadow-bb')
     }
   }
@@ -284,11 +300,11 @@ export default function MatchQueue() {
       </div>
     </div>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
-      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('Submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
+      footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => handleAbort()}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
     </Modal>
     <Modal open={allRejectedOpen} onClose={() => setAllRejectedOpen(false)} title="All LPs Rejected" subtitle="No LP matches have been accepted — the submission cannot proceed."
-      footer={<><Button variant="secondary" onClick={() => setAllRejectedOpen(false)}>Review Decisions</Button><Button variant="danger" onClick={() => { abortSubmission(activeSubmission ?? ''); toast('All LPs rejected — submission aborted.'); navigate('upload') }}>Abort Submission</Button></>}>
+      footer={<><Button variant="secondary" onClick={() => setAllRejectedOpen(false)}>Review Decisions</Button><Button variant="danger" onClick={() => handleAbort('All LPs rejected — submission aborted.')}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Every LP in this submission has been rejected, so there is nothing to commit to LP Master. The submission will be permanently removed. You can re-upload the Agent BB to start over.</div>
     </Modal>
     </>
