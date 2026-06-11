@@ -170,11 +170,41 @@ export default function RunShadowBB() {
     Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)]))
   )
 
-  const setOverride = (key: string, field: keyof Override, value: unknown) =>
-    setOverrides(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
+  type FlashCol = 'highQuality' | 'ubsIncluded' | 'ubsBBCalc'
+  type FlashTracker = Record<string, Partial<Record<FlashCol, number>>>
+  const [flashKeys, setFlashKeys] = useState<FlashTracker>({})
 
-  const resetOverrides = () =>
+  const setOverride = (key: string, field: keyof Override, value: unknown) => {
+    const currentOv = overrides[key] ?? {} as Override
+    const newOv = { ...currentOv, [field]: value } as Override
+
+    const lp = submissionLPs.find(l => l._key === key)
+    if (lp) {
+      const commitM = (() => { const v = parseUCM(lp.capCommit); return typeof v === 'number' ? v : 0 })()
+      const oldC = calcRow(currentOv.ubsAdvRatePct, currentOv.concLimitPct, currentOv.ucM, commitM, totalCommitM, totalUncalledM)
+      const newC = calcRow(newOv.ubsAdvRatePct, newOv.concLimitPct, newOv.ucM, commitM, totalCommitM, totalUncalledM)
+
+      const changed: FlashCol[] = []
+      if (oldC.highQuality !== newC.highQuality) changed.push('highQuality')
+      if (oldC.ubsIncluded !== newC.ubsIncluded) changed.push('ubsIncluded')
+      if (Math.abs(oldC.ubsBBCalc - newC.ubsBBCalc) > 0.0001) changed.push('ubsBBCalc')
+
+      if (changed.length > 0) {
+        setFlashKeys(f => {
+          const rowFlash = { ...(f[key] ?? {}) }
+          for (const col of changed) rowFlash[col] = (rowFlash[col] ?? 0) + 1
+          return { ...f, [key]: rowFlash }
+        })
+      }
+    }
+
+    setOverrides(prev => ({ ...prev, [key]: newOv }))
+  }
+
+  const resetOverrides = () => {
     setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
+    setFlashKeys({})
+  }
 
   // Rebuild overrides whenever submissionLPs changes (matchQueue load or extractedMap arriving).
   // Safe because matchQueue + extractedMap both settle before users begin editing.
@@ -359,7 +389,7 @@ export default function RunShadowBB() {
                         </td>
 
                         {/* High Quality — UBS Adv Rate == 90% */}
-                        <td style={{ textAlign: 'center' }}><YesNo val={c.highQuality} /></td>
+                        <td key={`hq-${key}-${flashKeys[key]?.highQuality ?? 0}`} className={flashKeys[key]?.highQuality ? 'cell-flash' : undefined} style={{ textAlign: 'center' }}><YesNo val={c.highQuality} /></td>
 
                         {/* S&P */}
                         <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.sp || '—'}</td>
@@ -374,7 +404,7 @@ export default function RunShadowBB() {
                         <td className="num">{(lp.nav?.trim() || lp.aum?.trim()) || '—'}</td>
 
                         {/* UBS Included — UBS BB > 0 */}
-                        <td style={{ textAlign: 'center' }}><YesNo val={c.ubsIncluded} /></td>
+                        <td key={`inc-${key}-${flashKeys[key]?.ubsIncluded ?? 0}`} className={flashKeys[key]?.ubsIncluded ? 'cell-flash' : undefined} style={{ textAlign: 'center' }}><YesNo val={c.ubsIncluded} /></td>
 
                         {/* Commitment — read-only */}
                         <td className="num">{lp.capCommit || '—'}</td>
@@ -404,7 +434,7 @@ export default function RunShadowBB() {
                         </td>
 
                         {/* UBS BB — ubsEligUncalled × advRate */}
-                        <td className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
+                        <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
 
                       </tr>
                     )

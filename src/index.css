@@ -197,6 +197,8 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--blue); }
 .toast-exit     { animation: fadeOut .3s ease forwards; }
 @keyframes slideUp  { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeOut  { from { opacity: 1; } to { opacity: 0; } }
+@keyframes cellFlash { 0% { background: rgba(251,191,36,.45); } 65% { background: rgba(251,191,36,.18); } 100% { background: transparent; } }
+.cell-flash { animation: cellFlash 750ms ease-out forwards; }
 
 /* ── DonutChart ────────────────────────────────────────────── */
 .donut-wrap     { display: flex; align-items: center; gap: 20px; padding: 14px 18px; }
