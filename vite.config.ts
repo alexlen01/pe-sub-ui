@@ -21,12 +21,13 @@ export default defineConfig({
             proxyReq.setHeader('X-Forwarded-For', clientIp)
           })
           proxy.on('error', (_err: Error, _req: ClientRequest | IncomingMessage, res: ServerResponse) => {
-            // pe-sub-api is not running — return 503 so the browser fetch() gets a
-            // non-ok response and the service-layer catch() falls back to local data.
+            // pe-sub-api is not running or reset the connection mid-response.
+            // Always write a JSON body so the browser never receives a 200 with empty body
+            // (which causes "SyntaxError: Unexpected end of JSON input" in fetch().json()).
             if (!res.headersSent) {
               res.writeHead(503, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ error: 'API unavailable — using local fallback data' }))
             }
+            res.end(JSON.stringify({ error: 'API unavailable — using local fallback data' }))
           })
         },
       },

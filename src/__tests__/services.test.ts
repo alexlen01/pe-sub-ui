@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { getFacilities, getSubmissions, formatLastRun } from '../services/facilityService'
 import { getLPs, getLPById, lookupLPsByName } from '../services/lpService'
 import { LP_DATA } from '../data/lpData'
-import { FACILITIES } from '../data/facilityData'
+import { FACILITIES, SUBMISSIONS } from '../data/facilityData'
 
 // ── formatLastRun ─────────────────────────────────────────────────────────────
 
@@ -75,9 +75,10 @@ describe('getSubmissions — prototype mode', () => {
 
   it('rows are sorted most-recent first', async () => {
     const rows = await getSubmissions(false)
-    for (let i = 1; i < rows.length; i++) {
-      expect(rows[i - 1].date >= rows[i].date || rows[i - 1].facility <= rows[i].facility).toBe(true)
-    }
+    const expectedOrder = [...SUBMISSIONS]
+      .sort((a, b) => b.date.localeCompare(a.date) || a.facility.localeCompare(b.facility))
+      .map(s => s.facility)
+    expect(rows.map(r => r.facility)).toEqual(expectedOrder)
   })
 })
 

@@ -14,7 +14,7 @@ import { EXTRACTED_LPS } from '../../data/extractionData'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
-import type { Submission, AgentExtractedRow } from '../../services/api'
+import type { Submission, AgentExtractedRow, LpRate } from '../../services/api'
 
 function parseDollars(s: string): number {
   return parseInt((s ?? '').replace(/[$,]/g, ''), 10) || 0
@@ -96,6 +96,7 @@ export default function RunShadowBB() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
+  const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
 
   const handleAbort = async () => {
     if (live && activeSubmissionId != null) {
@@ -134,6 +135,14 @@ export default function RunShadowBB() {
       .catch(() => {})
   }, [live, activeSubmissionId])
 
+  // In live mode, fetch LP rates as-of the submission period (falls back to today if not yet loaded)
+  useEffect(() => {
+    if (!live) return
+    api.lps.rates(submissionDetails?.periodMonth ?? undefined)
+      .then(rates => setLpRates(new Map(rates.map(r => [r.lpName.toLowerCase(), r]))))
+      .catch(() => {})
+  }, [live, submissionDetails?.periodMonth])
+
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
     return matchQueue.map(mq => {
       const master = lpData.find(lp => lp.name === mq.masterName)
@@ -160,7 +169,9 @@ export default function RunShadowBB() {
   }, [lpData, matchQueue, extractedMap])
 
   const buildOverride = (lp: SubmissionLP): Override => {
-    const ext = extractedMap[(lp._agentName || lp.name || '').toLowerCase()]
+    const ext  = extractedMap[(lp._agentName || lp.name || '').toLowerCase()]
+    const rate = lpRates.get((lp.name || '').toLowerCase())
+               ?? lpRates.get((lp._agentName || '').toLowerCase())
     const toRating = (extracted: string | undefined, master: string | undefined) => {
       const v = extracted || master || ''
       return v !== 'NR' ? v : ''
@@ -170,9 +181,11 @@ export default function RunShadowBB() {
       sp:            toRating(ext?.sp,     lp.sp),
       mdy:           toRating(ext?.moodys, lp.mdy),
       fitch:         toRating(ext?.fitch,  lp.fitch),
-      ubsAdvRatePct: lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
+      ubsAdvRatePct: rate ? rate.ubsAdvRatePct * 100
+                          : lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
       agentRatePct:  parsePct(ext?.agentRate || lp.agentRate),
-      concLimitPct:  parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
+      concLimitPct:  rate ? rate.ubsConcLimitPct * 100
+                          : parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
       ucM:           parseUCM(lp.uc),
       inc:           deriveInc(lp.cls ?? '', lp._isNew, lp.inc),
     }
@@ -222,12 +235,13 @@ export default function RunShadowBB() {
   // Prevents the rebuild effect below from overwriting user edits after initial data load.
   const savedOverridesApplied = useRef(false)
 
-  // Rebuild overrides whenever submissionLPs changes (matchQueue load or extractedMap arriving).
-  // Safe because matchQueue + extractedMap both settle before users begin editing.
+  // Rebuild overrides whenever submissionLPs or lpRates changes.
+  // Safe because both settle before users begin editing in a session.
   useEffect(() => {
     if (savedOverridesApplied.current) return
     setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
-  }, [submissionLPs])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submissionLPs, lpRates])
 
   // Once both submissionLPs and submissionDetails are available, apply saved overrides once.
   // Saved overrides win over freshly-computed defaults for any LP key that exists in both.
@@ -339,6 +353,9 @@ export default function RunShadowBB() {
       setResult(patched)
       setRunning(false)
       toast('Shadow BB complete — 662 LPs · UBS BB $138.6M · Delta –$3.7M')
+      if (live && activeSubmissionId != null) {
+        api.submissions.complete(activeSubmissionId).catch(() => {})
+      }
     }, 2800)
   }
 
@@ -396,21 +413,24 @@ export default function RunShadowBB() {
             }
           >
             <div className="data-table-wrap">
-              <table className="data-table" style={{ minWidth: 1132 }}>
+              <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 160 }}>Investor Name</th>
-                    <th style={{ width: 72, textAlign: 'center' }}>High Quality</th>
-                    <th style={{ width: 60 }}>S&amp;P</th>
-                    <th style={{ width: 66 }}>Moody's</th>
+                    <th>Investor Name</th>
+                    <th style={{ width: 110, textAlign: 'center' }}>High Quality</th>
+                    <th style={{ width: 60, textAlign: 'center' }}>S&amp;P</th>
+                    <th style={{ width: 66, textAlign: 'center' }}>Moody's</th>
+                    <th style={{ width: 60, textAlign: 'center' }}>Fitch</th>
                     <th className="num" style={{ width: 86 }}>NAV/AUM</th>
-                    <th style={{ width: 80, textAlign: 'center' }}>UBS Included</th>
+                    <th style={{ width: 110, textAlign: 'center' }}>UBS Included</th>
                     <th className="num" style={{ width: 92 }}>Commitment</th>
                     <th className="num" style={{ width: 62 }}>Cmt. %</th>
-                    <th className="num" style={{ width: 96 }}>Uncalled Cap.</th>
-                    <th className="num" style={{ width: 90 }}>UBS Cont. Limit</th>
-                    <th className="num" style={{ width: 90 }}>UBS Adv Rate</th>
-                    <th className="num" style={{ width: 116 }}>UBS BB</th>
+                    <th className="num" style={{ width: 120 }}>UBS Cont. Limit</th>
+                    <th className="num" style={{ width: 147, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'help' }} title="UBS Eligible Uncalled Cap.">UBS Eligible Uncalled Cap.</th>
+                    <th className="num" style={{ width: 147, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'help' }} title="Included Uncalled Conc. Excess">Included Uncalled Conc. Excess</th>
+                    <th className="num" style={{ width: 86 }}>Agent Rate %</th>
+                    <th className="num" style={{ width: 110 }}>BUSA Rate %</th>
+                    <th className="num" style={{ width: 86 }}>UBS BB</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -426,11 +446,9 @@ export default function RunShadowBB() {
 
                         {/* Investor Name */}
                         <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>{lp.name ?? lp._agentName ?? '—'}</span>
-                              {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
-                            </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {(() => { const n = lp.name ?? lp._agentName ?? '—'; const trunc = n.length > 60; return <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }} title={trunc ? n : undefined}>{trunc ? n.slice(0, 60) + '…' : n}</span> })()}
+                            {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
                           </div>
                         </td>
 
@@ -443,6 +461,9 @@ export default function RunShadowBB() {
                         {/* Moody's */}
                         <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.mdy || '—'}</td>
 
+                        {/* Fitch */}
+                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.fitch || '—'}</td>
+
                         {/* NAV/AUM — show AUM when NAV is absent */}
                         <td className="num">{(lp.nav?.trim() || lp.aum?.trim()) || '—'}</td>
 
@@ -450,13 +471,10 @@ export default function RunShadowBB() {
                         <td key={`inc-${key}-${flashKeys[key]?.ubsIncluded ?? 0}`} className={flashKeys[key]?.ubsIncluded ? 'cell-flash' : undefined} style={{ textAlign: 'center' }}><YesNo val={c.ubsIncluded} /></td>
 
                         {/* Commitment — read-only */}
-                        <td className="num">{lp.capCommit || '—'}</td>
+                        <td className="num">{commitM > 0 ? fmtM(commitM) : '—'}</td>
 
                         {/* Cmt. % — LP commitment / total commitment */}
                         <td className="num">{fmtPct(c.cmtPct)}</td>
-
-                        {/* Uncalled Capital — read-only */}
-                        <td className="num">{lp.uc || '—'}</td>
 
                         {/* UBS Cont. Limit — editable % */}
                         <td style={{ textAlign: 'right' }}>
@@ -467,7 +485,16 @@ export default function RunShadowBB() {
                           </div>
                         </td>
 
-                        {/* UBS Adv Rate — editable % */}
+                        {/* UBS Eligible Uncalled Cap. */}
+                        <td className="num">{fmtM(c.ubsEligUncalled)}</td>
+
+                        {/* Included Uncalled Conc. Excess — excess above conc limit for included LPs */}
+                        <td className={`num ${c.inclExcess > 0 ? 'zero' : ''}`}>{fmtM(c.inclExcess)}</td>
+
+                        {/* Agent Rate % — read-only from extraction */}
+                        <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : '—'}</td>
+
+                        {/* BUSA Rate % — editable % */}
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                             <input type="number" value={ov.ubsAdvRatePct ?? ''} onChange={e => setOverride(key, 'ubsAdvRatePct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running}

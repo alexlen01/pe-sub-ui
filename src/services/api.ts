@@ -10,7 +10,9 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
-  return res.json() as Promise<T>
+  const text = await res.text()
+  if (!text) throw new Error(`GET ${path} returned empty response`)
+  return JSON.parse(text) as T
 }
 
 async function extractApiError(res: Response, fallback: string): Promise<string> {
@@ -124,6 +126,15 @@ export interface DocRecognition {
   headerInfo: string
 }
 
+export interface LpRate {
+  lpId: number
+  lpName: string
+  classification: string
+  ubsAdvRatePct: number    // decimal fraction e.g. 0.9 = 90%
+  ubsConcLimitPct: number  // decimal fraction e.g. 0.075 = 7.5%
+  effectiveDate: string    // ISO date YYYY-MM-DD
+}
+
 export interface AliasEntry { id: number; text: string; tier: string; bank: string | null }
 
 export interface AliasGroup {
@@ -176,6 +187,8 @@ export const api = {
       patch<LP>(`/api/lps/${id}`, data),
     lookup: (name: string) =>
       get<LP[]>(`/api/lps/lookup${qs({ name })}`),
+    rates: (effectiveDate?: string) =>
+      get<LpRate[]>(`/api/lps/rates${qs({ effective_date: effectiveDate })}`),
   },
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────
@@ -223,6 +236,8 @@ export const api = {
       post<{ templateSaved: boolean; agentBank: string }>(`/api/submissions/${id}/confirm`, {}),
     saveShadowBbState: (id: number, overrides: Record<string, unknown> | null) =>
       patch<Submission>(`/api/submissions/${id}/shadow-bb-state`, { overrides }),
+    complete: (id: number) =>
+      post<Submission>(`/api/submissions/${id}/complete`, {}),
   },
 
   // ── Extraction ────────────────────────────────────────────────────────────────

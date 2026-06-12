@@ -40,9 +40,11 @@ export const BUSA_TIERS: RateTier[] = [
 ]
 
 export const AGENT_TIERS: RateTier[] = [
-  { cls: 'Investment Grade', rate: 95 },
-  { cls: 'Non-IG Eligible',  rate: 75 },
-  { cls: 'Excluded',         rate:  0 },
+  { cls: 'Rated',              rate: 90 },
+  { cls: 'Unrated AUM >$2bn',  rate: 75 },
+  { cls: 'Unrated AUM $1-2bn', rate: 65 },
+  { cls: 'Eligible <$1bn',     rate: 50 },
+  { cls: 'Excluded',           rate:  0 },
 ]
 
 export const AGENT_RATE_PARAMS: Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }> = [

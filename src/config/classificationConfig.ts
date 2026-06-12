@@ -33,10 +33,10 @@ export const BUSA_RATE_MAP: Record<string, string> = {
 
 // Agent bank advance rates by LP classification
 export const AGENT_RATE_MAP: Record<string, string> = {
-  'Rated':          '95%',
+  'Rated':          '90%',
   'Unrated >2bn':   '75%',
-  'Unrated 1–2bn':  '75%',
-  'Eligible':       '',
+  'Unrated 1–2bn':  '65%',
+  'Eligible':       '50%',
   'Excluded':       '0%',
 }
 

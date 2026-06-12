@@ -95,7 +95,7 @@ export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PA
     const nonUSPct = included.filter(r => r.region !== 'North America').reduce((s,r) => s+r.ubbM, 0) / totalUBB
     if (nonUSPct > 0.30) breaches.push({ rule: 'Non-US LP Concentration', entity: 'Non-US LPs', value: fmtPct(nonUSPct), limit: '30%', severity: 'breach' })
   }
-  return { lps: computed, summary: { totalUBB, totalABB, bbDelta, ear, agentEar, earDelta: ear - agentEar, totalUEC, totalUC, totalConcExcess: computed.reduce((s,r) => s+r.concExcessM, 0), includedCount: computed.filter(r => r.cls !== 'Excluded').length, excludedCount: computed.filter(r => r.cls === 'Excluded').length, reclassCount: computed.filter(r => r.rcl).length, calculatedAt: new Date(), params }, breaches }
+  return { lps: computed, summary: { totalUBB, totalABB, bbDelta, ear, agentEar, earDelta: ear - agentEar, totalUEC, totalUC, totalConcExcess: computed.reduce((s,r) => s+r.concExcessM, 0), includedCount: included.length, excludedCount: computed.filter(r => r.cls === 'Excluded').length, reclassCount: computed.filter(r => r.rcl).length, calculatedAt: new Date(), params }, breaches }
 }
 
 // ── Selector functions (API-first) ────────────────────────────────────────────

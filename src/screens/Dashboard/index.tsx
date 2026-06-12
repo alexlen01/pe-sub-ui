@@ -76,7 +76,7 @@ export default function Dashboard() {
     if (screen !== 'dashboard' || mode === 'detecting') return
     load()
     if (!live) return
-    const interval = setInterval(load, 20_000)
+    const interval = setInterval(load, 30_000)
     return () => clearInterval(interval)
   }, [screen, mode])
 
