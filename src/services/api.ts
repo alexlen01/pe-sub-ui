@@ -15,6 +15,16 @@ async function get<T>(path: string): Promise<T> {
   return JSON.parse(text) as T
 }
 
+// For endpoints where the API signals "no data yet" with 204 / an empty body.
+async function getOrNull<T>(path: string): Promise<T | null> {
+  const res = await fetch(`${BASE}${path}`)
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+  if (res.status === 204) return null
+  const text = await res.text()
+  if (!text) return null
+  return JSON.parse(text) as T
+}
+
 async function extractApiError(res: Response, fallback: string): Promise<string> {
   try {
     const json = await res.clone().json()
@@ -97,6 +107,19 @@ export interface RateBreakdownRow { rate: string; count: number; dollars: number
 export interface ClassBreakdownRow { label: string; count: number; dollars: number; pct: number }
 
 export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: number; earDelta: number }
+
+/** Mirrors CommitBbRequest.CommitLpRow on the Java side. All fields from BB_PROCESS_FLOW Step 4. */
+export interface CommitLpRow {
+  name: string; parent: string | null; spv: boolean; hq: boolean
+  type: string; region: string; ig: boolean; cls: string
+  sp: string; mdy: string; fitch: string
+  aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
+  capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
+  uc: string | null; pctUncalled: string | null; pctCalled: string | null
+  agentConc: string | null; ubsConc: string | null
+  agentRate: string | null; abb: string | null
+  inc: boolean; rcl: boolean; notes: string | null
+}
 
 export interface Submission {
   id: number; facilityId: number; facilityName: string; agentBank: string; periodMonth: string
@@ -193,12 +216,12 @@ export const api = {
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────
   bb: {
-    run: (facilityId: number) =>
-      post<BBSnapshot>(`/api/bb/run/${facilityId}`),
+    run: (facilityId: number, lps?: CommitLpRow[]) =>
+      post<BBSnapshot>(`/api/bb/run/${facilityId}`, lps ? { lps } : undefined),
     snapshots: (facilityId: number) =>
       get<BBSnapshot[]>(`/api/bb/snapshots/${facilityId}`),
     latestSnapshot: (facilityId: number) =>
-      get<BBSnapshot>(`/api/bb/snapshots/${facilityId}/latest`),
+      getOrNull<BBSnapshot>(`/api/bb/snapshots/${facilityId}/latest`),
     summaryExt: (facilityId: number) =>
       get<BBSummaryExt>(`/api/bb/summary-ext/${facilityId}`),
   },

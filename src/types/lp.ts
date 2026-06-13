@@ -40,6 +40,8 @@ export interface LP {
   delta: string
   // Uncalled Eligible Capital
   uec: string
+  // Agent classification (may differ from UBS cls)
+  agentCls?: string
   // Status
   inc: boolean
   rcl: boolean

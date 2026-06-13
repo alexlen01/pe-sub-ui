@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { getFacilityBBSnapshot } from '../services/bbCalculationService'
+import { api } from '../services/api'
+import type { CommitLpRow } from '../services/api'
 import { getFacilities, getSubmissions, formatLastRun } from '../services/facilityService'
 import { getLPs, getLPById, lookupLPsByName } from '../services/lpService'
 import { LP_DATA } from '../data/lpData'
@@ -132,5 +135,92 @@ describe('lookupLPsByName — prototype mode', () => {
   it('returns empty array for no match', async () => {
     const results = await lookupLPsByName(false, 'ZZZNOMATCH_XYZ')
     expect(results).toHaveLength(0)
+  })
+})
+
+// ── getFacilityBBSnapshot (live mode, mocked fetch) ───────────────────────────
+
+describe('getFacilityBBSnapshot — live mode', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns the snapshot summary when the API has a snapshot', async () => {
+    const summary = { totalUBB: 410.2, totalABB: 455.7, includedCount: 42 }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ facilityId: 1, result: { summary } }), { status: 200 })
+    ))
+    const result = await getFacilityBBSnapshot(true, 1)
+    expect(result).toEqual(summary)
+  })
+
+  it('returns null when the API responds 204 (no snapshot yet)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    await expect(getFacilityBBSnapshot(true, 1)).resolves.toBeNull()
+  })
+
+  it('returns null when the API responds 200 with an empty body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })))
+    await expect(getFacilityBBSnapshot(true, 1)).resolves.toBeNull()
+  })
+
+  it('throws on a non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 500 })))
+    await expect(getFacilityBBSnapshot(true, 1)).rejects.toThrow('500')
+  })
+
+  it('returns null in prototype mode without calling the API', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    await expect(getFacilityBBSnapshot(false, 1)).resolves.toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ── api.bb.run — LP commit payload ────────────────────────────────────────────
+
+describe('api.bb.run — LP commit', () => {
+  const snapshot = { id: 7, facilityId: 1, calculatedAt: '2026-06-12T21:00:00', result: { lps: [], summary: { totalUBB: 120.5 }, breaches: [] } }
+
+  const lp: CommitLpRow = {
+    name: 'CalPERS', parent: null, spv: false, hq: true,
+    type: 'Institutional', region: 'North America', ig: true, cls: 'Rated',
+    sp: 'AAA', mdy: 'Aaa', fitch: '',
+    aum: '$500.0B', nav: null, pension: null, pensionFunded: null,
+    capCommit: '$20.0M', pctCapCommit: null, calledCap: '$14.0M',
+    uc: '$20.0M', pctUncalled: null, pctCalled: null,
+    agentConc: '7.5%', ubsConc: '$25.0M', agentRate: '95.0%', abb: '$19.0M',
+    inc: true, rcl: false, notes: null,
+  }
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('POSTs LP array in request body and returns snapshot', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 201 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await api.bb.run(1, [lp])
+    expect(result.id).toBe(7)
+
+    const call = fetchSpy.mock.calls[0] as [string, RequestInit]
+    expect(call[0]).toBe('/api/bb/run/1')
+    expect(call[1].method).toBe('POST')
+    const body = JSON.parse(call[1].body as string) as { lps: CommitLpRow[] }
+    expect(body.lps).toHaveLength(1)
+    expect(body.lps[0].name).toBe('CalPERS')
+    expect(body.lps[0].ubsConc).toBe('$25.0M')
+  })
+
+  it('POSTs with no body when no LPs provided', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 201 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await api.bb.run(1)
+
+    const call = fetchSpy.mock.calls[0] as [string, RequestInit]
+    expect(call[1].body).toBeUndefined()
+  })
+
+  it('throws on API error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })))
+    await expect(api.bb.run(1, [lp])).rejects.toThrow('500')
   })
 })

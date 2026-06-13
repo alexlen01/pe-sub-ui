@@ -18,9 +18,10 @@ export const ALIAS_GROUPS = [
       ],
     },
     {
-      id: 2, canonical: 'LP Classification',
-      lpMasterField: 'Identity & Classification - LP Classification',
-      disambiguation: "Extract the Agent's own category label as-is", isDerived: false,
+      id: 2, canonical: 'Agent LP Classification',
+      lpMasterField: 'Identity & Classification - Agent LP Classification',
+      disambiguation: "The Agent's own classification label, taken verbatim from the Agent BB document. May be a column OR group-header rows that separate sections of LPs (e.g. \"Rated Included\", \"Designated PWM\"); section rows are filled down onto every LP beneath the header. Standard values: Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 Designated, Aggregate Designated PWM. Do not normalise to the UBS tier.",
+      isDerived: false,
       aliases: [
         { id:7,  text:'LP Type',          tier:'Core', bank:null },
         { id:8,  text:'Investor Type',    tier:'Core', bank:null },
@@ -30,6 +31,17 @@ export const ALIAS_GROUPS = [
         { id:12, text:'LP Classification',tier:'Core', bank:null },
         { id:13, text:'Entity Type',      tier:'Bank', bank:'BNY' },
         { id:14, text:'Investor Class',   tier:'Bank', bank:'JPM' },
+      ],
+    },
+    {
+      id: 30, canonical: 'UBS LP Classification',
+      lpMasterField: 'Identity & Classification - UBS LP Classification',
+      disambiguation: 'UBS internal advance-rate tier computed by the platform (Rated, Unrated >2bn, Unrated 1–2bn, Eligible, Excluded). Derived from ratings, AUM, and eligibility — not extracted from the agent document. Captured so the agent label can be cross-checked against the UBS tier.',
+      isDerived: true,
+      aliases: [
+        { id:128, text:'UBS Classification',      tier:'Core', bank:null },
+        { id:129, text:'UBS Tier',                tier:'Core', bank:null },
+        { id:130, text:'Internal Classification', tier:'Core', bank:null },
       ],
     },
     {

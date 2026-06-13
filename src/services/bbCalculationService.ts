@@ -36,7 +36,8 @@ export const DEFAULT_FACILITY_PARAMS = { concLimitM: 25.0 }
 export interface ComputedLPRecord extends LPRecord {
   ucM: number; abbM: number; uecM: number; ubbM: number; deltaM: number
   concExcessM: number; busaRate: number; highQuality: boolean; navAumRatio: string
-  uec: string; ubb: string; delta: string; rate: string
+  agentExcessM: number
+  uec: string; ubb: string; delta: string; rate: string; agentExcess: string
 }
 
 export interface BBSummary {
@@ -65,6 +66,7 @@ export function computeLPRecord(lp: LPRecord, params = DEFAULT_FACILITY_PARAMS):
   const deltaM = ubbM - abbM
   return {
     ...lp, ucM, abbM, uecM, ubbM, deltaM, concExcessM, busaRate, highQuality, navAumRatio,
+    agentExcessM: 0, agentExcess: '—',
     uec:   excluded ? '$0' : fmtM(uecM),
     ubb:   fmtM(ubbM),
     delta: fmtM(deltaM),
@@ -74,7 +76,16 @@ export function computeLPRecord(lp: LPRecord, params = DEFAULT_FACILITY_PARAMS):
 }
 
 export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PARAMS): BBResult {
-  const computed = lps.map(lp => computeLPRecord(lp, params))
+  const raw = lps.map(lp => computeLPRecord(lp, params))
+  const totalAllUC = raw.reduce((s, r) => s + r.ucM, 0)
+  const computed = raw.map(lp => {
+    const pctStr = lp.agentConc ?? ''
+    const rawPct = parseFloat(pctStr) || 0
+    const agentConcPct = pctStr.includes('%') ? rawPct / 100 : rawPct
+    const agentConcLimitM = agentConcPct > 0 ? totalAllUC * agentConcPct : 0
+    const agentExcessM = agentConcLimitM > 0 ? Math.max(0, lp.ucM - agentConcLimitM) : 0
+    return { ...lp, agentExcessM, agentExcess: agentExcessM > 0 ? fmtM(agentExcessM) : '—' }
+  })
   const included = computed.filter(r => r.inc && r.cls !== 'Excluded')
   const totalUBB = included.reduce((s, r) => s + r.ubbM, 0)
   const totalABB = computed.reduce((s, r) => s + r.abbM, 0)
@@ -105,7 +116,7 @@ export function getBusaRates() { return BUSA_RATES }
 export async function getFacilityBBSnapshot(live: boolean, facilityId: number): Promise<Record<string, unknown> | null> {
   if (!live) return null
   const snapshot = await api.bb.latestSnapshot(facilityId)
-  return (snapshot.result?.summary as unknown as Record<string, unknown>) ?? null
+  return (snapshot?.result?.summary as unknown as Record<string, unknown>) ?? null
 }
 
 export async function getFacilitySummaryExt(live: boolean, facilityId: number): Promise<BBSummaryExt | null> {

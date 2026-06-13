@@ -339,7 +339,7 @@ export default function ExtractionPreview() {
                 <thead>
                   <tr>
                     <th style={{ width: 300 }}>Investor Name</th>
-                    <th style={{ width: 130 }}>LP Classification</th>
+                    <th style={{ width: 130 }}>Agent LP Classification</th>
                     <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
                     <th style={{ width: 120, textAlign: 'right' }}>Uncalled</th>
                     <th style={{ width: 68, textAlign: 'right' }}>AUM</th>

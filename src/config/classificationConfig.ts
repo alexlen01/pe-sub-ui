@@ -1,8 +1,28 @@
 // LP classification options, rate maps, and qualifying criteria.
 // Single source of truth used by LPMaster, Configuration, Reports, and matching screens.
+//
+// Two distinct classification axes:
+//   • UBS LP Classification  (CLS_OPTS)        — UBS's internal advance-rate tier,
+//     computed by the platform from ratings / AUM / eligibility.
+//   • Agent LP Classification (AGENT_CLS_OPTS) — the agent's own category label, taken
+//     verbatim from the Agent BB document (column or group-header section rows).
 
 export const CLS_OPTS = ['', 'Rated', 'Unrated >2bn', 'Unrated 1–2bn', 'Eligible', 'Excluded'] as const
 export type ClsOpt = typeof CLS_OPTS[number]
+
+// Agent LP Classification — standard agent taxonomy values. Extracted as-is; never
+// normalised to the UBS tier. Agent BB templates may present these as a column or as
+// group-header rows separating sections of LPs.
+export const AGENT_CLS_OPTS = [
+  '',
+  'Rated Included',
+  'Non-Rated Included',
+  'Designated Institutional',
+  'Designated PWM',
+  'Largest 5 Designated',
+  'Aggregate Designated PWM',
+] as const
+export type AgentClsOpt = typeof AGENT_CLS_OPTS[number]
 
 export const REGION_OPTS = ['North America', 'Europe', 'Asia-Pacific', 'Middle East', 'Other'] as const
 export type RegionOpt = typeof REGION_OPTS[number]

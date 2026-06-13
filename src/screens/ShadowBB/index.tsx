@@ -70,10 +70,10 @@ function SummaryBreakTable({ title, rows, labelHeader = 'Rate' }: { title: strin
 }
 
 const BB_COLUMN_ITEMS = [
-  { label: 'UBS Elig. Uncalled',  desc: "MIN(LP's Uncalled Capital, $25M per-LP concentration limit). This is the base for the UBS BB calculation." },
-  { label: 'Conc. Excess',        desc: 'Uncalled capital above the $25M per-LP cap. This portion is not counted in the borrowing base.' },
-  { label: 'BUSA Rate',           desc: 'Advance rate applied to UBS Eligible Uncalled: Rated 90% · Unrated >$2bn 75% · Unrated $1–2bn 65% · Eligible 50% · Excluded 0%.' },
-  { label: 'Incl.',               desc: 'Y = LP meets eligibility criteria and is counted in the UBS BB. N = LP is excluded (Excluded classification or failed eligibility test).' },
+  { label: 'UBS Rate',       desc: 'UBS (BUSA) advance rate applied to eligible uncalled capital: Rated 90% · Unrated >$2bn 75% · Unrated $1–2bn 65% · Eligible 50% · Excluded 0%.' },
+  { label: 'Agent Rate',     desc: 'Advance rate assigned by the facility Agent. Typically 95% for highly-rated LPs, lower for others.' },
+  { label: 'UBS Excess',     desc: 'Uncalled capital above the UBS per-LP concentration limit ($25M). This portion is excluded from the UBS Borrowing Base.' },
+  { label: 'Agent Excess',   desc: 'Uncalled capital above the Agent concentration limit (Agent Conc. % × total fund uncalled). Represents the amount the Agent would not count toward its BB.' },
 ]
 
 const SECTION_KEYS = ['Identity & Classification','Ratings','Financial Scale','Borrowing Base Inputs','Commitment Data','Uncalled / Eligible Capital','Concentration & BB','Notes']
@@ -93,13 +93,13 @@ function LPDetailPanel({ lp, onClose }: { lp: ComputedLPRecord; onClose: () => v
   const na = (v: string | undefined | null) => v || '—'
   const toggle = (s: string) => setOpen(o => ({ ...o, [s]: !o[s] }))
   const sections = [
-    { title: 'Identity & Classification', rows: [{ k: 'Investor Name', v: lp.name ?? '—' }, { k: 'Rank', v: String(lp.rank ?? '—') }, { k: 'LP Classification', v: lp.cls ?? '—' }, { k: 'Parent', v: na(lp.parent) }, { k: 'SPV', v: yn(lp.spv) }, { k: 'Institutional vs HNW', v: lp.type ?? '—' }, { k: 'Region / Location', v: lp.region ?? '—' }, { k: 'HQ', v: yn(lp.hq) }, { k: 'Investment Grade', v: yn(lp.ig) }] },
+    { title: 'Identity & Classification', rows: [{ k: 'Investor Name', v: lp.name ?? '—' }, { k: 'Rank', v: String(lp.rank ?? '—') }, { k: 'UBS LP Classification', v: lp.cls ?? '—' }, { k: 'Agent LP Classification', v: lp.agentCls ?? '—' }, { k: 'Parent', v: na(lp.parent) }, { k: 'SPV', v: yn(lp.spv) }, { k: 'Institutional vs HNW', v: lp.type ?? '—' }, { k: 'Region / Location', v: lp.region ?? '—' }, { k: 'HQ', v: yn(lp.hq) }, { k: 'Investment Grade', v: yn(lp.ig) }] },
     { title: 'Ratings', rows: [{ k: 'S&P', v: (lp.sp && lp.sp !== 'NR') ? lp.sp : '—' }, { k: "Moody's", v: (lp.mdy && lp.mdy !== 'NR') ? lp.mdy : '—' }, { k: 'Fitch', v: (lp.fitch && lp.fitch !== 'NR') ? lp.fitch : '—' }] },
-    { title: 'Financial Scale', rows: [{ k: 'AUM', v: na(lp.aum) }, { k: 'NAV', v: na(lp.nav) }, { k: 'Pension Assets', v: na(lp.pension) }, { k: 'Pension Funded %', v: na(lp.pensionFunded) }] },
+    { title: 'Financial Scale', rows: [{ k: 'LP Size ($B)', v: lp.aum || lp.nav || '—' }, { k: 'Size Criteria', v: lp.aum ? 'AUM' : lp.nav ? 'NAV' : '—' }, { k: 'AUM', v: na(lp.aum) }, { k: 'NAV', v: na(lp.nav) }, { k: 'Pension Assets', v: na(lp.pension) }, { k: 'Pension Funded %', v: na(lp.pensionFunded) }] },
     { title: 'Borrowing Base Inputs', rows: [{ k: 'UBS Advance Rate', v: lp.rate ?? '—' }, { k: 'Agent Advance Rate', v: na(lp.agentRate) }] },
     { title: 'Commitment Data', rows: [{ k: 'Capital Commitments', v: na(lp.capCommit) }, { k: '% of Capital Commitments', v: na(lp.pctCapCommit) }, { k: 'Called Capital', v: na(lp.calledCap) }] },
     { title: 'Uncalled / Eligible Capital', rows: [{ k: 'Uncalled Capital', v: lp.uc ?? '—' }, { k: '% of Uncalled', v: na(lp.pctUncalled) }, { k: '% of LP Called', v: na(lp.pctCalled) }] },
-    { title: 'Concentration & BB', rows: [{ k: 'Agent Concentration Limit', v: na(lp.agentConc) }, { k: 'UBS Concentration Limit', v: na(lp.ubsConc) }, { k: 'Agent Borrowing Base', v: lp.abb ?? '$0' }, { k: 'UBS Borrowing Base', v: lp.ubb ?? '$0' }] },
+    { title: 'Concentration & BB', rows: [{ k: 'Agent Concentration Limit', v: na(lp.agentConc) }, { k: 'UBS Concentration Limit', v: na(lp.ubsConc) }, { k: 'Agent Excess Concentration', v: lp.agentExcess }, { k: 'UBS Excess Concentration', v: lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—' }, { k: 'Agent Borrowing Base', v: lp.abb ?? '$0' }, { k: 'UBS Borrowing Base', v: lp.ubb ?? '$0' }] },
     ...(lp.notes ? [{ title: 'Notes', rows: [{ k: null as string | null, v: lp.notes }] }] : []),
   ]
   return (
@@ -297,26 +297,107 @@ export default function ShadowBB() {
           <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
             action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => toast('Shadow BB exported to Excel.')}>↓ Export</Button></div>}>
             <div className="data-table-wrap">
-              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 940 }}>
-                <colgroup><col style={{ width: 220 }} /><col style={{ width: 110 }} /><col style={{ width: 85 }} /><col style={{ width: 85 }} /><col style={{ width: 85 }} /><col style={{ width: 60 }} /><col style={{ width: 80 }} /><col style={{ width: 80 }} /><col style={{ width: 80 }} /><col style={{ width: 55 }} /></colgroup>
+              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 2210 }}>
+                <colgroup>
+                  <col style={{ width: 40 }} />{/* # */}
+                  <col style={{ width: 170 }} />{/* Investor Name */}
+                  <col style={{ width: 110 }} />{/* Parent */}
+                  <col style={{ width: 40 }} />{/* SPV */}
+                  <col style={{ width: 105 }} />{/* UBS Classification */}
+                  <col style={{ width: 80 }} />{/* Inst/HNW */}
+                  <col style={{ width: 60 }} />{/* Inv. Grade? */}
+                  <col style={{ width: 105 }} />{/* Agent Classification */}
+                  <col style={{ width: 50 }} />{/* S&P */}
+                  <col style={{ width: 55 }} />{/* Moody's */}
+                  <col style={{ width: 50 }} />{/* Fitch */}
+                  <col style={{ width: 80 }} />{/* LP Size ($B) */}
+                  <col style={{ width: 70 }} />{/* Size Criteria */}
+                  <col style={{ width: 60 }} />{/* UBS Rate */}
+                  <col style={{ width: 65 }} />{/* Agent Rate */}
+                  <col style={{ width: 90 }} />{/* Cap. Commit. */}
+                  <col style={{ width: 85 }} />{/* Uncalled */}
+                  <col style={{ width: 80 }} />{/* Agent Conc. Limit */}
+                  <col style={{ width: 75 }} />{/* UBS Conc. Limit */}
+                  <col style={{ width: 70 }} />{/* % of Commit. */}
+                  <col style={{ width: 80 }} />{/* Called Cap. */}
+                  <col style={{ width: 70 }} />{/* % Uncalled */}
+                  <col style={{ width: 65 }} />{/* % LP Called */}
+                  <col style={{ width: 80 }} />{/* Agent Excess */}
+                  <col style={{ width: 80 }} />{/* UBS Excess */}
+                  <col style={{ width: 80 }} />{/* Agent BB */}
+                  <col style={{ width: 80 }} />{/* UBS BB */}
+                  <col style={{ width: 110 }} />{/* Notes */}
+                </colgroup>
                 <thead>
-                  <tr><th>Investor Name</th><th>Classification</th><th className="num">Uncalled</th><th className="num">UBS Eligible</th><th className="num">Conc. Excess</th><th className="num">Rate</th><th className="num">UBS BB</th><th className="num">Agent BB</th><th className="num">Delta</th><th style={{ textAlign: 'center' }}>Incl.</th></tr>
+                  <tr>
+                    <th className="num">#</th>
+                    <th>Investor Name</th>
+                    <th>Parent</th>
+                    <th style={{ textAlign: 'center' }}>SPV</th>
+                    <th>UBS Classification</th>
+                    <th>Inst/HNW</th>
+                    <th style={{ textAlign: 'center' }}>Inv. Grade?</th>
+                    <th>Agent Classification</th>
+                    <th className="num">S&P</th>
+                    <th className="num">Moody's</th>
+                    <th className="num">Fitch</th>
+                    <th className="num">LP Size ($B)</th>
+                    <th style={{ textAlign: 'center' }}>Size Criteria</th>
+                    <th className="num">UBS Rate</th>
+                    <th className="num">Agent Rate</th>
+                    <th className="num">Cap. Commit.</th>
+                    <th className="num">Uncalled</th>
+                    <th className="num">Agent Conc. Limit</th>
+                    <th className="num">UBS Conc. Limit</th>
+                    <th className="num">% of Commit.</th>
+                    <th className="num">Called Cap.</th>
+                    <th className="num">% Uncalled</th>
+                    <th className="num">% LP Called</th>
+                    <th className="num">Agent Excess</th>
+                    <th className="num">UBS Excess</th>
+                    <th className="num">Agent BB</th>
+                    <th className="num">UBS BB</th>
+                    <th>Notes</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((lp, i) => (
-                    <tr key={i} onClick={() => setSelectedLP(lp as ComputedLPRecord)} style={{ cursor: 'pointer', background: selectedLP === lp ? 'var(--blue-lt)' : undefined }}>
-                      <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}</td>
-                      <td><Tag>{lp.cls}</Tag></td>
-                      <td className="num">{lp.uc}</td>
-                      <td className="num">{(lp as ComputedLPRecord).uec}</td>
-                      <td className={`num ${(lp as ComputedLPRecord).concExcessM > 0 ? 'neg' : 'zero'}`}>{(lp as ComputedLPRecord).concExcessM > 0 ? fmtM((lp as ComputedLPRecord).concExcessM) : '—'}</td>
-                      <td className="num">{(lp as ComputedLPRecord).rate}</td>
-                      <td className={`num ${(lp as ComputedLPRecord).ubbM === 0 ? 'zero' : ''}`}>{(lp as ComputedLPRecord).ubb}</td>
-                      <td className={`num ${(lp as ComputedLPRecord).abbM === 0 ? 'zero' : ''}`}>{lp.abb}</td>
-                      <td className={`num ${(lp as ComputedLPRecord).deltaM < 0 ? 'neg' : (lp as ComputedLPRecord).deltaM === 0 ? 'zero' : ''}`}>{(lp as ComputedLPRecord).delta}</td>
-                      <td style={{ textAlign: 'center' }}><Tag variant={lp.inc ? 'active' : 'excl'}>{lp.inc ? 'Y' : 'N'}</Tag></td>
-                    </tr>
-                  ))}
+                  {pageItems.map((lp, i) => {
+                    const clp = lp as ComputedLPRecord
+                    const lpSizeDisplay = lp.aum || lp.nav || '—'
+                    const lpSizeCriteria = lp.aum ? 'AUM' : lp.nav ? 'NAV' : '—'
+                    return (
+                      <tr key={i} onClick={() => setSelectedLP(clp)} style={{ cursor: 'pointer', background: selectedLP === lp ? 'var(--blue-lt)' : undefined }}>
+                        <td className="num">{lp.rank}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.parent || '—'}</td>
+                        <td style={{ textAlign: 'center' }}>{lp.spv ? 'Y' : 'N'}</td>
+                        <td><Tag>{lp.cls}</Tag></td>
+                        <td>{lp.type}</td>
+                        <td style={{ textAlign: 'center' }}>{lp.ig ? 'Yes' : 'No'}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.agentCls ?? '—'}</td>
+                        <td className="num">{lp.sp || '—'}</td>
+                        <td className="num">{lp.mdy || '—'}</td>
+                        <td className="num">{lp.fitch || '—'}</td>
+                        <td className="num">{lpSizeDisplay}</td>
+                        <td style={{ textAlign: 'center' }}>{lpSizeCriteria}</td>
+                        <td className="num">{clp.rate}</td>
+                        <td className="num">{lp.agentRate || '—'}</td>
+                        <td className="num">{lp.capCommit || '—'}</td>
+                        <td className="num">{lp.uc}</td>
+                        <td className="num">{lp.agentConc || '—'}</td>
+                        <td className="num">{lp.ubsConc || '—'}</td>
+                        <td className="num">{lp.pctCapCommit || '—'}</td>
+                        <td className="num">{lp.calledCap || '—'}</td>
+                        <td className="num">{lp.pctUncalled || '—'}</td>
+                        <td className="num">{lp.pctCalled || '—'}</td>
+                        <td className={`num ${clp.agentExcessM > 0 ? 'neg' : 'zero'}`}>{clp.agentExcess}</td>
+                        <td className={`num ${clp.concExcessM > 0 ? 'neg' : 'zero'}`}>{clp.concExcessM > 0 ? fmtM(clp.concExcessM) : '—'}</td>
+                        <td className={`num ${clp.abbM === 0 ? 'zero' : ''}`}>{lp.abb}</td>
+                        <td className={`num ${clp.ubbM === 0 ? 'zero' : ''}`}>{clp.ubb}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)' }}>{lp.notes || '—'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

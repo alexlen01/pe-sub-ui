@@ -14,7 +14,7 @@ import { EXTRACTED_LPS } from '../../data/extractionData'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
-import type { Submission, AgentExtractedRow, LpRate } from '../../services/api'
+import type { Submission, AgentExtractedRow, LpRate, CommitLpRow } from '../../services/api'
 
 function parseDollars(s: string): number {
   return parseInt((s ?? '').replace(/[$,]/g, ''), 10) || 0
@@ -90,7 +90,6 @@ export default function RunShadowBB() {
   const [matchQueue, setMatchQueue] = useState(MATCH_QUEUE)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
-  const [bbSnapshot] = useState<Record<string, unknown> | null>(null)
   const [summaryHidden, setSummaryHidden] = useState(false)
   const [abortOpen, setAbortOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -327,36 +326,83 @@ export default function RunShadowBB() {
     }, 0)
   , [submissionLPs, overrides])
 
-  const run = () => {
+  const run = async () => {
     setRunning(true)
+    setLoadError(null)
     if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`)
     toast('Shadow BB calculation started…')
+
     const overriddenLPs = submissionLPs.map(lp => {
-      const ov        = overrides[lp._key] ?? {}
-      const ucM       = typeof ov.ucM === 'number' ? ov.ucM : 0
+      const ov         = overrides[lp._key] ?? {}
+      const ucM        = typeof ov.ucM === 'number' ? ov.ucM : 0
       const concLimitM = typeof ov.concLimitPct === 'number'
         ? (ov.concLimitPct / 100) * totalUncalledM
         : DEFAULT_CL_M
-      const rate = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? '0%')
+      const rate      = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? '0%')
+      const agentRate = typeof ov.agentRatePct   === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : (lp.agentRate ?? '')
       return {
         ...lp,
         cls: ov.cls || 'Excluded',
         sp: ov.sp ?? lp.sp ?? '', mdy: ov.mdy ?? lp.mdy ?? '', fitch: ov.fitch ?? lp.fitch ?? '',
-        rate, ucM, uc: `$${ucM.toFixed(1)}M`,
+        rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
+        ubsConc: fmtM(concLimitM),  // per-LP dollar limit for API re-computation
         concLimitM, inc: ov.inc ?? false, abb: lp.abb ?? '$0',
       }
     })
-    setTimeout(() => {
-      const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams)
-      const snapshot = bbSnapshot ?? {}
-      const patched  = { ...computed, summary: { ...computed.summary, ...snapshot }, breaches: [] }
-      setResult(patched)
-      setRunning(false)
-      toast('Shadow BB complete — 662 LPs · UBS BB $138.6M · Delta –$3.7M')
-      if (live && activeSubmissionId != null) {
-        api.submissions.complete(activeSubmissionId).catch(() => {})
+
+    // Compute locally — gives immediate feedback and serves as the result in prototype mode
+    const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams)
+    const { summary } = computed
+
+    if (live) {
+      const facilityId = submissionDetails?.facilityId
+      if (facilityId != null) {
+        try {
+          const commitRows: CommitLpRow[] = overriddenLPs.map(lp => ({
+            name:          lp.name ?? '',
+            parent:        lp.parent ?? null,
+            spv:           lp.spv ?? false,
+            hq:            lp.hq ?? true,
+            type:          lp.type ?? 'Institutional',
+            region:        lp.region ?? '',
+            ig:            lp.ig ?? false,
+            cls:           lp.cls ?? 'Excluded',
+            sp:            lp.sp ?? '',
+            mdy:           lp.mdy ?? '',
+            fitch:         lp.fitch ?? '',
+            aum:           lp.aum || null,
+            nav:           lp.nav || null,
+            pension:       lp.pension || null,
+            pensionFunded: lp.pensionFunded || null,
+            capCommit:     lp.capCommit || null,
+            pctCapCommit:  lp.pctCapCommit || null,
+            calledCap:     lp.calledCap || null,
+            uc:            lp.uc || null,
+            pctUncalled:   lp.pctUncalled || null,
+            pctCalled:     lp.pctCalled || null,
+            agentConc:     lp.agentConc || null,
+            ubsConc:       lp.ubsConc || null,
+            agentRate:     lp.agentRate || null,
+            abb:           lp.abb || null,
+            inc:           lp.inc ?? false,
+            rcl:           lp.rcl ?? false,
+            notes:         lp.notes || null,
+          }))
+          await api.bb.run(facilityId, commitRows)
+        } catch (e) {
+          setLoadError(String(e))
+          setRunning(false)
+          return
+        }
       }
-    }, 2800)
+      if (activeSubmissionId != null) {
+        await api.submissions.complete(activeSubmissionId).catch(() => {})
+      }
+    }
+
+    setResult(computed)
+    setRunning(false)
+    toast(`Shadow BB complete — ${overriddenLPs.length} LPs · UBS BB ${fmtM(summary.totalUBB)} · Delta ${fmtM(summary.bbDelta)}`)
   }
 
   const resultRows = result ? [
