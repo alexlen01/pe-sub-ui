@@ -4,12 +4,14 @@
 export interface MatchThresholds {
   autoAccept:    number
   reviewQueue:   number
+  noMatch:       number
   jwWeight:      number
   levWeight:     number
   stripSuffixes: boolean
   caseFold:      boolean
   punctuation:   boolean
   abbrevExpand:  boolean
+  retirementNormalize?: boolean
 }
 
 export interface LegalSuffix {
@@ -26,12 +28,14 @@ export interface KnownAbbreviation {
 export const DEFAULT_THRESHOLDS: MatchThresholds = {
   autoAccept:    95,
   reviewQueue:   80,
+  noMatch:       50,
   jwWeight:      0.6,
   levWeight:     0.4,
   stripSuffixes: true,
   caseFold:      true,
   punctuation:   true,
   abbrevExpand:  true,
+  retirementNormalize: true,
 }
 
 // Legal entity suffixes — stripped before comparison when suffix stripping is enabled

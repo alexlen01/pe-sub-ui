@@ -100,10 +100,12 @@ export default function MatchThresholds() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <Card title="Confidence Thresholds" subtitle="Controls when matches are auto-accepted vs. queued for review" action={<Button size="sm" onClick={() => handleSave('thresholds')} disabled={saving !== null || loading}>{saving === 'thresholds' ? 'Saving…' : 'Save'}</Button>}>
           <div style={{ padding: '4px 18px 16px' }}>
-            <Slider field="autoAccept"  label="Auto-accept threshold"  min={80} max={100} fmt={v => `${v}%`} />
-            <Slider field="reviewQueue" label="Review queue threshold"  min={50} max={thresholds.autoAccept - 1} fmt={v => `${v}%`} />
+            <Slider field="autoAccept"  label="Auto-accept threshold"      min={80} max={100} fmt={v => `${v}%`} />
+            <Slider field="reviewQueue" label="High-confidence review"     min={(thresholds.noMatch ?? 50) + 1} max={thresholds.autoAccept - 1} fmt={v => `${v}%`} />
+            <Slider field="noMatch"     label="No-match / new-LP threshold" min={0} max={thresholds.reviewQueue - 1} fmt={v => `${v}%`} />
             <div className="info-box" style={{ marginTop: 8 }}>
-              Matches ≥ <strong>{thresholds.autoAccept}%</strong> auto-accepted. Between <strong>{thresholds.reviewQueue}%–{thresholds.autoAccept - 1}%</strong> queued for review. Below <strong>{thresholds.reviewQueue}%</strong> rejected.
+              ≥ <strong>{thresholds.autoAccept}%</strong> auto-accepted. <strong>{thresholds.reviewQueue}%–{thresholds.autoAccept - 1}%</strong> high-confidence review.
+              {' '}<strong>{thresholds.noMatch ?? 50}%–{thresholds.reviewQueue - 1}%</strong> low-confidence review. Below <strong>{thresholds.noMatch ?? 50}%</strong> queued as a potential new LP. Nothing is auto-rejected.
             </div>
           </div>
         </Card>

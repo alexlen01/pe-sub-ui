@@ -1,7 +1,14 @@
 import type { Facility, LP, BBSnapshot, BBResult } from '../types'
 
-export interface MatchCandidate { name: string; score: number; action: string }
+export type MatchBand = 'AUTO_ACCEPT' | 'REVIEW_HIGH' | 'REVIEW_LOW' | 'NO_MATCH'
+export interface MatchCandidate { name: string; score: number; action: string; band?: MatchBand }
 export interface MatchTestResult { input: string; normalised: string; matches: MatchCandidate[] }
+
+// Persisted match_details breakdown (Solution Design §6.5)
+export interface ScoredCandidate { name: string; jw: number; lev: number; combined: number; band: MatchBand }
+export interface MatchAnalysis {
+  agentName: string; normalized: string; band: MatchBand; candidates: ScoredCandidate[]
+}
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -153,6 +160,7 @@ export interface DocRecognition {
 export interface LpClassificationRequest {
   facilityId: number
   effectiveDate?: string   // YYYY-MM; omitted → current month
+  audit?: boolean          // true → write one aggregated audit entry; omitted → silent per-row save
   rows: Array<{
     name: string
     cls?: string
@@ -184,12 +192,14 @@ export interface MatchQueueItem {
   id: number; submissionId: number; facilityId?: number; facilityName?: string
   agentName: string; masterName: string | null
   score: number; decision: string | null; status?: string; isNew: boolean; reasons?: string[]
+  matchDetails?: MatchAnalysis | null
 }
 
 export interface MatchingThresholds {
-  autoAccept: number; reviewQueue: number
+  autoAccept: number; reviewQueue: number; noMatch: number
   jwWeight: number; levWeight: number
   stripSuffixes: boolean; caseFold: boolean; punctuation: boolean; abbrevExpand: boolean
+  retirementNormalize?: boolean
 }
 export interface LegalSuffix       { abbr: string; full: string; strip: boolean }
 export interface KnownAbbreviation { token: string; expansion: string }

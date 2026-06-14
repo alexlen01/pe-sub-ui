@@ -446,7 +446,7 @@ export default function LPMaster() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return lpData.filter(lp => {
-      const matchQ   = !q || lp.name.toLowerCase().includes(q) || lp.parent.toLowerCase().includes(q)
+      const matchQ   = !q || (lp.name ?? '').toLowerCase().includes(q) || (lp.parent ?? '').toLowerCase().includes(q)
       const matchCls = !clsFilter || lp.cls === clsFilter
       const matchInc = !incFilter || (incFilter === 'Y' ? lp.inc : !lp.inc)
       const matchFac = !facFilter || lpBelongsToFacility(lp, facFilter.name)
@@ -561,8 +561,8 @@ export default function LPMaster() {
             </tr>
           </thead>
           <tbody>
-            {pageItems.map(lp => (
-              <tr key={lp.rank} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
+            {pageItems.map((lp, i) => (
+              <tr key={lp.rank ?? `lp-${i}`} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
                 <td style={{ color: 'var(--muted)' }}>{lp.rank}</td>
                 <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong title={lp.name}>{lp.name}</strong>

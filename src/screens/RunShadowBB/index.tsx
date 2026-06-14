@@ -14,7 +14,7 @@ import { EXTRACTED_LPS } from '../../data/extractionData'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
-import type { Submission, AgentExtractedRow, LpRate, CommitLpRow } from '../../services/api'
+import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificationRequest } from '../../services/api'
 
 function parseDollars(s: string): number {
   return parseInt((s ?? '').replace(/[$,]/g, ''), 10) || 0
@@ -97,7 +97,6 @@ export default function RunShadowBB() {
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
-  const [lpReloadKey, setLpReloadKey] = useState(0)
 
   const handleAbort = async () => {
     if (live && activeSubmissionId != null) {
@@ -137,15 +136,16 @@ export default function RunShadowBB() {
   }, [live, activeSubmissionId])
 
   // In live mode, load the persisted LP Master records for this facility. They are created
-  // up front on "Commit Decisions", so the classification table edits real records rather than
-  // synthesized queue rows. Re-reads (after Save) reflect the saved classification/rate state.
+  // up front on "Commit Decisions", so the classification table edits real records rather
+  // than synthesized queue rows. Edits auto-save per row, so the in-memory overrides remain
+  // the source of truth for the session — no reload after save.
   useEffect(() => {
     const facilityId = submissionDetails?.facilityId
     if (!live || facilityId == null) return
     api.lps.list({ facilityId })
       .then(setFacilityLPs)
       .catch(() => {})
-  }, [live, submissionDetails?.facilityId, lpReloadKey])
+  }, [live, submissionDetails?.facilityId])
 
   // In live mode, fetch LP rates as-of the submission period (falls back to today if not yet loaded)
   useEffect(() => {
@@ -219,6 +219,87 @@ export default function RunShadowBB() {
   type FlashTracker = Record<string, Partial<Record<FlashCol, number>>>
   const [flashKeys, setFlashKeys] = useState<FlashTracker>({})
 
+  // Per-row auto-save. Each value change debounces a single-row PATCH so only the edited
+  // LP record is updated (the screen has no bulk actions). The in-memory override stays the
+  // source of truth — we never reload, avoiding rate flicker / override resets.
+  type SaveStatus = 'saving' | 'saved' | 'error'
+  const [saveState, setSaveState] = useState<Record<string, SaveStatus>>({})
+  const saveTimers  = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const savedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // Distinct LP rows touched this session — drives the single aggregated audit entry on exit.
+  const editedKeys  = useRef<Set<string>>(new Set())
+
+  type ClassificationRow = LpClassificationRequest['rows'][number]
+  const toRow = (key: string, ov: Override): ClassificationRow | null => {
+    const lp   = submissionLPs.find(l => l._key === key)
+    const name = lp?.name ?? lp?._agentName ?? ''
+    if (!name) return null
+    return {
+      name,
+      cls:             ov.cls || undefined,
+      sp:              ov.sp, mdy: ov.mdy, fitch: ov.fitch,
+      inc:             ov.inc,
+      uc:              typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : undefined,
+      ubsAdvRatePct:   typeof ov.ubsAdvRatePct === 'number' ? ov.ubsAdvRatePct : undefined,
+      ubsConcLimitPct: typeof ov.concLimitPct  === 'number' ? ov.concLimitPct  : undefined,
+    }
+  }
+
+  const persistRow = (key: string, ov: Override) => {
+    const facilityId = submissionDetails?.facilityId
+    if (!live || facilityId == null) return
+    const row = toRow(key, ov)
+    if (!row) return
+
+    setSaveState(s => ({ ...s, [key]: 'saving' }))
+    // Per-row saves are silent (audit omitted) so the trail isn't spammed per keystroke.
+    api.lps.saveClassification({
+      facilityId,
+      effectiveDate: submissionDetails?.periodMonth ?? undefined,
+      rows: [row],
+    })
+      .then(() => {
+        setSaveState(s => ({ ...s, [key]: 'saved' }))
+        // Fade the "saved" indicator after a moment so the row returns to a clean state.
+        clearTimeout(savedTimers.current[key])
+        savedTimers.current[key] = setTimeout(() => {
+          setSaveState(s => { const next = { ...s }; delete next[key]; return next })
+        }, 2000)
+      })
+      .catch(e => {
+        setSaveState(s => ({ ...s, [key]: 'error' }))
+        toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`)
+      })
+  }
+
+  // One aggregated audit entry per session. When the user leaves the screen (Run Shadow BB,
+  // left-menu navigation, abort — any unmount), re-send every edited row in a single PATCH with
+  // audit:true. This collapses the trail to one "N LP records updated" event and also flushes any
+  // edit still inside the debounce window, so the final value is never lost. Held in a ref so the
+  // unmount cleanup always sees the latest overrides without re-subscribing.
+  const flushAuditRef = useRef<() => void>(() => {})
+  flushAuditRef.current = () => {
+    const facilityId = submissionDetails?.facilityId
+    if (!live || facilityId == null || editedKeys.current.size === 0) return
+    const rows = [...editedKeys.current]
+      .map(key => toRow(key, overrides[key] ?? {} as Override))
+      .filter((r): r is ClassificationRow => r != null)
+    if (rows.length === 0) return
+    api.lps.saveClassification({
+      facilityId,
+      effectiveDate: submissionDetails?.periodMonth ?? undefined,
+      audit: true,
+      rows,
+    }).catch(() => {})
+  }
+
+  // On unmount: cancel pending timers, then write the single aggregated audit entry.
+  useEffect(() => () => {
+    Object.values(saveTimers.current).forEach(clearTimeout)
+    Object.values(savedTimers.current).forEach(clearTimeout)
+    flushAuditRef.current()
+  }, [])
+
   const setOverride = (key: string, field: keyof Override, value: unknown) => {
     const currentOv = overrides[key] ?? {} as Override
     const newOv = { ...currentOv, [field]: value } as Override
@@ -244,6 +325,13 @@ export default function RunShadowBB() {
     }
 
     setOverrides(prev => ({ ...prev, [key]: newOv }))
+
+    // Auto-save this single row (live only); debounce so rapid typing produces one PATCH.
+    if (live) {
+      editedKeys.current.add(key)
+      clearTimeout(saveTimers.current[key])
+      saveTimers.current[key] = setTimeout(() => persistRow(key, newOv), 600)
+    }
   }
 
   const resetOverrides = () => {
@@ -466,33 +554,6 @@ export default function RunShadowBB() {
                 {unclassified > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>{unclassified} unclassified</span>}
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
-                <Button size="sm" onClick={() => {
-                  const facilityId = submissionDetails?.facilityId
-                  if (live && facilityId != null) {
-                    // Persist the edits onto the real LP Master records (and their as-of rates),
-                    // then re-read so the table reflects the saved state.
-                    const rows = submissionLPs.map(lp => {
-                      const ov = overrides[lp._key] ?? {} as Override
-                      return {
-                        name:            lp.name ?? lp._agentName ?? '',
-                        cls:             ov.cls || undefined,
-                        sp:              ov.sp, mdy: ov.mdy, fitch: ov.fitch,
-                        inc:             ov.inc,
-                        uc:              typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : undefined,
-                        ubsAdvRatePct:   typeof ov.ubsAdvRatePct === 'number' ? ov.ubsAdvRatePct : undefined,
-                        ubsConcLimitPct: typeof ov.concLimitPct  === 'number' ? ov.concLimitPct  : undefined,
-                      }
-                    }).filter(r => r.name)
-                    api.lps.saveClassification({ facilityId, effectiveDate: submissionDetails?.periodMonth ?? undefined, rows })
-                      .then(res => {
-                        toast(`${res.updated} LP record${res.updated !== 1 ? 's' : ''} updated.`, 3200, 'success')
-                        setLpReloadKey(k => k + 1)
-                      })
-                      .catch(e => toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`))
-                  } else {
-                    toast('Classifications saved.')
-                  }
-                }} disabled={running}>Save</Button>
                 <Button size="sm" onClick={run} disabled={running}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
@@ -534,6 +595,9 @@ export default function RunShadowBB() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             {(() => { const n = lp.name ?? lp._agentName ?? '—'; const trunc = n.length > 60; return <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }} title={trunc ? n : undefined}>{trunc ? n.slice(0, 60) + '…' : n}</span> })()}
                             {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
+                            {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: '0.04em' }}>Saving…</span>}
+                            {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', letterSpacing: '0.04em' }} title="Saved">✓ Saved</span>}
+                            {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', letterSpacing: '0.04em' }} title="Save failed">✕ Failed</span>}
                           </div>
                         </td>
 

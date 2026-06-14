@@ -16,23 +16,34 @@ import { ALL_CANONICAL_FIELDS } from '../../data/fieldMappingData'
 type ExtractedRow = (typeof EXTRACTED_LPS)[0]
 type UnrecogRow = (typeof UNRECOGNIZED_COLUMNS)[0] & { suggestedCanonical: string; dismissed: boolean }
 
-const LP_FIELDS = [
-  { key: 'name',       extracted: 'Investor Name (Agent Records)' },
-  { key: 'parent',     extracted: 'Parent / Sponsor'              },
-  { key: 'transferee', extracted: 'Transferee'                    },
-  { key: 'agentClass', extracted: 'LP Classification'              },
-  { key: 'commit',     extracted: 'Commitment (USD)'              },
-  { key: 'uncalled',   extracted: 'Uncalled Capital (USD)'        },
-  { key: 'aum',        extracted: 'AUM'                           },
-  { key: 'nav',        extracted: 'NAV'                           },
-  { key: 'sp',         extracted: 'S&P'                           },
-  { key: 'moodys',     extracted: "Moody's"                       },
-  { key: 'fitch',      extracted: 'Fitch'                         },
-  { key: 'agentRate',  extracted: 'Advance Rate'                  },
-  { key: 'agentBBFmt', extracted: 'Borrowing Base Contribution'   },
-  { key: 'pctBBFmt',   extracted: '% of Borrowing Base'          },
-  { key: 'agentConc',  extracted: 'Concentration Limit'           },
+// Order mirrors the Extracted LP Data table columns. `extracted` is the join key
+// into the canonical field map; `label` (when present) is the display override.
+// Transferee is intentionally not a field here — it is surfaced as a marker next
+// to the investor name (see LPDetailPanel header and the table's name cell).
+const LP_FIELDS: { key: string; extracted: string; label?: string }[] = [
+  { key: 'name',       extracted: 'Investor Name (Agent Records)'                                    },
+  { key: 'parent',     extracted: 'Parent / Sponsor'                                                 },
+  { key: 'agentClass', extracted: 'LP Classification'                                                },
+  { key: 'sp',         extracted: 'S&P'                                                              },
+  { key: 'moodys',     extracted: "Moody's"                                                          },
+  { key: 'fitch',      extracted: 'Fitch'                                                            },
+  { key: 'aum',        extracted: 'AUM'                                                              },
+  { key: 'nav',        extracted: 'NAV',                    label: 'Net Assets (range)'              },
+  { key: 'agentRate',  extracted: 'Advance Rate'                                                     },
+  { key: 'commit',     extracted: 'Commitment (USD)',       label: 'Original Commitment'             },
+  { key: 'uncalled',   extracted: 'Uncalled Capital (USD)', label: 'Unfunded Capital Commitment'     },
+  { key: 'agentConc',  extracted: 'Concentration Limit'                                              },
+  { key: 'agentBBFmt', extracted: 'Borrowing Base Contribution'                                      },
+  { key: 'pctBBFmt',   extracted: '% of Borrowing Base'                                              },
 ]
+
+// Transferee marker — shown next to the investor name (no dedicated column/field).
+const TransfereeMark = () => (
+  <sup
+    title="Transferee — commitment received via transfer"
+    style={{ marginLeft: 3, fontSize: 9, fontWeight: 700, color: 'var(--amber)', cursor: 'help' }}
+  >t</sup>
+)
 
 const CHIP: Record<string, React.CSSProperties> = {
   Core: { background: 'var(--tbl)',      color: 'var(--muted)', fontStyle: 'italic' },
@@ -40,8 +51,9 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
-// Sum of all explicit <th> widths (300+130+120+120+68+52+62+72+110+78+78) + gap + detail panel
-const SIDE_BY_SIDE_MIN = 1562
+// Sum of explicit <th> widths (280+150+120+50+60+56+68+84+70+116+116+88+108+78=1444)
+// + 12px gap + 360px detail panel.
+const SIDE_BY_SIDE_MIN = 1816
 
 function LPDetailPanel({
   row, onClose, fieldMap, overlay = false,
@@ -63,20 +75,20 @@ function LPDetailPanel({
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Row #{row.id} — Field Detail</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{row.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{row.name}{row.transferee ? <TransfereeMark /> : null}</div>
         </div>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>✕</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {LP_FIELDS.map(({ key, extracted: col }, i) => {
-            const mapping = fieldMap.find(m => m.extracted === col)
+          {LP_FIELDS.map(({ key, extracted, label }, i) => {
+            const mapping = fieldMap.find(m => m.extracted === extracted)
             const value = (row as Record<string, unknown>)[key] as string | undefined
             return (
               <div key={key} style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'var(--card)' : 'var(--tbl)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', fontFamily: 'monospace' }}>{col}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', fontFamily: 'monospace' }}>{label ?? extracted}</div>
                     {mapping && <div style={{ fontSize: 10, color: 'var(--blue)', marginTop: 2 }}>→ {mapping.canonical}</div>}
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: !value ? 'var(--muted)' : 'var(--navy)', whiteSpace: 'nowrap' }}>{value || '—'}</div>
@@ -338,33 +350,39 @@ export default function ExtractionPreview() {
               <table className="data-table" style={{ tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 300 }}>Investor Name</th>
-                    <th style={{ width: 130 }}>Agent LP Classification</th>
-                    <th style={{ width: 120, textAlign: 'right' }}>Commitment</th>
-                    <th style={{ width: 120, textAlign: 'right' }}>Uncalled</th>
+                    <th style={{ width: 280 }}>Investor Name</th>
+                    <th style={{ width: 150 }}>Parent</th>
+                    <th style={{ width: 120 }}>LP Classification</th>
+                    <th style={{ width: 50, textAlign: 'center' }}>S&P</th>
+                    <th style={{ width: 60, textAlign: 'center' }}>Moody's</th>
+                    <th style={{ width: 56, textAlign: 'center' }}>Fitch</th>
                     <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
-                    <th style={{ width: 52, textAlign: 'center' }}>S&P</th>
-                    <th style={{ width: 62, textAlign: 'center' }}>Moody's</th>
-                    <th style={{ width: 72, textAlign: 'center' }}>Adv. Rate</th>
-                    <th style={{ width: 110, textAlign: 'right' }}>BB Contrib.</th>
-                    <th style={{ width: 78, textAlign: 'right' }}>% of BB</th>
-                    <th style={{ width: 92, textAlign: 'center', paddingRight: 20 }}>Conc. Limit</th>
+                    <th style={{ width: 84, textAlign: 'right' }}>Net Assets</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>Adv. Rate</th>
+                    <th style={{ width: 116, textAlign: 'right' }}>Orig. Commit.</th>
+                    <th style={{ width: 116, textAlign: 'right' }}>Unfunded</th>
+                    <th style={{ width: 88, textAlign: 'center' }}>Conc. Limit</th>
+                    <th style={{ width: 108, textAlign: 'right' }}>BB Contrib.</th>
+                    <th style={{ width: 78, textAlign: 'right', paddingRight: 20 }}>% of BB</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageItems.map(r => (
                     <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
-                      <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.name}>{r.name}</div></td>
+                      <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>{r.name}{r.transferee ? <TransfereeMark /> : null}</div></td>
+                      <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: !r.parent ? 'var(--muted)' : undefined }} title={r.parent}>{r.parent || '—'}</div></td>
                       <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.fitch ? 'var(--navy)' : 'var(--muted)' }}>{r.fitch || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
+                      <td style={{ textAlign: 'center', fontSize: 11 }}>{r.agentConc}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
-                      <td style={{ textAlign: 'center', fontSize: 11, paddingRight: 20 }}>{r.agentConc}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, paddingRight: 20, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

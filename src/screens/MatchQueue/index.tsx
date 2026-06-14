@@ -12,8 +12,10 @@ import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, ABBREV_REGEX_MAP } from '../../config/matchingConfig'
 import { MATCH_QUEUE } from '../../data/matchQueueData'
 import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
+import { analysisCandidates, normalisedAgentName } from './matchAnalysis'
+import type { MatchAnalysis } from '../../services/api'
 
-type QueueRow = (typeof MATCH_QUEUE)[0] & { status: string }
+type QueueRow = (typeof MATCH_QUEUE)[0] & { status: string; matchDetails?: MatchAnalysis | null }
 
 const SUFFIX_RE = new RegExp(`\\b(${LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.')).join('|')})\\b`, 'gi')
 
@@ -23,6 +25,7 @@ function buildNormSteps(name: string) {
   const folded = cur.toLowerCase(); steps.push({ label: 'Case fold', rule: 'Lowercase all characters', before: cur, after: folded }); cur = folded
   const stripped = cur.replace(/[.,\-()]/g, ' ').replace(/\s+/g, ' ').trim(); if (stripped !== cur) { steps.push({ label: 'Strip punctuation', rule: 'Remove . , - ( ) characters', before: cur, after: stripped }); cur = stripped }
   const noSuffix = cur.replace(SUFFIX_RE, '').replace(/\s+/g, ' ').trim(); if (noSuffix !== cur) { steps.push({ label: 'Legal suffix strip', rule: 'Remove legal entity suffixes: ' + LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr).join(', '), before: cur, after: noSuffix }); cur = noSuffix }
+  const retired = cur.replace(/\bret\s+sys(?:tem)?\b/g, 'retirement system').replace(/\bret\b/g, 'retirement'); if (retired !== cur) { steps.push({ label: 'Retirement normalize', rule: 'Ret. Sys. → retirement system; Ret. → retirement', before: cur, after: retired }); cur = retired }
   let s = cur; const acronymExpansions: string[] = []
   KNOWN_ABBREVIATIONS.forEach(({ token, expansion }) => { const re = new RegExp(`\\b${token}\\b`, 'gi'); if (re.test(s)) { acronymExpansions.push(`${token} → ${expansion}`); s = s.replace(re, expansion.toLowerCase()) } })
   s = s.replace(/\s+/g, ' ').trim(); if (s !== cur) { steps.push({ label: 'Acronym expansion', rule: acronymExpansions.join('; '), before: cur, after: s }); cur = s }
@@ -31,14 +34,6 @@ function buildNormSteps(name: string) {
   expanded = expanded.replace(/\s+/g, ' ').trim(); if (expanded !== cur) { steps.push({ label: 'Abbrev expansion', rule: abbrevExpansions.join('; '), before: cur, after: expanded }); cur = expanded }
   return { steps, normalised: cur }
 }
-
-function verdictFor(score: number) {
-  return score >= DEFAULT_THRESHOLDS.autoAccept ? 'Auto-accept' : score >= DEFAULT_THRESHOLDS.reviewQueue ? 'Review queue' : 'Below threshold'
-}
-
-function strHash(s: string) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193); return (h >>> 0) / 0x100000000 }
-const DECOY_SUFFIXES = ['Capital Partners', 'Capital Management', 'Asset Management', 'Investment Group', 'Capital Advisors', 'Investment Partners', 'Capital Fund', 'Investment Trust']
-function makeDecoyName(seed: string, words: string[], salt: string) { const r = strHash(seed + salt); const sfx = DECOY_SUFFIXES[Math.floor(r * DECOY_SUFFIXES.length)]; const meaningful = words.filter(w => w.length > 3); const base = meaningful.length >= 2 ? `${meaningful[0]} ${meaningful[Math.floor(strHash(seed + salt + '2') * (meaningful.length - 1)) + 1]}` : meaningful[0] || words[0]; return `${base} ${sfx}` }
 
 function buildParentSignal(r: QueueRow) {
   if (!r.agentParent) return null
@@ -51,27 +46,17 @@ function buildParentSignal(r: QueueRow) {
   return { agentParent: r.agentParent, masterParent, score, adjustment, effect }
 }
 
-function buildCandidates(r: QueueRow) {
-  const normAgent = normaliseName(r.agentName)
-  if (r.masterName) {
-    const normMaster = normaliseName(r.masterName), jw1 = jwSim(normAgent, normMaster), lv1 = levSim(normAgent, normMaster), co1 = combineScores(jw1, lv1)
-    const mWords = r.masterName.split(/\s+/), d1 = makeDecoyName(r.masterName, mWords, 'α'), d2 = makeDecoyName(r.masterName, mWords, 'β')
-    const jw2 = jwSim(normAgent, normaliseName(d1)), lv2 = levSim(normAgent, normaliseName(d1)), co2 = combineScores(jw2, lv2)
-    const jw3 = jwSim(normAgent, normaliseName(d2)), lv3 = levSim(normAgent, normaliseName(d2)), co3 = combineScores(jw3, lv3)
-    return [{ name: r.masterName, jw: jw1, lev: lv1, combined: co1, verdict: verdictFor(co1) }, { name: d1, jw: jw2, lev: lv2, combined: co2, verdict: 'Discarded' }, { name: d2, jw: jw3, lev: lv3, combined: co3, verdict: 'Discarded' }]
-  }
-  return []
-}
-
 const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--red)'
 const scoreBand = (s: number) => s >= 95 ? 'Auto-accept' : s >= 80 ? 'Review' : 'No Match'
 const bandVariant = (s: number) => s >= 95 ? 'active' : s >= 80 ? 'pending' : 'excl'
 
 function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS }) {
-  const { steps, normalised } = buildNormSteps(row.agentName)
-  const candidates = buildCandidates(row), topCandidate = candidates[0]
+  const { steps, normalised: reconstructed } = buildNormSteps(row.agentName)
+  const normalised = normalisedAgentName(row, reconstructed)
+  const candidates = analysisCandidates(row), topCandidate = candidates[0]
+  const hasProposedMatch = !!row.masterName
   const parentSignal = buildParentSignal(row)
-  const verdictColor = (v: string) => v === 'Auto-accept' ? 'var(--green)' : v === 'Review queue' ? 'var(--amber)' : 'var(--red)'
+  const verdictColor = (v: string) => v === 'Auto-accept' ? 'var(--green)' : v.startsWith('Review') ? 'var(--amber)' : 'var(--red)'
   const parentEffectLabel = (sig: ReturnType<typeof buildParentSignal>) => {
     if (!sig) return null
     if (sig.score === null) return { text: 'No LP Master parent to compare', color: 'var(--muted)' }
@@ -126,7 +111,7 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
                 <thead><tr style={{ background: 'var(--tbl)' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {candidates.map((c, i) => (
-                    <tr key={i} style={{ background: i === 0 && row.masterName ? 'var(--blue-lt)' : 'transparent' }}>
+                    <tr key={i} style={{ background: i === 0 && hasProposedMatch ? 'var(--blue-lt)' : 'transparent' }}>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', fontWeight: i === 0 ? 600 : 400 }}>{c.name}</td>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? `${c.jw}%` : c.jw}</td>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? `${c.lev}%` : c.lev}</td>
@@ -140,9 +125,9 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
         <div style={{ background: 'var(--tbl)', borderRadius: 6, padding: '10px 12px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Algorithm Decision</div>
           {topCandidate && <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>Combined = JW×{thresholds.jwWeight} + Lev×{thresholds.levWeight}{typeof topCandidate.combined === 'number' && <span> = <strong style={{ color: scoreColor(topCandidate.combined) }}>{topCandidate.combined}%</strong></span>}</div>}
-          {topCandidate
+          {hasProposedMatch && topCandidate
             ? <div style={{ fontSize: 12 }}>Combined score <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong> — {topCandidate.verdict === 'Auto-accept' ? 'above auto-accept threshold · committed without review.' : 'proposed for review.'}<div style={{ marginTop: 6, color: 'var(--muted)', fontSize: 11 }}>Proposed match: <strong style={{ color: 'var(--text)' }}>{row.masterName}</strong></div></div>
-            : <div style={{ fontSize: 12 }}>No candidates found in LP Master — a <strong>new LP record</strong> will be created.</div>}
+            : <div style={{ fontSize: 12 }}>No confident match{topCandidate ? <span> (closest <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong>)</span> : ' in LP Master'} — a <strong>new LP record</strong> will be created.</div>}
         </div>
       </div>
       {onResolve && row.status !== 'Auto-accept' && (

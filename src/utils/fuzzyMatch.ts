@@ -8,6 +8,9 @@ const SUFFIX_RE = new RegExp(
 export function normaliseName(name: string): string {
   let s = name.toLowerCase().replace(/[.,\-()]/g, ' ').replace(/\s+/g, ' ').trim()
   s = s.replace(SUFFIX_RE, '').replace(/\s+/g, ' ').trim()
+  // Retirement-suffix normalisation (Solution Design §6.2 step 6). Punctuation is already stripped,
+  // so the dotted "Ret. Sys." forms arrive here as "ret sys"; fold to the canonical spelling.
+  s = s.replace(/\bret\s+sys(?:tem)?\b/g, 'retirement system').replace(/\bret\b/g, 'retirement')
   KNOWN_ABBREVIATIONS.forEach(({ token, expansion }) => {
     s = s.replace(new RegExp(`\\b${token}\\b`, 'gi'), expansion.toLowerCase())
   })
