@@ -2,8 +2,8 @@ import { useApp, SCREENS } from '../../context/AppContext'
 import type { ScreenMode } from '../../context/AppContext'
 
 const ROLE_COLOR: Record<string, string> = {
-  'Credit Administrator': 'var(--navy)',
-  'Supervisor':           'var(--amber)',
+  'Analyst':                    'var(--navy)',
+  'Account/Transaction Manager': 'var(--amber)',
 }
 
 const MODE_STYLE: Record<ScreenMode, { bg: string; color: string; label: string }> = {

@@ -47,12 +47,12 @@ function _localGetFacilities() {
     if (!latestStep[s.facility] || s.date > latestStep[s.facility].date) latestStep[s.facility] = s
   })
 
-  const STATUS_PRIORITY: Record<string, number> = { 'Not Started': 0, 'In Progress': 1, 'Needs Review': 2, 'Certified': 3 }
+  const STATUS_PRIORITY: Record<string, number> = { 'Not Started': 0, 'In Progress': 1, 'Needs Review': 2, 'Active': 3 }
 
   return FACILITIES.map(f => {
-    const status = PROTOTYPE_STATUS_OVERRIDES[f.name] ?? 'Certified'
+    const status = PROTOTYPE_STATUS_OVERRIDES[f.name] ?? 'Active'
     const h = f.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-    const hasSubmission = status === 'Certified' || status === 'Needs Review' || status === 'In Progress'
+    const hasSubmission = status === 'Active' || status === 'Needs Review' || status === 'In Progress'
     const submittedBy   = hasSubmission ? (PROTOTYPE_SUBMITTED_BY_OVERRIDES[f.name] ?? PROTOTYPE_OWNERS[h % PROTOTYPE_OWNERS.length]) : null
     const step          = latestStep[f.name]?.step ?? null
     if (status === 'Not Started') return { ...f, status, step: null, lastRun: '—', submittedBy: null, _sort: new Date(0) }

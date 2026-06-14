@@ -2,7 +2,7 @@ export type FacilityStatus =
   | 'Not Started'
   | 'In Progress'
   | 'Needs Review'
-  | 'Certified'
+  | 'Active'
   | 'Pending'
 
 export interface Facility {

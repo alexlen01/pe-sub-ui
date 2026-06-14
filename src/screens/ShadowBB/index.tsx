@@ -171,6 +171,17 @@ export default function ShadowBB() {
       getFacilityBBSnapshot(live, facilityId),
       getFacilitySummaryExt(live, facilityId),
     ]).then(([lps, snapshot, ext]) => {
+      const hasSnapshot = snapshot != null && Object.keys(snapshot).length > 0
+      // Live: the Shadow BB exists only once "Run Shadow BB" has persisted a snapshot. Until then
+      // show nothing — never compute a BB on the fly from LP Master records that were just committed.
+      if (live && !hasSnapshot) {
+        setResult(computePortfolioBB([], bbParams))
+        setSummaryExtApi(null)
+        setCalcMeta(null)
+        setSelectedLP(null)
+        setClsFilter('')
+        return
+      }
       const computed = computePortfolioBB(lps as LPRecord[], { ...bbParams })
       const snapshotData = snapshot ?? {}
       const patched = Object.keys(snapshotData).length

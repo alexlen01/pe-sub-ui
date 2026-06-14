@@ -96,6 +96,8 @@ export default function RunShadowBB() {
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
+  const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
+  const [lpReloadKey, setLpReloadKey] = useState(0)
 
   const handleAbort = async () => {
     if (live && activeSubmissionId != null) {
@@ -134,6 +136,17 @@ export default function RunShadowBB() {
       .catch(() => {})
   }, [live, activeSubmissionId])
 
+  // In live mode, load the persisted LP Master records for this facility. They are created
+  // up front on "Commit Decisions", so the classification table edits real records rather than
+  // synthesized queue rows. Re-reads (after Save) reflect the saved classification/rate state.
+  useEffect(() => {
+    const facilityId = submissionDetails?.facilityId
+    if (!live || facilityId == null) return
+    api.lps.list({ facilityId })
+      .then(setFacilityLPs)
+      .catch(() => {})
+  }, [live, submissionDetails?.facilityId, lpReloadKey])
+
   // In live mode, fetch LP rates as-of the submission period (falls back to today if not yet loaded)
   useEffect(() => {
     if (!live) return
@@ -143,6 +156,14 @@ export default function RunShadowBB() {
   }, [live, submissionDetails?.periodMonth])
 
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
+    // Live: the rows are the persisted LP Master records for this facility, created on Commit.
+    // Keyed by name (unique per facility), so edits and Save map straight back to real records.
+    if (live) {
+      return facilityLPs.map(lp => ({
+        ...lp,
+        _key: `lp-${lp.name}`, _isNew: false, _agentName: lp.name,
+      }))
+    }
     return matchQueue.map(mq => {
       const master = lpData.find(lp => lp.name === mq.masterName)
       const ext = extractedMap[(mq.agentName || '').toLowerCase()]
@@ -165,7 +186,7 @@ export default function RunShadowBB() {
         ig: false, sp: '', mdy: '', fitch: '', pension: '', notes: '',
       }
     })
-  }, [lpData, matchQueue, extractedMap])
+  }, [live, facilityLPs, lpData, matchQueue, extractedMap])
 
   const buildOverride = (lp: SubmissionLP): Override => {
     const ext  = extractedMap[(lp._agentName || lp.name || '').toLowerCase()]
@@ -299,7 +320,7 @@ export default function RunShadowBB() {
       { label: 'As of Date',        value: asOfDate },
       { label: 'Agent Bank',        value: String(agentBank) },
       { label: 'LPs in Submission', value: String(totalLPs) },
-      { label: 'New LP Records',    value: newCount > 0 ? `${newCount} (will be created)` : '0' },
+      { label: 'New LP Records',    value: newCount > 0 ? `${newCount} created` : '0' },
       { label: 'Total Commitment',  value: totalCommitment },
       { label: 'Total Uncalled',    value: totalUncalled },
     ]
@@ -446,9 +467,27 @@ export default function RunShadowBB() {
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
                 <Button size="sm" onClick={() => {
-                  if (live && activeSubmissionId) {
-                    api.submissions.saveShadowBbState(activeSubmissionId, overrides as Record<string, unknown>)
-                      .then(() => toast('Classifications saved.', 3200, 'success'))
+                  const facilityId = submissionDetails?.facilityId
+                  if (live && facilityId != null) {
+                    // Persist the edits onto the real LP Master records (and their as-of rates),
+                    // then re-read so the table reflects the saved state.
+                    const rows = submissionLPs.map(lp => {
+                      const ov = overrides[lp._key] ?? {} as Override
+                      return {
+                        name:            lp.name ?? lp._agentName ?? '',
+                        cls:             ov.cls || undefined,
+                        sp:              ov.sp, mdy: ov.mdy, fitch: ov.fitch,
+                        inc:             ov.inc,
+                        uc:              typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : undefined,
+                        ubsAdvRatePct:   typeof ov.ubsAdvRatePct === 'number' ? ov.ubsAdvRatePct : undefined,
+                        ubsConcLimitPct: typeof ov.concLimitPct  === 'number' ? ov.concLimitPct  : undefined,
+                      }
+                    }).filter(r => r.name)
+                    api.lps.saveClassification({ facilityId, effectiveDate: submissionDetails?.periodMonth ?? undefined, rows })
+                      .then(res => {
+                        toast(`${res.updated} LP record${res.updated !== 1 ? 's' : ''} updated.`, 3200, 'success')
+                        setLpReloadKey(k => k + 1)
+                      })
                       .catch(() => toast('Save failed — please try again.'))
                   } else {
                     toast('Classifications saved.')
@@ -584,7 +623,7 @@ export default function RunShadowBB() {
 
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting removes this submission from history. The LP records committed to LP Master remain — re-upload the Agent BB if you need to reprocess and update them.</div>
     </Modal>
     </>
   )

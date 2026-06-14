@@ -149,6 +149,21 @@ export interface DocRecognition {
   headerInfo: string
 }
 
+/** Batch classification & rate save from the LP Classification & Rate Assignment screen. */
+export interface LpClassificationRequest {
+  facilityId: number
+  effectiveDate?: string   // YYYY-MM; omitted → current month
+  rows: Array<{
+    name: string
+    cls?: string
+    sp?: string; mdy?: string; fitch?: string
+    inc?: boolean
+    uc?: string
+    ubsAdvRatePct?: number    // percent, e.g. 90
+    ubsConcLimitPct?: number  // percent, e.g. 7.5
+  }>
+}
+
 export interface LpRate {
   lpId: number
   lpName: string
@@ -208,6 +223,10 @@ export const api = {
       get<LP>(`/api/lps/${id}`),
     update: (id: number, data: Partial<LP>) =>
       patch<LP>(`/api/lps/${id}`, data),
+    // Batch-save the classification & rate edits from the Shadow BB screen onto persisted
+    // LP Master records. Rows are matched to existing records by (facilityId, name).
+    saveClassification: (body: LpClassificationRequest) =>
+      patch<{ updated: number }>('/api/lps/classification', body),
     lookup: (name: string) =>
       get<LP[]>(`/api/lps/lookup${qs({ name })}`),
     rates: (effectiveDate?: string) =>

@@ -21,6 +21,7 @@ interface AppState {
   lpData: LPRecord[]
   lpLoading: boolean
   setLpData: (lps: LPRecord[]) => void
+  refreshLpData: () => Promise<void>
   updateLPRecord: (updated: LPRecord) => void
   bbParams: typeof DEFAULT_FACILITY_PARAMS
   setBbParams: (p: typeof DEFAULT_FACILITY_PARAMS) => void
@@ -55,14 +56,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
   const [screenMode,         setScreenMode]        = useState<ScreenMode>('detecting')
 
-  useEffect(() => {
-    if (activeFacilityId == null) return
-    if (screenMode === 'detecting') return
+  // Loads LP Master records for the active facility. Exposed as refreshLpData so callers can
+  // re-pull after a write (e.g. committing match decisions creates new LP records) without
+  // waiting for activeFacilityId/screenMode to change.
+  const refreshLpData = useCallback((): Promise<void> => {
+    if (activeFacilityId == null || screenMode === 'detecting') return Promise.resolve()
     setLpLoading(true)
-    getLPsForFacility(screenMode === 'live', activeFacilityId)
+    return getLPsForFacility(screenMode === 'live', activeFacilityId)
       .then(setLpData)
       .finally(() => setLpLoading(false))
   }, [activeFacilityId, screenMode])
+
+  useEffect(() => { void refreshLpData() }, [refreshLpData])
 
   const navigate = useCallback((name: string) => {
     if (SCREEN_MAP[name]) { setScreen(name) }
@@ -101,7 +106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       screen, navigate,
       toasts, toast,
-      lpData, lpLoading, setLpData, updateLPRecord,
+      lpData, lpLoading, setLpData, refreshLpData, updateLPRecord,
       bbParams, setBbParams,
       currentUser: DEFAULT_USER,
       activeSubmission, setActiveSubmission,

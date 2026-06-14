@@ -19,7 +19,7 @@ import type { FacilityRow } from '../services/facilityService'
 describe('FacilityRow extended type', () => {
   it('id and latestSubmissionId are optional', () => {
     const row: FacilityRow = {
-      name: 'Test Fund', agentBank: 'Bank NA', status: 'Certified', lps: 100,
+      name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lps: 100,
       facilitySize: '$1B', ubsParticipation: '$100M', ubsParticipationRate: '10%',
       creditAgreementRef: 'CA-001', agentBB: '$80M', ubsBB: '$78M',
       delta: '-$2M', ear: '88%', lastRun: '2d ago',
@@ -31,7 +31,7 @@ describe('FacilityRow extended type', () => {
 
   it('id and latestSubmissionId are accepted when provided', () => {
     const row: FacilityRow = {
-      name: 'Test Fund', agentBank: 'Bank NA', status: 'Certified', lps: 100,
+      name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lps: 100,
       facilitySize: '$1B', ubsParticipation: '$100M', ubsParticipationRate: '10%',
       creditAgreementRef: 'CA-001', agentBB: '$80M', ubsBB: '$78M',
       delta: '-$2M', ear: '88%', lastRun: '2d ago',

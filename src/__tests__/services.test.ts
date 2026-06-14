@@ -42,7 +42,7 @@ describe('getFacilities — prototype mode', () => {
   })
 
   it('status values are valid', async () => {
-    const valid = new Set(['Certified', 'Needs Review', 'In Progress', 'Not Started'])
+    const valid = new Set(['Active', 'Needs Review', 'In Progress', 'Not Started'])
     const rows = await getFacilities(false)
     for (const row of rows) {
       expect(valid.has(row.status), `Unexpected status: ${row.status}`).toBe(true)
@@ -222,5 +222,39 @@ describe('api.bb.run — LP commit', () => {
   it('throws on API error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })))
     await expect(api.bb.run(1, [lp])).rejects.toThrow('500')
+  })
+})
+
+// ── api.lps.saveClassification — Shadow BB "Save" ─────────────────────────────
+
+describe('api.lps.saveClassification', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('PATCHes the classification rows and returns the updated count', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ updated: 2 }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await api.lps.saveClassification({
+      facilityId: 3,
+      effectiveDate: '2026-06',
+      rows: [
+        { name: 'CalPERS', cls: 'Rated', sp: 'AAA', inc: true, uc: '$20.0M', ubsAdvRatePct: 90, ubsConcLimitPct: 7.5 },
+        { name: 'Tiny Fund LLC', cls: 'Excluded', inc: false },
+      ],
+    })
+    expect(result.updated).toBe(2)
+
+    const call = fetchSpy.mock.calls[0] as [string, RequestInit]
+    expect(call[0]).toBe('/api/lps/classification')
+    expect(call[1].method).toBe('PATCH')
+    const body = JSON.parse(call[1].body as string) as { facilityId: number; rows: Array<{ name: string }> }
+    expect(body.facilityId).toBe(3)
+    expect(body.rows).toHaveLength(2)
+    expect(body.rows[0].name).toBe('CalPERS')
+  })
+
+  it('throws on API error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 400 })))
+    await expect(api.lps.saveClassification({ facilityId: 1, rows: [] })).rejects.toThrow('400')
   })
 })

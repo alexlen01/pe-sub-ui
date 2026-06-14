@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
 import { useScreenMode } from '../../hooks/useScreenMode'
@@ -156,7 +156,7 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
 }
 
 export default function MatchQueue() {
-  const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId } = useApp()
+  const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId, refreshLpData } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
   const [queue, setQueue] = useState<QueueRow[]>(MATCH_QUEUE as QueueRow[])
@@ -200,16 +200,20 @@ export default function MatchQueue() {
   const toggleAll = () => setChecked(prev => { const next = new Set(prev); if (allChecked) filtered.forEach(r => next.delete(r.id)); else filtered.forEach(r => next.add(r.id)); return next })
   const toggleRow = (id: number) => setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
 
+  // Tracks in-flight decide PATCHes so Commit can wait for them — otherwise the backend may
+  // read the match queue before the accept/reject decisions have persisted and commit nothing.
+  const pendingDecides = useRef<Promise<unknown>[]>([])
+
   const resolve = (ids: Set<number>, action: string) => {
     setQueue(prev => prev.map(r => ids.has(r.id) ? { ...r, status: action } : r))
     setChecked(new Set())
     toast(`${ids.size} match${ids.size > 1 ? 'es' : ''} ${action === 'Accepted' ? 'accepted' : 'rejected'}.`)
-    ids.forEach(id => api.matching.decide(id, action).catch(() => {}))
+    ids.forEach(id => pendingDecides.current.push(api.matching.decide(id, action).catch(() => {})))
   }
   const resolveOne = (id: number, action: string) => {
     setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r))
     toast(`Match ${action.toLowerCase()}.`)
-    api.matching.decide(id, action).catch(() => {})
+    pendingDecides.current.push(api.matching.decide(id, action).catch(() => {}))
   }
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
@@ -219,20 +223,35 @@ export default function MatchQueue() {
   const canCommit = pending === 0
   const selectionIds = new Set([...checked].filter(id => filtered.some(r => r.id === id)))
 
-  const handleCommit = () => {
+  const [committing, setCommitting] = useState(false)
+
+  const handleCommit = async () => {
     if (pending > 0) {
       toast(`${pending} decision${pending !== 1 ? 's' : ''} still pending — resolve all matches before committing.`, 4000, 'warning')
       return
     }
     if (acceptedCount === 0) {
       setAllRejectedOpen(true)
-    } else {
-      toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed — loading submission summary…`)
-      if (live && activeSubmissionId) {
-        api.submissions.saveShadowBbState(activeSubmissionId, null).catch(() => {})
-      }
-      navigate('run-shadow-bb')
+      return
     }
+    if (live && activeSubmissionId) {
+      // Wait for the accept/reject PATCHes, then commit the accepted matches to LP Master and
+      // refresh LP Master — so the records exist before Run Shadow BB loads its classification table.
+      setCommitting(true)
+      try {
+        await Promise.allSettled(pendingDecides.current)
+        pendingDecides.current = []
+        await api.submissions.saveShadowBbState(activeSubmissionId, null)
+        await refreshLpData()
+      } catch {
+        setCommitting(false)
+        toast('Commit failed — please try again.')
+        return
+      }
+      setCommitting(false)
+    }
+    toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed to LP Master.`, 3200, 'success')
+    navigate('run-shadow-bb')
   }
   const selectedRow = selectedId ? queue.find(r => r.id === selectedId) ?? null : null
 
@@ -255,7 +274,7 @@ export default function MatchQueue() {
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{pending} pending · {filtered.length} shown</span>
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
-        <Button size="sm" style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>Commit Decisions</Button>
+        <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
       </div>
       <div style={{ flex: 1, display: 'flex', gap: 12 }}>
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
@@ -290,7 +309,7 @@ export default function MatchQueue() {
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
               {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
-              <Button size="sm" style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>Commit Decisions</Button>
+              <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
             </div>
           </div>
         </div>

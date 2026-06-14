@@ -5,12 +5,12 @@ import type { FacilityRow } from '../services/facilityService'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Blue Owl GP Stakes V prototype fixture: ubsBB $138.6M, agentBB $142.3M, ear 87.4%
-const CERTIFIED: Partial<FacilityRow> = {
+const ACTIVE: Partial<FacilityRow> = {
   name:     'Blue Owl GP Stakes V',
   ubsBB:    '$138.6M',
   agentBB:  '$142.3M',
   ear:      '87.4%',
-  status:   'Certified',
+  status:   'Active',
   lastRun:  'Jun 5',
 }
 
@@ -20,7 +20,7 @@ const PLACEHOLDER: Partial<FacilityRow> = {
   ubsBB:   '—',
   agentBB: '—',
   ear:     '—',
-  status:  'Certified',
+  status:  'Active',
   lastRun: '—',
 }
 
@@ -62,12 +62,12 @@ describe('buildExecRows', () => {
   })
 
   it('always returns exactly 5 rows', () => {
-    expect(buildExecRows(CERTIFIED as FacilityRow)).toHaveLength(5)
+    expect(buildExecRows(ACTIVE as FacilityRow)).toHaveLength(5)
     expect(buildExecRows(PLACEHOLDER as FacilityRow)).toHaveLength(5)
   })
 
   it('row metrics are in the expected order', () => {
-    const metrics = buildExecRows(CERTIFIED as FacilityRow).map(r => r.metric)
+    const metrics = buildExecRows(ACTIVE as FacilityRow).map(r => r.metric)
     expect(metrics).toEqual([
       'Total Eligible Uncalled',
       'Total Borrowing Base',
@@ -78,25 +78,25 @@ describe('buildExecRows', () => {
   })
 
   it('BB Delta and EAR Delta rows have delta: true', () => {
-    const rows = buildExecRows(CERTIFIED as FacilityRow)
+    const rows = buildExecRows(ACTIVE as FacilityRow)
     expect(rows.find(r => r.metric === 'BB Delta')!.delta).toBe(true)
     expect(rows.find(r => r.metric === 'EAR Delta')!.delta).toBe(true)
   })
 
   it('Total Borrowing Base row has bold: true', () => {
-    expect(row(CERTIFIED, 'Total Borrowing Base').bold).toBe(true)
+    expect(row(ACTIVE, 'Total Borrowing Base').bold).toBe(true)
   })
 })
 
 // ── buildExecRows — with real prototype data ───────────────────────────────────
 
-describe('buildExecRows — certified facility with real data', () => {
+describe('buildExecRows — active facility with real data', () => {
   it('BB Delta is -$3.7M (UBS $138.6M minus Agent $142.3M)', () => {
-    expect(row(CERTIFIED, 'BB Delta').ubs).toBe('-$3.7M')
+    expect(row(ACTIVE, 'BB Delta').ubs).toBe('-$3.7M')
   })
 
   it('EAR Delta contains no NaN', () => {
-    const val = row(CERTIFIED, 'EAR Delta').ubs
+    const val = row(ACTIVE, 'EAR Delta').ubs
     expect(val).not.toContain('NaN')
     expect(val).toMatch(/^[+-]\d+\.\d+%$/)
   })
@@ -105,17 +105,17 @@ describe('buildExecRows — certified facility with real data', () => {
     // ubbM=138.6, abbM=142.3, earF=0.874
     // uecM = 138.6 / 0.874 ≈ 158.6; agentEarF = 142.3 / 158.6 ≈ 0.897
     // earDelta = 0.874 - 0.897 = -0.023 → -2.3%
-    expect(row(CERTIFIED, 'EAR Delta').ubs).toBe('-2.3%')
+    expect(row(ACTIVE, 'EAR Delta').ubs).toBe('-2.3%')
   })
 
   it('Total Eligible Uncalled UBS and Agent values match (shared denominator)', () => {
-    const tuc = row(CERTIFIED, 'Total Eligible Uncalled')
+    const tuc = row(ACTIVE, 'Total Eligible Uncalled')
     expect(tuc.ubs).toBe(tuc.agent)
     expect(tuc.ubs).toMatch(/^\$[\d.]+M$/)
   })
 
   it('Effective Advance Rate UBS value passes through from facility', () => {
-    expect(row(CERTIFIED, 'Effective Advance Rate').ubs).toBe('87.4%')
+    expect(row(ACTIVE, 'Effective Advance Rate').ubs).toBe('87.4%')
   })
 })
 
@@ -151,16 +151,16 @@ describe('buildExecRows — placeholder data (live mode)', () => {
 
 describe('buildExecRows — BB Delta sign formatting', () => {
   it('prefixes + when UBS BB > Agent BB', () => {
-    const f = { ...CERTIFIED, ubsBB: '$150.0M', agentBB: '$140.0M' } as FacilityRow
+    const f = { ...ACTIVE, ubsBB: '$150.0M', agentBB: '$140.0M' } as FacilityRow
     expect(row(f, 'BB Delta').ubs).toMatch(/^\+\$/)
   })
 
   it('prefixes - when UBS BB < Agent BB', () => {
-    expect(row(CERTIFIED as FacilityRow, 'BB Delta').ubs).toMatch(/^-\$/)
+    expect(row(ACTIVE as FacilityRow, 'BB Delta').ubs).toMatch(/^-\$/)
   })
 
   it('shows +$0.0M when UBS BB equals Agent BB', () => {
-    const f = { ...CERTIFIED, ubsBB: '$100.0M', agentBB: '$100.0M' } as FacilityRow
+    const f = { ...ACTIVE, ubsBB: '$100.0M', agentBB: '$100.0M' } as FacilityRow
     expect(row(f, 'BB Delta').ubs).toBe('+$0.0M')
   })
 })
@@ -169,7 +169,7 @@ describe('buildExecRows — BB Delta sign formatting', () => {
 
 describe('buildExecRows — edge cases', () => {
   it('handles 0% EAR without division error', () => {
-    const f = { ...CERTIFIED, ear: '0.0%' } as FacilityRow
+    const f = { ...ACTIVE, ear: '0.0%' } as FacilityRow
     // earF=0 → uecM=0 → hasData=false (ubsBB and agentBB are set but ear is 0%)
     // Actually 0.0% is parseable (not placeholder), but uecM=0 so agentEarF=0
     expect(() => buildExecRows(f)).not.toThrow()
@@ -177,7 +177,7 @@ describe('buildExecRows — edge cases', () => {
   })
 
   it('handles undefined BB fields without throwing', () => {
-    const f = { ...CERTIFIED, ubsBB: undefined as unknown as string } as FacilityRow
+    const f = { ...ACTIVE, ubsBB: undefined as unknown as string } as FacilityRow
     expect(() => buildExecRows(f)).not.toThrow()
   })
 

@@ -4,7 +4,6 @@ const CLS_MAP: Record<string, string> = {
   'Unrated 1–2bn':  'tag-un1',
   'Eligible':       'tag-elig',
   'Excluded':       'tag-excl',
-  'Certified':      'tag-certified',
   'In Progress':    'tag-inprogress',
   'Needs Review':   'tag-needsreview',
   'Not Started':    'tag-notstarted',

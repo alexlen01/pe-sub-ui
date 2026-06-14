@@ -7,6 +7,7 @@ import InfoTip     from '../../components/ui/InfoTip'
 import { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS } from '../../config/classificationConfig'
 import { BUSA_RATE_MAP, AGENT_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
 import { getFacilities } from '../../services/facilityService'
+import { getLPs, getLPsForFacility } from '../../services/lpService'
 import { useScreenMode } from '../../hooks/useScreenMode'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
@@ -349,7 +350,7 @@ const VERSION_HISTORY = [
 
 // Status colour mapping for facility cards
 const STATUS_COLOR: Record<string, string> = {
-  'Certified':     'var(--green)',
+  'Active':        'var(--green)',
   'In Progress':   'var(--blue)',
   'Needs Review':  'var(--amber)',
   'Not Started':   'var(--muted)',
@@ -389,10 +390,10 @@ function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: (
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
-  const { toast, lpData, updateLPRecord, currentUser } = useApp()
+  const { toast, lpData, setLpData, updateLPRecord, currentUser, setActiveFacilityId } = useApp()
   const mode = useScreenMode()
   const live = mode === 'live'
-  const canEdit = currentUser?.role === 'Credit Administrator' || currentUser?.role === 'Supervisor'
+  const canEdit = currentUser?.role === 'Analyst' || currentUser?.role === 'Account/Transaction Manager'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
   useEffect(() => {
@@ -409,12 +410,18 @@ export default function LPMaster() {
   const [incFilter, setIncFilter] = useState('')
   const [selected,  setSelected]  = useState<LPRecord | null>(null)
 
+  // Live: pull the facility's LP records fresh on open so newly-committed LPs always show,
+  // independent of whatever facility the shared context last loaded.
   const openFacility = (fac: FacilityRow) => {
     setFacFilter(fac)
     setSearch('')
     setClsFilter('')
     setIncFilter('')
     setView('list')
+    if (live && fac.id != null) {
+      setActiveFacilityId(fac.id)
+      getLPsForFacility(true, fac.id).then(setLpData).catch(() => {})
+    }
   }
 
   const openAll = () => {
@@ -423,6 +430,7 @@ export default function LPMaster() {
     setClsFilter('')
     setIncFilter('')
     setView('list')
+    if (live) getLPs(true).then(setLpData).catch(() => {})
   }
 
   const backToGrid = () => {

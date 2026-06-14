@@ -14,10 +14,10 @@ import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import { buildExecRows } from '../../utils/execSummary'
 
 const FACILITY_STATUS_ITEMS = [
-  { label: 'Certified',    desc: 'Shadow BB signed off for this cycle. Certificate submitted to agent.' },
-  { label: 'Needs Review', desc: 'Submission has unresolved issues — LP matches or eligibility disputes — requiring credit officer action before certification.' },
+  { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
+  { label: 'Needs Review', desc: 'Submission has unresolved issues — LP matches or eligibility disputes — requiring credit officer action.' },
   { label: 'In Progress',  desc: 'Submission uploaded; credit officer is working through matching, classification, and Shadow BB.' },
-  { label: 'Not Started',  desc: 'Certificate not yet processed for this cycle.' },
+  { label: 'Not Started',  desc: 'No Shadow BB submission processed for this cycle.' },
 ]
 
 const FACILITY_COLS = [
@@ -92,7 +92,7 @@ export default function Dashboard() {
       .filter(s => s.n > 0)
     return { total, segments }
   }, [facilityLPs])
-  const certifiedCount      = facilities.filter(f => f.status === 'Certified').length
+  const activeCount         = facilities.filter(f => f.status === 'Active').length
   const needsReviewCount    = facilities.filter(f => f.status === 'Needs Review').length
   const inProgressCount     = facilities.filter(f => f.status === 'In Progress').length
   const notStartedCount     = facilities.filter(f => f.status === 'Not Started').length
@@ -102,7 +102,7 @@ export default function Dashboard() {
       label: 'Facilities This Cycle',
       value: String(facilities.length),
       sub: <>
-        <span style={{ color: 'var(--green)' }}>{certifiedCount} certified</span>
+        <span style={{ color: 'var(--green)' }}>{activeCount} active</span>
         {' · '}
         <span style={{ color: 'var(--amber)' }}>{needsReviewCount} needs review</span>
         {' · '}
@@ -137,7 +137,7 @@ export default function Dashboard() {
                 style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--card)', color: 'var(--text)', cursor: 'pointer' }}
               >
                 <option value="All">All Statuses</option>
-                <option value="Certified">Certified ({certifiedCount})</option>
+                <option value="Active">Active ({activeCount})</option>
                 <option value="Needs Review">Needs Review ({needsReviewCount})</option>
                 <option value="In Progress">In Progress ({inProgressCount})</option>
                 <option value="Not Started">Not Started ({notStartedCount})</option>
@@ -171,14 +171,14 @@ export default function Dashboard() {
             title="Executive Summary"
             subtitle={
               !selectedFacility || selectedFacility.lastRun === '—'
-                ? `${selectedFacility?.name ?? '—'} · Not yet certified this cycle`
+                ? `${selectedFacility?.name ?? '—'} · No Shadow BB this cycle`
                 : `${selectedFacility.name} · As Of ${selectedFacility.lastRun}`
             }
           >
             {(() => {
               const f = selectedFacility
               const isOwner = f?.submittedBy === currentUser.name
-              const isPrivileged = currentUser.role === 'Supervisor'
+              const isPrivileged = currentUser.role === 'Account/Transaction Manager'
               const canAct = isOwner || isPrivileged
 
               const ownerTag = f?.submittedBy ? (
@@ -188,7 +188,7 @@ export default function Dashboard() {
                 </span>
               ) : null
 
-              const cta = f?.status === 'Certified' ? (
+              const cta = f?.status === 'Active' ? (
                 <Button size="sm" variant="action" onClick={() => navigate('shadow-bb')}>View Shadow BB ›</Button>
               ) : f?.status === 'Needs Review' ? (
                 <Button size="sm" variant="action" onClick={() => {
@@ -204,7 +204,7 @@ export default function Dashboard() {
                   setActiveFacilityId(f.id ?? null)
                   navigate(f.step === 4 ? 'match-queue' : f.step === 5 ? 'run-shadow-bb' : 'extraction-preview')
                 }}>View Submission ›</Button>
-              ) : (f?.status === 'Not Started' || f?.status === 'Active') ? (
+              ) : f?.status === 'Not Started' ? (
                 canAct
                   ? <Button size="sm" variant="action" onClick={() => navigate('upload')}>Start Submission ›</Button>
                   : null
@@ -212,10 +212,10 @@ export default function Dashboard() {
 
               return (
                 <>
-                  {(f?.status === 'Not Started' || f?.status === 'In Progress' || f?.status === 'Active') ? (
+                  {(f?.status === 'Not Started' || f?.status === 'In Progress') ? (
                     <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
                       <span style={{ fontSize: 22, opacity: .35 }}>&#x25AB;</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>No certified BB this cycle</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>No Shadow BB this cycle</span>
                       <span>
                         {f?.status === 'In Progress'
                           ? 'Submission is being processed — Shadow BB not yet run for this cycle.'
@@ -226,7 +226,7 @@ export default function Dashboard() {
                     <div style={{ padding: '8px 18px' }}>
                       {f?.status === 'Needs Review' && (
                         <div style={{ marginBottom: 8, padding: '5px 8px', background: 'var(--amber-lt)', borderRadius: 4, fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>
-                          Submission needs review — figures reflect last certified BB
+                          Submission needs review — figures reflect last active Shadow BB
                         </div>
                       )}
                       <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>

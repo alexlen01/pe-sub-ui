@@ -89,7 +89,6 @@ body {
 .tag-elig       { background: var(--green-lt); color: var(--green); }
 .tag-excl       { background: var(--red-lt); color: var(--red); }
 .tag-active      { background: var(--green-lt);  color: var(--green); }
-.tag-certified   { background: var(--green-lt);  color: var(--green); }
 .tag-inprogress  { background: #dbeafe;           color: var(--blue); }
 .tag-needsreview { background: var(--amber-lt);   color: var(--amber); }
 .tag-notstarted  { background: #f1f5f9;           color: var(--muted); }
