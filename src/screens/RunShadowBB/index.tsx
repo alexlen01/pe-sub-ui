@@ -488,7 +488,7 @@ export default function RunShadowBB() {
                         toast(`${res.updated} LP record${res.updated !== 1 ? 's' : ''} updated.`, 3200, 'success')
                         setLpReloadKey(k => k + 1)
                       })
-                      .catch(() => toast('Save failed — please try again.'))
+                      .catch(e => toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`))
                   } else {
                     toast('Classifications saved.')
                   }
