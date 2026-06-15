@@ -29,7 +29,7 @@ App runs at `http://localhost:3000`.
 npm run build              # production build (tsc + vite)
 npm run typecheck          # tsc --noEmit
 npm run clean              # delete dist/
-npm run package            # build + create dist/pe-sub-ui-v<version>.tar.gz (PowerShell)
+npm run package            # bump patch version, build + create dist/pe-sub-ui-v<version>.tar.gz (PowerShell)
 npm run package:sh         # same via bash
 npm run generate:agent-bb  # generate public/Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx for upload testing
 ```

@@ -6,7 +6,13 @@
 
 set -euo pipefail
 
-VERSION=${1:-$(node -p "require('./package.json').version")}
+# Bump package.json before building: explicit arg sets it, otherwise patch++.
+if [ -n "${1:-}" ]; then
+  npm version "$1" --no-git-tag-version --allow-same-version >/dev/null
+else
+  npm version patch --no-git-tag-version >/dev/null
+fi
+VERSION=$(node -p "require('./package.json').version")
 STAGE_DIR="pe-sub-ui-v${VERSION}"
 ARCHIVE="dist/pe-sub-ui-v${VERSION}.tar.gz"
 

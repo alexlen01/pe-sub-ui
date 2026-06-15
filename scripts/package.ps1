@@ -10,8 +10,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Bump package.json before building: explicit -Version sets it, otherwise patch++.
+if ($Version) {
+    npm version $Version --no-git-tag-version --allow-same-version | Out-Null
+} else {
+    npm version patch --no-git-tag-version | Out-Null
+}
+if ($LASTEXITCODE -ne 0) { throw "npm version failed" }
 $pkg = Get-Content "package.json" | ConvertFrom-Json
-if (-not $Version) { $Version = $pkg.version }
+$Version = $pkg.version
 $stageDir = "pe-sub-ui-v$Version"
 $archive  = "dist\pe-sub-ui-v$Version.tar.gz"
 
