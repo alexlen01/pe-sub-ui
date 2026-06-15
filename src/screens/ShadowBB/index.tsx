@@ -17,6 +17,17 @@ function fmtDollarsRaw(n: number | null | undefined): string {
   return '$' + Math.round(n).toLocaleString('en-US')
 }
 
+// Parse an AUM display string (e.g. '$4.2B', '$1.4T', '$620M') to $millions.
+function parseAumM(s: string | null | undefined): number {
+  if (!s) return 0
+  const m = String(s).match(/\$?\s*([\d,.]+)\s*([KMBT]?)/i)
+  if (!m) return 0
+  const val  = parseFloat(m[1].replace(/,/g, ''))
+  const unit = m[2].toUpperCase()
+  const mult = unit === 'T' ? 1e6 : unit === 'B' ? 1e3 : unit === 'K' ? 1e-3 : 1
+  return val * mult
+}
+
 const BLUE_HD: React.CSSProperties = { background: '#0F2560', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase' }
 const COL_HD: React.CSSProperties  = { padding: '7px 10px', color: 'var(--muted)', fontWeight: 700, fontSize: 9, textTransform: 'uppercase', borderBottom: '1px solid var(--border)', background: 'var(--tbl)' }
 const CELL: React.CSSProperties    = { padding: '7px 10px', color: 'var(--text)', fontSize: 11 }
@@ -202,9 +213,16 @@ export default function ShadowBB() {
 
   const summaryExt = useMemo((): BBSummaryExt => {
     if (summaryExtApi) return summaryExtApi
-    const lps = result.lps, n = Math.max(lps.length, 1)
+    const lps = result.lps
     const totalUncalledM = lps.reduce((s, r) => s + r.ucM, 0)
     const totalDollars = totalUncalledM * 1e6
+
+    // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1): Σ(matching uncalled) ÷ Σ(uncalled)
+    const sumUcM = (pred: (r: ComputedLPRecord) => boolean) => lps.filter(pred).reduce((s, r) => s + r.ucM, 0)
+    const instUncalledM   = sumUcM(r => r.type === 'Institutional')
+    const hnwUncalledM    = sumUcM(r => r.type === 'HNW')
+    const igUncalledM     = sumUcM(r => r.ig)
+    const gt25bnUncalledM = sumUcM(r => parseAumM(r.aum) > 25000)
     const busaMap: Record<string, BkRow> = { '90%': { rate: '90%', count: 0, dollars: 0, pct: 0 }, '75%': { rate: '75%', count: 0, dollars: 0, pct: 0 }, '65%': { rate: '65%', count: 0, dollars: 0, pct: 0 }, '50%': { rate: '50%', count: 0, dollars: 0, pct: 0 }, '0%': { rate: '0%', count: 0, dollars: 0, pct: 0 } }
     const agentMap: Record<string, BkRow> = {}
     const clsMap: Record<string, BkRow & { label: string }> = { 'Rated Investors': { label: 'Rated Investors', count: 0, dollars: 0, pct: 0 }, 'Unrated Investors': { label: 'Unrated Investors', count: 0, dollars: 0, pct: 0 }, 'Eligible Investors': { label: 'Eligible Investors', count: 0, dollars: 0, pct: 0 }, 'Excluded Investors': { label: 'Excluded Investors', count: 0, dollars: 0, pct: 0 } }
@@ -218,11 +236,12 @@ export default function ShadowBB() {
     return {
       totalCapCommit: 0, totalCalledCap: 0, pctCalled: 0,
       totalAllUncalled: totalDollars, totalLPs: lps.length,
-      pctInstitutional: lps.filter(r => r.type === 'Institutional').length / n,
-      pctHNW: lps.filter(r => r.type === 'HNW').length / n,
+      pctInstitutional: totalUncalledM > 0 ? instUncalledM / totalUncalledM : 0,
+      pctHNW: totalUncalledM > 0 ? hnwUncalledM / totalUncalledM : 0,
       pctTop10: totalUncalledM > 0 ? sortedByUC.slice(0, 10).reduce((s, r) => s + r.ucM, 0) / totalUncalledM : 0,
       pctTop20: totalUncalledM > 0 ? sortedByUC.slice(0, 20).reduce((s, r) => s + r.ucM, 0) / totalUncalledM : 0,
-      igRatio: lps.filter(r => r.ig).length / n, pctUncalledGt2M: 0,
+      igRatio: totalUncalledM > 0 ? igUncalledM / totalUncalledM : 0,
+      pctUncalledGt25bnAum: totalUncalledM > 0 ? gt25bnUncalledM / totalUncalledM : 0,
       facilitySize: 0, ubsParticipation: 0, ubsParticipationPct: 0, facilityLTV: 0, availableCommit: 0, facilityAdvRate: 0,
       agentBBRaw: summary.totalABB * 1e6, ubsBBRaw: summary.totalUBB * 1e6, ubsAdvRate: summary.ear,
       busaBreakdown: Object.values(busaMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalDollars > 0 ? r.dollars / totalDollars : 0 })),
@@ -273,7 +292,7 @@ export default function ShadowBB() {
                   { k: '% Top 10',                   v: p(summaryExt.pctTop10) },
                   { k: '% Top 20',                   v: p(summaryExt.pctTop20) },
                   { k: 'Investment Grade',            v: `${(summaryExt.igRatio * 100).toFixed(1)}%` },
-                  { k: '% Uncalled from LPs > $2M',  v: summaryExt.pctUncalledGt2M ? p(summaryExt.pctUncalledGt2M) : '—' },
+                  { k: '% Uncalled from LPs > $25bn AUM',  v: summaryExt.pctUncalledGt25bnAum ? p(summaryExt.pctUncalledGt25bnAum) : '—' },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>

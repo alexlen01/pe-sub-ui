@@ -99,7 +99,7 @@ export interface BBSummaryExt {
   totalCapCommit: number; totalCalledCap: number; pctCalled: number
   totalAllUncalled: number; totalLPs: number
   pctInstitutional: number; pctHNW: number; pctTop10: number; pctTop20: number
-  igRatio: number; pctUncalledGt2M: number
+  igRatio: number; pctUncalledGt25bnAum: number
   // Borrowing Base
   facilitySize: number; ubsParticipation: number; ubsParticipationPct: number
   facilityLTV: number; availableCommit: number; facilityAdvRate: number
