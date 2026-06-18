@@ -8,7 +8,7 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields } from '../../services/extractionService'
-import { getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition } from '../../services/templateService'
+import { getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition, mapColumns } from '../../services/templateService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLUMNS } from '../../data/extractionData'
@@ -25,14 +25,14 @@ const LP_FIELDS: { key: string; extracted: string; label?: string }[] = [
   { key: 'name',       extracted: 'Investor Name (Agent Records)'                                    },
   { key: 'parent',     extracted: 'Parent / Sponsor'                                                 },
   { key: 'agentClass', extracted: 'LP Classification'                                                },
+  { key: 'commit',     extracted: 'Commitment (USD)',       label: 'Original Commitment'             },
+  { key: 'uncalled',   extracted: 'Uncalled Capital (USD)', label: 'Unfunded Capital Commitment'     },
+  { key: 'aum',        extracted: 'AUM'                                                              },
+  { key: 'nav',        extracted: 'NAV',                    label: 'Net Assets (range)'              },
   { key: 'sp',         extracted: 'S&P'                                                              },
   { key: 'moodys',     extracted: "Moody's"                                                          },
   { key: 'fitch',      extracted: 'Fitch'                                                            },
-  { key: 'aum',        extracted: 'AUM'                                                              },
-  { key: 'nav',        extracted: 'NAV',                    label: 'Net Assets (range)'              },
   { key: 'agentRate',  extracted: 'Advance Rate'                                                     },
-  { key: 'commit',     extracted: 'Commitment (USD)',       label: 'Original Commitment'             },
-  { key: 'uncalled',   extracted: 'Uncalled Capital (USD)', label: 'Unfunded Capital Commitment'     },
   { key: 'agentConc',  extracted: 'Concentration Limit'                                              },
   { key: 'agentBBFmt', extracted: 'Borrowing Base Contribution'                                      },
   { key: 'pctBBFmt',   extracted: '% of Borrowing Base'                                              },
@@ -52,9 +52,9 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
-// Sum of explicit <th> widths (280+150+120+50+60+56+68+84+70+116+116+88+108+78=1444)
+// Sum of explicit <th> widths (280+120+130+150+68+84+50+60+56+96+130+108+78=1410)
 // + 12px gap + 360px detail panel.
-const SIDE_BY_SIDE_MIN = 1816
+const SIDE_BY_SIDE_MIN = 1782
 
 function LPDetailPanel({
   row, onClose, fieldMap, overlay = false,
@@ -121,7 +121,6 @@ export default function ExtractionPreview() {
   const [abortOpen,      setAbortOpen]    = useState(false)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
   const [docCollapsed,   setDocCollapsed] = useState(false)
-  const [recogCollapsed, setRecogCollapsed] = useState(false)
   const [mapCollapsed,   setMapCollapsed] = useState(false)
   const [loadError,      setLoadError]    = useState<string | null>(null)
   const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
@@ -183,8 +182,13 @@ export default function ExtractionPreview() {
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
   const useOverlay    = containerWidth < SIDE_BY_SIDE_MIN
 
-  const profile        = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
-  const profileDocRows = buildDocRecognition(profile)
+  const profile     = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
+  const profileCols = mapColumns(profile)
+
+  // Document Recognition grid mirrors the prototype: file name comes from the live
+  // per-document detection; the remaining rows are profile-driven.
+  const docFileName = docRec.find(r => r.label === 'Document')?.value
+  const docRows     = buildDocRecognition(profile, { fileName: docFileName })
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
@@ -265,22 +269,9 @@ export default function ExtractionPreview() {
       <StepBar steps={WIZARD_STEPS} current={2} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 40px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-        <Card title="Document Recognition" subtitle="Borrowing-base tables identified by pattern recognition engine" action={<CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />}>
-          {!docCollapsed && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px 24px', padding: '4px 18px 16px' }}>
-              {docRec.map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
         <Card
-          title="Template Recognition"
-          subtitle={`Agent BB format · ${profile.fund}`}
+          title="Document Recognition"
+          subtitle={`Borrowing-base tables identified by the extraction engine · ${profile.fund}`}
           action={
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Format</label>
@@ -292,14 +283,14 @@ export default function ExtractionPreview() {
               >
                 {getTemplateProfiles().map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
               </select>
-              <CollapseBtn collapsed={recogCollapsed} onToggle={() => setRecogCollapsed(v => !v)} />
+              <CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />
             </div>
           }
         >
-          {!recogCollapsed && (
+          {!docCollapsed && (
           <div style={{ padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px 24px' }}>
-              {profileDocRows.map(({ label, value, wide }) => (
+              {docRows.map(({ label, value, wide }) => (
                 <div key={label} style={{ gridColumn: wide ? 'span 2' : 'span 1' }}>
                   <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
@@ -324,12 +315,21 @@ export default function ExtractionPreview() {
 
             <div>
               <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                Column headers ({profile.columns.length})
+                Column headers ({profileCols.filter(c => c.mapping).length}/{profileCols.length} mapped to canonical LP fields)
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {profile.columns.map(h => (
-                  <span key={h} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace', border: '1px solid var(--border)', background: 'var(--tbl)', color: 'var(--text)' }}>
-                    {h}
+                {profileCols.map(({ header, mapping }) => (
+                  <span
+                    key={header}
+                    title={mapping ? `→ ${mapping.group} › ${mapping.canonical}` : 'No canonical mapping — routes to “Unmatched — action required”'}
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace',
+                      border: `1px solid ${mapping ? 'var(--blue)' : 'var(--red)'}`,
+                      background: mapping ? '#e8f0fb' : '#fff5f5',
+                      color: mapping ? 'var(--blue)' : 'var(--red)',
+                    }}
+                  >
+                    {header}{mapping ? '' : ' ⚠'}
                   </span>
                 ))}
               </div>
@@ -437,18 +437,17 @@ export default function ExtractionPreview() {
                 <thead>
                   <tr>
                     <th style={{ width: 280 }}>Investor Name</th>
-                    <th style={{ width: 150 }}>Parent</th>
-                    <th style={{ width: 120 }}>LP Classification</th>
+                    <th style={{ width: 120 }}>Investor Type</th>
+                    <th style={{ width: 130, textAlign: 'right' }}>Commitment (USD)</th>
+                    <th style={{ width: 150, textAlign: 'right' }}>Uncalled Capital (USD)</th>
+                    <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
+                    <th style={{ width: 84, textAlign: 'right' }}>NAV</th>
                     <th style={{ width: 50, textAlign: 'center' }}>S&P</th>
                     <th style={{ width: 60, textAlign: 'center' }}>Moody's</th>
                     <th style={{ width: 56, textAlign: 'center' }}>Fitch</th>
-                    <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
-                    <th style={{ width: 84, textAlign: 'right' }}>Net Assets</th>
-                    <th style={{ width: 70, textAlign: 'center' }}>Adv. Rate</th>
-                    <th style={{ width: 116, textAlign: 'right' }}>Orig. Commit.</th>
-                    <th style={{ width: 116, textAlign: 'right' }}>Unfunded</th>
-                    <th style={{ width: 88, textAlign: 'center' }}>Conc. Limit</th>
-                    <th style={{ width: 108, textAlign: 'right' }}>BB Contrib.</th>
+                    <th style={{ width: 96, textAlign: 'center' }}>Advance Rate</th>
+                    <th style={{ width: 130, textAlign: 'center' }}>Concentration Limit</th>
+                    <th style={{ width: 108, textAlign: 'right' }}>Borrowing Base</th>
                     <th style={{ width: 78, textAlign: 'right', paddingRight: 20 }}>% of BB</th>
                   </tr>
                 </thead>
@@ -456,16 +455,15 @@ export default function ExtractionPreview() {
                   {pageItems.map(r => (
                     <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
                       <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>{r.name}{r.transferee ? <TransfereeMark /> : null}</div></td>
-                      <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: !r.parent ? 'var(--muted)' : undefined }} title={r.parent}>{r.parent || '—'}</div></td>
                       <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.fitch ? 'var(--navy)' : 'var(--muted)' }}>{r.fitch || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
                       <td style={{ textAlign: 'center', fontSize: 11 }}>{r.agentConc}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, paddingRight: 20, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>

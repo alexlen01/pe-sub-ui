@@ -24,6 +24,9 @@ export interface TemplateProfile {
   columns: string[]            // ordered per-LP field headers (raw agent text)
   legend: TemplateLegendRule[] | null
   notes: string[]
+  // Extra recognition keywords (agent bank, fund, file-name fragments) matched against
+  // submission metadata when the fund label / title anchor do not appear verbatim.
+  detectKeys?: string[]
 }
 
 export const TEMPLATE_PROFILES: TemplateProfile[] = [
@@ -139,6 +142,31 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     notes: [
       'Title sits deep in the sheet (row 83) — anchor on the title row, do not assume row 1.',
       'Two-row stacked header (rows 84-85) — header cells must be joined across both rows before alias matching.',
+    ],
+  },
+  {
+    id: 'gs-blue-owl',
+    fund: 'Goldman Sachs Bank USA',
+    workbook: { tabs: 'single', tabLabel: 'Borrowing Base' },
+    title: { row: 1, text: 'Blue Owl GP Stakes V — Borrowing Base Certificate' },
+    summaryRows: '1-6',
+    headerRow: 7,
+    groupHeaders: [
+      'Rated Included Investors',
+      'Non-Rated Included Investors',
+      'Designated Institutional Investors',
+      'Designated PWM Investors',
+      'Excluded Investors',
+    ],
+    columns: [
+      'Investor Name (Agent Records)', 'LP Classification', 'Commitment (USD)',
+      'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Advance Rate',
+      'Concentration Limit', '% Called', '% of Borrowing Base',
+    ],
+    detectKeys: ['blue owl gp stakes', 'goldman sachs', 'gp stakes v'],
+    legend: null,
+    notes: [
+      'Pilot facility format (Blue Owl GP Stakes V, ~900 LPs). LP-category banner rows; each section is followed by an excluded subtotal row.',
     ],
   },
 ]
