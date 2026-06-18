@@ -42,6 +42,13 @@ export interface LP {
   uec: string
   // Agent classification (may differ from UBS cls)
   agentCls?: string
+  // ── Shadow BB alignment (Shadow_BB.xlsx, 28-column model) ──
+  // `cls` carries the UBS LP Classification; `agentCls` the Agent LP Classification.
+  // `rate` carries the UBS Advance Rate; `agentRate` the Agent Advance Rate.
+  lpSizeBil?: string         // LP Size ($ Bil) — display string, e.g. "$134B"
+  lpSizeCriteria?: string    // Basis for LP Size: 'AUM' | 'NAV' | 'Assets'
+  agentExcessConc?: string   // Agent Excess Concentration Base (calculated)
+  ubsExcessConc?: string     // UBS Excess Concentration Base (calculated)
   // Status
   inc: boolean
   rcl: boolean

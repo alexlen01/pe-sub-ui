@@ -12,17 +12,47 @@ export type ClsOpt = typeof CLS_OPTS[number]
 
 // Agent LP Classification — standard agent taxonomy values. Extracted as-is; never
 // normalised to the UBS tier. Agent BB templates may present these as a column or as
-// group-header rows separating sections of LPs.
+// group-header rows separating sections of LPs. Values aligned to Shadow_BB.xlsx.
 export const AGENT_CLS_OPTS = [
   '',
   'Rated Included',
   'Non-Rated Included',
   'Designated Institutional',
   'Designated PWM',
-  'Largest 5 Designated',
-  'Aggregate Designated PWM',
+  'Ineligible Investors',
 ] as const
 export type AgentClsOpt = typeof AGENT_CLS_OPTS[number]
+
+// ── Shadow BB (Agent BB upload, Step 5) taxonomies — aligned to Shadow_BB.xlsx ──
+// UBS LP Classification — the credit officer's eligibility bucket on the Shadow BB.
+// Distinct from the legacy CLS_OPTS tiers; the UBS advance rate is captured as its own
+// manual-input column (UBS_CLS_DEFAULT_RATE only seeds a suggestion, never derives).
+export const UBS_CLS_OPTS = [
+  '',
+  'Rated Investor',
+  'FoF & Other > $10Bn AUM',
+  'Unrated NAV > $1Bn',
+  'Corp Pension > $5Bn Assets',
+  'Other Institutional',
+  'Excluded',
+] as const
+export type UbsClsOpt = typeof UBS_CLS_OPTS[number]
+
+// Suggested UBS advance rate per classification. The analyst may override: the Shadow BB
+// stores the advance rate as an independent manual-input column (the same UBS class appears
+// at 0.90 / 0.75 / 0.65 / 0.00 across the population), so this only seeds a sensible default.
+export const UBS_CLS_DEFAULT_RATE: Record<string, string> = {
+  'Rated Investor':             '90%',
+  'FoF & Other > $10Bn AUM':    '75%',
+  'Unrated NAV > $1Bn':         '65%',
+  'Corp Pension > $5Bn Assets': '65%',
+  'Other Institutional':        '50%',
+  'Excluded':                   '0%',
+}
+
+// Basis used for the "LP Size ($ Bil)" column on the Shadow BB.
+export const LP_SIZE_CRITERIA_OPTS = ['', 'AUM', 'NAV', 'Assets'] as const
+export type LpSizeCriteriaOpt = typeof LP_SIZE_CRITERIA_OPTS[number]
 
 export const REGION_OPTS = ['North America', 'Europe', 'Asia-Pacific', 'Middle East', 'Other'] as const
 export type RegionOpt = typeof REGION_OPTS[number]

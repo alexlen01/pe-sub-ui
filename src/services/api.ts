@@ -119,12 +119,15 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 export interface CommitLpRow {
   name: string; parent: string | null; spv: boolean; hq: boolean
   type: string; region: string; ig: boolean; cls: string
+  agentCls?: string | null
   sp: string; mdy: string; fitch: string
   aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
+  lpSizeBil?: string | null; lpSizeCriteria?: string | null
   capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
   uc: string | null; pctUncalled: string | null; pctCalled: string | null
   agentConc: string | null; ubsConc: string | null
-  agentRate: string | null; abb: string | null
+  agentRate: string | null; abb: string | null; ubb?: string | null
+  agentExcessConc?: string | null; ubsExcessConc?: string | null
   inc: boolean; rcl: boolean; notes: string | null
 }
 
@@ -156,19 +159,38 @@ export interface DocRecognition {
   headerInfo: string
 }
 
-/** Batch classification & rate save from the LP Classification & Rate Assignment screen. */
+/** Batch classification & rate save from the LP Classification & Rate Assignment screen.
+ * Every Manual-Input column on the Shadow BB (Shadow_BB.xlsx) is editable in the LP record
+ * card, so the row mirrors that full manual-input set. Calculated columns are never sent —
+ * the server/engine recomputes them. Any field left undefined is unchanged. */
 export interface LpClassificationRequest {
   facilityId: number
   effectiveDate?: string   // YYYY-MM; omitted → current month
   audit?: boolean          // true → write one aggregated audit entry; omitted → silent per-row save
   rows: Array<{
     name: string
-    cls?: string
+    // Identity & classification (manual)
+    parent?: string
+    spv?: boolean
+    type?: string             // Institutional vs HNW
+    ig?: boolean              // Investment Grade?
+    cls?: string              // UBS LP Classification
+    agentCls?: string         // Agent LP Classification
     sp?: string; mdy?: string; fitch?: string
+    // Scale (manual)
+    lpSizeBil?: string        // LP Size ($ Bil)
+    lpSizeCriteria?: string   // AUM | NAV | Assets
+    // Commitment / capital (manual)
+    capCommit?: string
+    uc?: string               // Uncalled Capital
+    // Rates & limits (manual)
+    ubsAdvRatePct?: number    // UBS Advance Rate, percent e.g. 90
+    agentRatePct?: number     // Agent Advance Rate, percent e.g. 75
+    ubsConcLimitPct?: number  // UBS Concentration Limit, percent e.g. 7.5
+    agentConcLimitPct?: number// Agent Concentration Limit, percent e.g. 12
+    // Status (manual)
     inc?: boolean
-    uc?: string
-    ubsAdvRatePct?: number    // percent, e.g. 90
-    ubsConcLimitPct?: number  // percent, e.g. 7.5
+    notes?: string
   }>
 }
 

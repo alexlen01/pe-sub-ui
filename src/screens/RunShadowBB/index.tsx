@@ -8,7 +8,11 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
-import { BUSA_RATES, computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
+import {
+  UBS_CLS_OPTS, AGENT_CLS_OPTS, UBS_CLS_DEFAULT_RATE, LP_SIZE_CRITERIA_OPTS,
+  TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS,
+} from '../../config/classificationConfig'
+import { computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { MATCH_QUEUE, SUBMISSION_SUMMARY } from '../../data/matchQueueData'
 import { EXTRACTED_LPS } from '../../data/extractionData'
 import { getMatchQueue } from '../../services/matchingService'
@@ -27,11 +31,16 @@ function parsePct(str: string | undefined | null): number | '' {
   if (!str || str === '—') return ''
   return parseFloat(String(str).replace('%', '')) || ''
 }
-function parseUCM(str: string | undefined | null): number | '' {
-  if (!str) return ''
-  const m = String(str).match(/\$?([\d,.]+)M/)
-  return m ? parseFloat(m[1].replace(',', '')) : ''
+// Money string → $M magnitude. Accepts "$250.0M", "1,200", "$1.2B".
+function parseMoneyM(str: string | undefined | null): number {
+  if (!str) return 0
+  const m = String(str).match(/\$?\s*([\d,.]+)\s*([MB])?/i)
+  if (!m) return 0
+  let v = parseFloat(m[1].replace(/,/g, '')) || 0
+  if ((m[2] || '').toUpperCase() === 'B') v *= 1000
+  return v
 }
+const num = (v: number | '' | undefined): number => (typeof v === 'number' ? v : 0)
 
 const YesNo = ({ val }: { val: boolean }) => (
   <span style={{
@@ -43,27 +52,37 @@ const YesNo = ({ val }: { val: boolean }) => (
   </span>
 )
 
-// Per-row formula engine — all monetary values in $M
-function calcRow(
-  ubsAdvRatePct: number | '',
-  concLimitPct: number | '',
-  ucM: number | '',
-  commitM: number,
-  totalCommitM: number,
-  totalUncalledM: number,
-) {
-  const advRate  = typeof ubsAdvRatePct === 'number' ? ubsAdvRatePct / 100 : 0
-  const clPct    = typeof concLimitPct  === 'number' ? concLimitPct  / 100 : 0
-  const uc       = typeof ucM           === 'number' ? ucM           : 0
+// Full per-row formula engine — all monetary values in $M. Mirrors the calculated columns
+// of Shadow_BB.xlsx; everything here is read-only on the card (the engine owns it).
+function calcRow(ov: Override, totalCommitM: number, totalUncalledM: number) {
+  const advRate  = num(ov.ubsAdvRatePct) / 100
+  const agRate   = num(ov.agentRatePct) / 100
+  const ubsClPct = num(ov.concLimitPct) / 100
+  const agClPct  = num(ov.agentConcLimitPct) / 100
+  const uc       = num(ov.ucM)
+  const commitM  = parseMoneyM(ov.capCommit)
+  const included = !!ov.inc && !!ov.cls && ov.cls !== 'Excluded'
 
-  const cmtPct          = totalCommitM  > 0 ? commitM / totalCommitM : 0
-  const ubsEligUncalled = Math.min(uc, totalUncalledM * clPct)
-  const ubsBBCalc       = ubsEligUncalled * advRate
+  const cmtPct          = totalCommitM   > 0 ? commitM / totalCommitM : 0
+  const calledM         = Math.max(commitM - uc, 0)
+  const pctUncalled     = totalUncalledM > 0 ? uc / totalUncalledM : 0
+  const pctCalled       = commitM > 0 ? calledM / commitM : 0
+
+  const ubsEligUncalled = Math.min(uc, totalUncalledM * ubsClPct)
+  const agentEligUncl   = Math.min(uc, totalUncalledM * agClPct)
+  const ubsBBCalc       = included ? ubsEligUncalled * advRate : 0
+  const agentBBCalc     = included ? agentEligUncl   * agRate  : 0
+  const ubsExcess       = included ? Math.max(uc - ubsEligUncalled, 0) : 0
+  const agentExcess     = included ? Math.max(uc - agentEligUncl,   0) : 0
+
   const ubsIncluded     = ubsBBCalc > 0
   const highQuality     = Math.abs(advRate - 0.9) < 0.0001
-  const inclExcess      = ubsIncluded ? uc - ubsEligUncalled : 0
 
-  return { cmtPct, ubsEligUncalled, ubsBBCalc, ubsIncluded, highQuality, inclExcess }
+  return {
+    cmtPct, commitM, calledM, pctUncalled, pctCalled,
+    ubsEligUncalled, agentEligUncl, ubsBBCalc, agentBBCalc,
+    ubsExcess, agentExcess, ubsIncluded, highQuality,
+  }
 }
 
 // inc: override of LP Master contractual eligibility flag; auto-derived from cls but user-editable
@@ -73,14 +92,30 @@ function deriveInc(cls: string, isNew: boolean, masterInc: boolean | undefined):
 }
 
 type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
+// Override holds every Manual-Input column of Shadow_BB.xlsx — all editable in the card.
 type Override = {
-  cls: string
+  // Identity & classification
+  parent: string
+  spv: boolean
+  type: string                  // Institutional vs HNW
+  ig: boolean                   // Investment Grade?
+  cls: string                   // UBS LP Classification
+  agentCls: string              // Agent LP Classification
   sp: string; mdy: string; fitch: string
-  ubsAdvRatePct: number | ''
-  agentRatePct: number | ''
-  concLimitPct: number | ''
-  ucM: number | ''
+  // Scale
+  lpSizeBil: string             // LP Size ($ Bil)
+  lpSizeCriteria: string        // AUM | NAV | Assets
+  // Commitment / capital
+  capCommit: string
+  ucM: number | ''              // Uncalled Capital ($M)
+  // Rates & limits
+  ubsAdvRatePct: number | ''    // UBS Advance Rate %
+  agentRatePct: number | ''     // Agent Advance Rate %
+  concLimitPct: number | ''     // UBS Concentration Limit %
+  agentConcLimitPct: number | ''// Agent Concentration Limit %
+  // Status
   inc: boolean
+  notes: string
 }
 
 export default function RunShadowBB() {
@@ -97,6 +132,7 @@ export default function RunShadowBB() {
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   const handleAbort = async () => {
     if (live && activeSubmissionId != null) {
@@ -196,18 +232,29 @@ export default function RunShadowBB() {
       const v = extracted || master || ''
       return v !== 'NR' ? v : ''
     }
+    const sizeBil = lp.lpSizeBil || lp.aum || ext?.aum || lp.nav || ext?.nav || ''
     return {
-      cls:           lp.cls ?? '',
-      sp:            toRating(ext?.sp,     lp.sp),
-      mdy:           toRating(ext?.moodys, lp.mdy),
-      fitch:         toRating(ext?.fitch,  lp.fitch),
-      ubsAdvRatePct: rate ? rate.ubsAdvRatePct * 100
-                          : lp.cls ? (BUSA_RATES[lp.cls] ?? 0) * 100 : '',
-      agentRatePct:  parsePct(ext?.agentRate || lp.agentRate),
-      concLimitPct:  rate ? rate.ubsConcLimitPct * 100
-                          : parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
-      ucM:           parseUCM(lp.uc),
-      inc:           deriveInc(lp.cls ?? '', lp._isNew, lp.inc),
+      parent:         lp.parent ?? '',
+      spv:            !!lp.spv,
+      type:           lp.type ?? 'Institutional',
+      ig:             !!lp.ig,
+      cls:            lp.cls ?? '',
+      agentCls:       lp.agentCls ?? '',
+      sp:             toRating(ext?.sp,     lp.sp),
+      mdy:            toRating(ext?.moodys, lp.mdy),
+      fitch:          toRating(ext?.fitch,  lp.fitch),
+      lpSizeBil:      sizeBil,
+      lpSizeCriteria: lp.lpSizeCriteria ?? (lp.nav ? 'NAV' : 'AUM'),
+      capCommit:      lp.capCommit ?? '',
+      ucM:            parseMoneyM(lp.uc),
+      ubsAdvRatePct:  rate ? rate.ubsAdvRatePct * 100
+                           : (lp.cls ? parsePct(UBS_CLS_DEFAULT_RATE[lp.cls]) : '') || parsePct(lp.rate),
+      agentRatePct:   parsePct(ext?.agentRate || lp.agentRate),
+      concLimitPct:   rate ? rate.ubsConcLimitPct * 100
+                           : parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
+      agentConcLimitPct: parsePct(ext?.agentConc || lp.agentConc),
+      inc:            deriveInc(lp.cls ?? '', lp._isNew, lp.inc),
+      notes:          lp.notes ?? '',
     }
   }
 
@@ -236,12 +283,23 @@ export default function RunShadowBB() {
     if (!name) return null
     return {
       name,
-      cls:             ov.cls || undefined,
-      sp:              ov.sp, mdy: ov.mdy, fitch: ov.fitch,
-      inc:             ov.inc,
-      uc:              typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : undefined,
-      ubsAdvRatePct:   typeof ov.ubsAdvRatePct === 'number' ? ov.ubsAdvRatePct : undefined,
-      ubsConcLimitPct: typeof ov.concLimitPct  === 'number' ? ov.concLimitPct  : undefined,
+      parent:            ov.parent || undefined,
+      spv:               ov.spv,
+      type:              ov.type || undefined,
+      ig:                ov.ig,
+      cls:               ov.cls || undefined,
+      agentCls:          ov.agentCls || undefined,
+      sp:                ov.sp, mdy: ov.mdy, fitch: ov.fitch,
+      lpSizeBil:         ov.lpSizeBil || undefined,
+      lpSizeCriteria:    ov.lpSizeCriteria || undefined,
+      capCommit:         ov.capCommit || undefined,
+      uc:                typeof ov.ucM === 'number' ? `$${ov.ucM.toFixed(1)}M` : undefined,
+      ubsAdvRatePct:     typeof ov.ubsAdvRatePct     === 'number' ? ov.ubsAdvRatePct     : undefined,
+      agentRatePct:      typeof ov.agentRatePct      === 'number' ? ov.agentRatePct      : undefined,
+      ubsConcLimitPct:   typeof ov.concLimitPct      === 'number' ? ov.concLimitPct      : undefined,
+      agentConcLimitPct: typeof ov.agentConcLimitPct === 'number' ? ov.agentConcLimitPct : undefined,
+      inc:               ov.inc,
+      notes:             ov.notes || undefined,
     }
   }
 
@@ -304,24 +362,18 @@ export default function RunShadowBB() {
     const currentOv = overrides[key] ?? {} as Override
     const newOv = { ...currentOv, [field]: value } as Override
 
-    const lp = submissionLPs.find(l => l._key === key)
-    if (lp) {
-      const commitM = (() => { const v = parseUCM(lp.capCommit); return typeof v === 'number' ? v : 0 })()
-      const oldC = calcRow(currentOv.ubsAdvRatePct, currentOv.concLimitPct, currentOv.ucM, commitM, totalCommitM, totalUncalledM)
-      const newC = calcRow(newOv.ubsAdvRatePct, newOv.concLimitPct, newOv.ucM, commitM, totalCommitM, totalUncalledM)
-
-      const changed: FlashCol[] = []
-      if (oldC.highQuality !== newC.highQuality) changed.push('highQuality')
-      if (oldC.ubsIncluded !== newC.ubsIncluded) changed.push('ubsIncluded')
-      if (Math.abs(oldC.ubsBBCalc - newC.ubsBBCalc) > 0.0001) changed.push('ubsBBCalc')
-
-      if (changed.length > 0) {
-        setFlashKeys(f => {
-          const rowFlash = { ...(f[key] ?? {}) }
-          for (const col of changed) rowFlash[col] = (rowFlash[col] ?? 0) + 1
-          return { ...f, [key]: rowFlash }
-        })
-      }
+    const oldC = calcRow(currentOv, totalCommitM, totalUncalledM)
+    const newC = calcRow(newOv, totalCommitM, totalUncalledM)
+    const changed: FlashCol[] = []
+    if (oldC.highQuality !== newC.highQuality) changed.push('highQuality')
+    if (oldC.ubsIncluded !== newC.ubsIncluded) changed.push('ubsIncluded')
+    if (Math.abs(oldC.ubsBBCalc - newC.ubsBBCalc) > 0.0001) changed.push('ubsBBCalc')
+    if (changed.length > 0) {
+      setFlashKeys(f => {
+        const rowFlash = { ...(f[key] ?? {}) }
+        for (const col of changed) rowFlash[col] = (rowFlash[col] ?? 0) + 1
+        return { ...f, [key]: rowFlash }
+      })
     }
 
     setOverrides(prev => ({ ...prev, [key]: newOv }))
@@ -352,10 +404,6 @@ export default function RunShadowBB() {
   }, [submissionLPs, lpRates])
 
   // Once both submissionLPs and submissionDetails are available, apply saved overrides once.
-  // Saved overrides win over freshly-computed defaults for any LP key that exists in both.
-  // Guard: only proceed when the saved keys overlap with the current LP keys — if
-  // submissionDetails resolves before the match-queue API call, submissionLPs still holds
-  // prototype data whose keys won't match the real saved keys, so we wait for real data.
   useEffect(() => {
     if (savedOverridesApplied.current) return
     if (submissionLPs.length === 0) return
@@ -367,7 +415,7 @@ export default function RunShadowBB() {
     setOverrides(prev => {
       const merged = { ...prev }
       for (const [key, val] of Object.entries(saved)) {
-        if (key in merged) merged[key] = val as Override
+        if (key in merged) merged[key] = { ...merged[key], ...(val as Partial<Override>) }
       }
       return merged
     })
@@ -391,10 +439,10 @@ export default function RunShadowBB() {
     const totalLPs     = matchQueue.length
     const newCount     = matchQueue.filter(mq => !mq.masterName).length
     const uncalledM = live
-      ? Object.values(overrides).reduce((s, ov) => s + (typeof ov.ucM === 'number' ? ov.ucM : 0), 0)
+      ? Object.values(overrides).reduce((s, ov) => s + num(ov.ucM), 0)
       : EXTRACTED_LPS.reduce((s, lp) => s + parseDollars(lp.uncalled), 0) / 1e6
     const commitM = live
-      ? submissionLPs.reduce((s, lp) => { const v = parseUCM(lp.capCommit); return s + (typeof v === 'number' ? v : 0) }, 0)
+      ? Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capCommit), 0)
       : EXTRACTED_LPS.reduce((s, lp) => s + parseDollars(lp.commit), 0) / 1e6
     const totalUncalled = uncalledM > 0
       ? `$${Math.round(uncalledM * 1_000_000).toLocaleString()}`
@@ -412,28 +460,29 @@ export default function RunShadowBB() {
       { label: 'Total Commitment',  value: totalCommitment },
       { label: 'Total Uncalled',    value: totalUncalled },
     ]
-  }, [submissionDetails, activeSubmission, matchQueue, submissionLPs, overrides, live])
+  }, [submissionDetails, activeSubmission, matchQueue, overrides, live])
 
   const newLPs        = submissionLPs.filter(lp => lp._isNew)
   const overrideCount = submissionLPs.filter(lp => !lp._isNew && overrides[lp._key]?.cls !== lp.cls).length
   const unclassified  = submissionLPs.filter(lp => !overrides[lp._key]?.cls).length
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(submissionLPs)
 
-  // Facility-level totals used by formula columns
+  // Facility-level totals used by formula columns (from overrides, which are editable).
   const totalCommitM = useMemo(() =>
-    submissionLPs.reduce((s, lp) => {
-      const v = parseUCM(lp.capCommit)
-      return s + (typeof v === 'number' ? v : 0)
-    }, 0)
-  , [submissionLPs])
+    Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capCommit), 0)
+  , [overrides])
 
   const totalUncalledM = useMemo(() =>
-    submissionLPs.reduce((s, lp) => {
-      const ov = overrides[lp._key]
-      const v  = typeof ov?.ucM === 'number' ? ov.ucM : parseUCM(lp.uc)
-      return s + (typeof v === 'number' ? v : 0)
-    }, 0)
-  , [submissionLPs, overrides])
+    Object.values(overrides).reduce((s, ov) => s + num(ov.ucM), 0)
+  , [overrides])
+
+  // Keep a row selected for the side card; default to the first row on the page.
+  useEffect(() => {
+    if (result) return
+    const keys = pageItems.map(lp => lp._key)
+    if (keys.length === 0) { setSelectedKey(null); return }
+    if (!selectedKey || !keys.includes(selectedKey)) setSelectedKey(keys[0])
+  }, [pageItems, selectedKey, result])
 
   const run = async () => {
     setRunning(true)
@@ -442,20 +491,25 @@ export default function RunShadowBB() {
     toast('Shadow BB calculation started…')
 
     const overriddenLPs = submissionLPs.map(lp => {
-      const ov         = overrides[lp._key] ?? {}
-      const ucM        = typeof ov.ucM === 'number' ? ov.ucM : 0
+      const ov         = overrides[lp._key] ?? buildOverride(lp)
+      const c          = calcRow(ov, totalCommitM, totalUncalledM)
+      const ucM        = num(ov.ucM)
       const concLimitM = typeof ov.concLimitPct === 'number'
         ? (ov.concLimitPct / 100) * totalUncalledM
         : DEFAULT_CL_M
       const rate      = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? '0%')
-      const agentRate = typeof ov.agentRatePct   === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : (lp.agentRate ?? '')
+      const agentRate = typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : (lp.agentRate ?? '')
       return {
         ...lp,
-        cls: ov.cls || 'Excluded',
-        sp: ov.sp ?? lp.sp ?? '', mdy: ov.mdy ?? lp.mdy ?? '', fitch: ov.fitch ?? lp.fitch ?? '',
-        rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
+        parent: ov.parent, spv: ov.spv, type: ov.type as LPRecord['type'], ig: ov.ig,
+        cls: ov.cls || 'Excluded', agentCls: ov.agentCls,
+        sp: ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
+        lpSizeBil: ov.lpSizeBil, lpSizeCriteria: ov.lpSizeCriteria,
+        capCommit: ov.capCommit, rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
         ubsConc: fmtM(concLimitM),  // per-LP dollar limit for API re-computation
-        concLimitM, inc: ov.inc ?? false, abb: lp.abb ?? '$0',
+        agentExcessConc: fmtM(c.agentExcess), ubsExcessConc: fmtM(c.ubsExcess),
+        abb: fmtM(c.agentBBCalc), ubb: fmtM(c.ubsBBCalc),
+        concLimitM, inc: ov.inc ?? false, notes: ov.notes,
       }
     })
 
@@ -468,34 +522,40 @@ export default function RunShadowBB() {
       if (facilityId != null) {
         try {
           const commitRows: CommitLpRow[] = overriddenLPs.map(lp => ({
-            name:          lp.name ?? '',
-            parent:        lp.parent ?? null,
-            spv:           lp.spv ?? false,
-            hq:            lp.hq ?? true,
-            type:          lp.type ?? 'Institutional',
-            region:        lp.region ?? '',
-            ig:            lp.ig ?? false,
-            cls:           lp.cls ?? 'Excluded',
-            sp:            lp.sp ?? '',
-            mdy:           lp.mdy ?? '',
-            fitch:         lp.fitch ?? '',
-            aum:           lp.aum || null,
-            nav:           lp.nav || null,
-            pension:       lp.pension || null,
-            pensionFunded: lp.pensionFunded || null,
-            capCommit:     lp.capCommit || null,
-            pctCapCommit:  lp.pctCapCommit || null,
-            calledCap:     lp.calledCap || null,
-            uc:            lp.uc || null,
-            pctUncalled:   lp.pctUncalled || null,
-            pctCalled:     lp.pctCalled || null,
-            agentConc:     lp.agentConc || null,
-            ubsConc:       lp.ubsConc || null,
-            agentRate:     lp.agentRate || null,
-            abb:           lp.abb || null,
-            inc:           lp.inc ?? false,
-            rcl:           lp.rcl ?? false,
-            notes:         lp.notes || null,
+            name:           lp.name ?? '',
+            parent:         lp.parent ?? null,
+            spv:            lp.spv ?? false,
+            hq:             lp.hq ?? true,
+            type:           lp.type ?? 'Institutional',
+            region:         lp.region ?? '',
+            ig:             lp.ig ?? false,
+            cls:            lp.cls ?? 'Excluded',
+            agentCls:       lp.agentCls || null,
+            sp:             lp.sp ?? '',
+            mdy:            lp.mdy ?? '',
+            fitch:          lp.fitch ?? '',
+            aum:            lp.aum || null,
+            nav:            lp.nav || null,
+            pension:        lp.pension || null,
+            pensionFunded:  lp.pensionFunded || null,
+            lpSizeBil:      lp.lpSizeBil || null,
+            lpSizeCriteria: lp.lpSizeCriteria || null,
+            capCommit:      lp.capCommit || null,
+            pctCapCommit:   lp.pctCapCommit || null,
+            calledCap:      lp.calledCap || null,
+            uc:             lp.uc || null,
+            pctUncalled:    lp.pctUncalled || null,
+            pctCalled:      lp.pctCalled || null,
+            agentConc:      lp.agentConc || null,
+            ubsConc:        lp.ubsConc || null,
+            agentRate:      lp.agentRate || null,
+            abb:            lp.abb || null,
+            ubb:            lp.ubb || null,
+            agentExcessConc: lp.agentExcessConc || null,
+            ubsExcessConc:  lp.ubsExcessConc || null,
+            inc:            lp.inc ?? false,
+            rcl:            lp.rcl ?? false,
+            notes:          lp.notes || null,
           }))
           await api.bb.run(facilityId, commitRows)
         } catch (e) {
@@ -528,6 +588,9 @@ export default function RunShadowBB() {
     { label: 'Conc. Excess (total)',            value: fmtM(result.summary.totalConcExcess), neg: result.summary.totalConcExcess > 0 },
   ] : []
 
+  const selectedLp = submissionLPs.find(lp => lp._key === selectedKey) ?? null
+  const selectedOv = selectedKey ? overrides[selectedKey] : undefined
+
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
@@ -548,7 +611,7 @@ export default function RunShadowBB() {
 
         {!result && (
           <Card title="LP Classification & Rate Assignment"
-            subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'}`}
+            subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'} · select a row to edit the full LP record`}
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {unclassified > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>{unclassified} unclassified</span>}
@@ -558,114 +621,72 @@ export default function RunShadowBB() {
               </div>
             }
           >
-            <div className="data-table-wrap">
-              <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Investor Name</th>
-                    <th style={{ width: 110, textAlign: 'center' }}>High Quality</th>
-                    <th style={{ width: 60, textAlign: 'center' }}>S&amp;P</th>
-                    <th style={{ width: 66, textAlign: 'center' }}>Moody's</th>
-                    <th style={{ width: 60, textAlign: 'center' }}>Fitch</th>
-                    <th className="num" style={{ width: 86 }}>NAV/AUM</th>
-                    <th style={{ width: 110, textAlign: 'center' }}>UBS Included</th>
-                    <th className="num" style={{ width: 92 }}>Commitment</th>
-                    <th className="num" style={{ width: 62 }}>Cmt. %</th>
-                    <th className="num" style={{ width: 120 }}>UBS Cont. Limit</th>
-                    <th className="num" style={{ width: 147, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'help' }} title="UBS Eligible Uncalled Cap.">UBS Eligible Uncalled Cap.</th>
-                    <th className="num" style={{ width: 147, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'help' }} title="Included Uncalled Conc. Excess">Included Uncalled Conc. Excess</th>
-                    <th className="num" style={{ width: 86 }}>Agent Rate %</th>
-                    <th className="num" style={{ width: 110 }}>BUSA Rate %</th>
-                    <th className="num" style={{ width: 86 }}>UBS BB</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map(lp => {
-                    const key     = lp._key
-                    const ov      = overrides[key] ?? {} as Override
-                    const missing = !ov.cls
-                    const commitM = (() => { const v = parseUCM(lp.capCommit); return typeof v === 'number' ? v : 0 })()
-                    const c = calcRow(ov.ubsAdvRatePct, ov.concLimitPct, ov.ucM, commitM, totalCommitM, totalUncalledM)
+            {/* Compact overview table (left) + full LP record card (right). The table holds the
+                most useful columns and fits without horizontal scroll; every field is edited in
+                the card, where Manual-Input columns are editable and Calculated columns read-only. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 420px', gap: 14, padding: '4px 18px 0', alignItems: 'start' }}>
 
-                    return (
-                      <tr key={key} style={{ background: missing ? 'color-mix(in srgb, var(--red) 6%, transparent)' : undefined }}>
-
-                        {/* Investor Name */}
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {(() => { const n = lp.name ?? lp._agentName ?? '—'; const trunc = n.length > 60; return <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }} title={trunc ? n : undefined}>{trunc ? n.slice(0, 60) + '…' : n}</span> })()}
-                            {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
-                            {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: '0.04em' }}>Saving…</span>}
-                            {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', letterSpacing: '0.04em' }} title="Saved">✓ Saved</span>}
-                            {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', letterSpacing: '0.04em' }} title="Save failed">✕ Failed</span>}
-                          </div>
-                        </td>
-
-                        {/* High Quality — UBS Adv Rate == 90% */}
-                        <td key={`hq-${key}-${flashKeys[key]?.highQuality ?? 0}`} className={flashKeys[key]?.highQuality ? 'cell-flash' : undefined} style={{ textAlign: 'center' }}><YesNo val={c.highQuality} /></td>
-
-                        {/* S&P */}
-                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.sp || '—'}</td>
-
-                        {/* Moody's */}
-                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.mdy || '—'}</td>
-
-                        {/* Fitch */}
-                        <td style={{ fontSize: 11, textAlign: 'center' }}>{ov.fitch || '—'}</td>
-
-                        {/* NAV/AUM — show AUM when NAV is absent */}
-                        <td className="num">{(lp.nav?.trim() || lp.aum?.trim()) || '—'}</td>
-
-                        {/* UBS Included — UBS BB > 0 */}
-                        <td key={`inc-${key}-${flashKeys[key]?.ubsIncluded ?? 0}`} className={flashKeys[key]?.ubsIncluded ? 'cell-flash' : undefined} style={{ textAlign: 'center' }}><YesNo val={c.ubsIncluded} /></td>
-
-                        {/* Commitment — read-only */}
-                        <td className="num">{commitM > 0 ? fmtM(commitM) : '—'}</td>
-
-                        {/* Cmt. % — LP commitment / total commitment */}
-                        <td className="num">{fmtPct(c.cmtPct)}</td>
-
-                        {/* UBS Cont. Limit — editable % */}
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                            <input type="number" value={ov.concLimitPct ?? ''} onChange={e => setOverride(key, 'concLimitPct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running}
-                              placeholder={String(DEFAULT_CL_PCT)} style={{ width: 46, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={0.5} />
-                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
-                          </div>
-                        </td>
-
-                        {/* UBS Eligible Uncalled Cap. */}
-                        <td className="num">{fmtM(c.ubsEligUncalled)}</td>
-
-                        {/* Included Uncalled Conc. Excess — excess above conc limit for included LPs */}
-                        <td className={`num ${c.inclExcess > 0 ? 'zero' : ''}`}>{fmtM(c.inclExcess)}</td>
-
-                        {/* Agent Rate % — read-only from extraction */}
-                        <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : '—'}</td>
-
-                        {/* BUSA Rate % — editable % */}
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                            <input type="number" value={ov.ubsAdvRatePct ?? ''} onChange={e => setOverride(key, 'ubsAdvRatePct', e.target.value === '' ? '' : parseFloat(e.target.value))} disabled={running}
-                              placeholder="0" style={{ width: 46, fontSize: 11, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }} min={0} max={100} step={5} />
-                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
-                          </div>
-                        </td>
-
-                        {/* UBS BB — ubsEligUncalled × advRate */}
-                        <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
-
+              <div style={{ minWidth: 0 }}>
+                <div className="data-table-wrap">
+                  <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th>Investor Name</th>
+                        <th style={{ width: 132 }}>UBS Class</th>
+                        <th className="num" style={{ width: 64 }}>UBS Rate</th>
+                        <th className="num" style={{ width: 66 }}>Agent Rate</th>
+                        <th className="num" style={{ width: 92 }}>Uncalled</th>
+                        <th className="num" style={{ width: 86 }}>UBS BB</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="tbl-footer">
-              <span>Showing {from}–{to} of {submissionLPs.length} LPs{unclassified > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--blue)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
-                {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                    </thead>
+                    <tbody>
+                      {pageItems.map(lp => {
+                        const key      = lp._key
+                        const ov       = overrides[key] ?? {} as Override
+                        const missing  = !ov.cls
+                        const selected = key === selectedKey
+                        const c = calcRow(ov, totalCommitM, totalUncalledM)
+                        return (
+                          <tr key={key} onClick={() => setSelectedKey(key)}
+                            style={{ cursor: 'pointer',
+                              background: selected ? 'var(--blue-lt)' : missing ? 'color-mix(in srgb, var(--red) 6%, transparent)' : undefined,
+                              boxShadow: selected ? 'inset 3px 0 0 var(--blue)' : undefined }}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {(() => { const n = lp.name ?? lp._agentName ?? '—'; const trunc = n.length > 44; return <span style={{ fontSize: 11, fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n}>{trunc ? n.slice(0, 44) + '…' : n}</span> })()}
+                                {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em' }}>NEW</span>}
+                                {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)' }}>Saving…</span>}
+                                {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)' }} title="Saved">✓</span>}
+                                {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)' }} title="Save failed">✕</span>}
+                              </div>
+                            </td>
+                            <td style={{ fontSize: 11, color: ov.cls ? 'var(--text)' : 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td className="num">{typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : '—'}</td>
+                            <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(0)}%` : '—'}</td>
+                            <td className="num">{typeof ov.ucM === 'number' ? fmtM(ov.ucM) : '—'}</td>
+                            <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="tbl-footer">
+                  <span>Showing {from}–{to} of {submissionLPs.length} LPs{unclassified > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--blue)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+                    {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right-side LP record card — all 28 Shadow BB fields */}
+              <div style={{ position: 'sticky', top: 4 }}>
+                {selectedLp && selectedOv
+                  ? <LPRecordCard lp={selectedLp} ov={selectedOv} calc={calcRow(selectedOv, totalCommitM, totalUncalledM)}
+                      saveStatus={saveState[selectedLp._key]} running={running}
+                      onChange={(field, value) => setOverride(selectedLp._key, field, value)} />
+                  : <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>Select an LP row to view and edit its record.</div>}
               </div>
             </div>
           </Card>
@@ -690,5 +711,165 @@ export default function RunShadowBB() {
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting removes this submission from history. The LP records committed to LP Master remain — re-upload the Agent BB if you need to reprocess and update them.</div>
     </Modal>
     </>
+  )
+}
+
+// ── LP record card — same sectioned layout as the LP Master detail; reused here so Step 5
+// shows every Shadow BB field. Manual-Input columns are editable; Calculated columns are
+// derived live by calcRow and rendered read-only.
+function LPRecordCard({ lp, ov, calc, onChange, running, saveStatus }: {
+  lp: SubmissionLP
+  ov: Override
+  calc: ReturnType<typeof calcRow>
+  onChange: (field: keyof Override, value: unknown) => void
+  running: boolean
+  saveStatus?: 'saving' | 'saved' | 'error'
+}) {
+  const name = lp.name ?? lp._agentName ?? '—'
+
+  const sec = (t: string) => (
+    <div style={{ gridColumn: '1 / -1', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 8, padding: '4px 8px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
+  )
+  const lbl = (t: string) => (
+    <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 3 }}>{t}</div>
+  )
+  const wrap = (span2: boolean, children: React.ReactNode, key: string) => (
+    <div key={key} style={span2 ? { gridColumn: '1 / -1' } : undefined}>{children}</div>
+  )
+  const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
+
+  // Read-only calculated field
+  const ro = (label: string, value: React.ReactNode, span2 = false, tone?: 'neg' | 'pos' | 'zero') =>
+    wrap(span2, <>
+      {lbl(label)}
+      <div style={{ fontSize: 12.5, minHeight: 24, display: 'flex', alignItems: 'center', color: tone === 'neg' ? 'var(--red)' : tone === 'pos' ? 'var(--green)' : tone === 'zero' ? 'var(--muted)' : 'var(--navy)', fontWeight: tone ? 600 : 400 }}>{value}</div>
+    </>, label)
+
+  // Editable text input (manual)
+  const txt = (label: string, field: keyof Override, span2 = false) =>
+    wrap(span2, <>
+      {lbl(label)}
+      <input type="text" value={String(ov[field] ?? '')} disabled={running} style={inputSt}
+        onChange={e => onChange(field, e.target.value)} />
+    </>, label)
+
+  // Editable dropdown (manual)
+  const sel = (label: string, field: keyof Override, opts: readonly string[], span2 = false) =>
+    wrap(span2, <>
+      {lbl(label)}
+      <select value={String(ov[field] ?? '')} disabled={running} style={inputSt}
+        onChange={e => onChange(field, e.target.value)}>
+        {opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}
+      </select>
+    </>, label)
+
+  // Editable checkbox (manual)
+  const chk = (label: string, field: keyof Override) =>
+    wrap(false, <>
+      {lbl(label)}
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}>
+        <input type="checkbox" checked={!!ov[field]} disabled={running} onChange={e => onChange(field, e.target.checked)} /> Yes
+      </label>
+    </>, label)
+
+  // Editable percentage input (manual)
+  const pct = (label: string, field: keyof Override, step = 5) =>
+    wrap(false, <>
+      {lbl(label)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+        <input type="number" value={ov[field] === '' || ov[field] == null ? '' : Number(ov[field])} disabled={running}
+          min={0} max={100} step={step} style={{ ...inputSt, width: 70, textAlign: 'right' }}
+          onChange={e => onChange(field, e.target.value === '' ? '' : parseFloat(e.target.value))} />
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
+      </div>
+    </>, label)
+
+  // Editable $M input (manual)
+  const moneyM = (label: string, field: keyof Override) =>
+    wrap(false, <>
+      {lbl(label)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>$</span>
+        <input type="number" value={ov[field] === '' || ov[field] == null ? '' : Number(ov[field])} disabled={running}
+          min={0} step={0.1} style={{ ...inputSt, width: 90, textAlign: 'right' }}
+          onChange={e => onChange(field, e.target.value === '' ? '' : parseFloat(e.target.value))} />
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>M</span>
+      </div>
+    </>, label)
+
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', padding: '12px 16px' }
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+      <div style={{ background: 'var(--navy)', color: '#fff', padding: '12px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }} title={name}>{name}</div>
+          {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(255,255,255,.2)', borderRadius: 3, padding: '2px 6px', flexShrink: 0 }}>NEW</span>}
+        </div>
+        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .92 }}>
+          {ov.cls && <Tag>{ov.cls}</Tag>}
+          <span style={{ fontSize: 11, opacity: .8 }}>
+            {typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : '—'} UBS · {typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(0)}%` : '—'} Agent
+          </span>
+          {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving…</span>}
+          {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>✓ Saved</span>}
+          {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>✕ Failed</span>}
+        </div>
+      </div>
+
+      <div style={{ maxHeight: 'calc(100vh - 360px)', overflowY: 'auto' }}>
+        <div style={COLS}>
+          {sec('Identity & Classification')}
+          {ro('Investor Name', name, true)}
+          {ro('Rank', lp.rank ?? '—')}
+          {txt('Parent / Sponsor', 'parent', true)}
+          {chk('SPV', 'spv')}
+          {sel('Institutional vs HNW', 'type', TYPE_OPTS)}
+          {chk('Investment Grade?', 'ig')}
+          {ro('High Quality', <YesNo val={calc.highQuality} />)}
+
+          {sec('Classification & Rates')}
+          {sel('UBS LP Classification', 'cls', UBS_CLS_OPTS, true)}
+          {sel('Agent LP Classification', 'agentCls', AGENT_CLS_OPTS, true)}
+          {pct('UBS Advance Rate', 'ubsAdvRatePct', 5)}
+          {pct('Agent Advance Rate', 'agentRatePct', 5)}
+
+          {sec('Ratings')}
+          {sel('S&P', 'sp', SP_RATING_OPTS)}
+          {sel("Moody's", 'mdy', MDY_RATING_OPTS)}
+          {sel('Fitch', 'fitch', SP_RATING_OPTS)}
+
+          {sec('Financial Scale')}
+          {txt('LP Size ($ Bil)', 'lpSizeBil')}
+          {sel('LP Size Criteria', 'lpSizeCriteria', LP_SIZE_CRITERIA_OPTS)}
+
+          {sec('Commitment & Capital')}
+          {txt('Capital Commitments', 'capCommit')}
+          {ro('% of Capital Committed', fmtPct(calc.cmtPct))}
+          {ro('Called Capital', fmtM(calc.calledM))}
+          {moneyM('Uncalled Capital', 'ucM')}
+          {ro('% of Uncalled Capital', fmtPct(calc.pctUncalled))}
+          {ro('% of LP Called', fmtPct(calc.pctCalled))}
+
+          {sec('Concentration & Borrowing Base')}
+          {pct('Agent Concentration Limit', 'agentConcLimitPct', 0.5)}
+          {pct('UBS Concentration Limit', 'concLimitPct', 0.5)}
+          {ro('Agent Excess Conc. Base', fmtM(calc.agentExcess), false, calc.agentExcess > 0 ? 'neg' : 'zero')}
+          {ro('UBS Excess Conc. Base', fmtM(calc.ubsExcess), false, calc.ubsExcess > 0 ? 'neg' : 'zero')}
+          {ro('Agent Borrowing Base', fmtM(calc.agentBBCalc), false, calc.agentBBCalc === 0 ? 'zero' : undefined)}
+          {ro('UBS Borrowing Base', fmtM(calc.ubsBBCalc), false, calc.ubsBBCalc > 0 ? 'pos' : 'zero')}
+          {ro('UBS Eligible Uncalled', fmtM(calc.ubsEligUncalled))}
+          {ro('UBS Included', <YesNo val={calc.ubsIncluded} />)}
+
+          {sec('Status & Notes')}
+          {chk('Included', 'inc')}
+          {wrap(true, <>
+            {lbl('Notes')}
+            <textarea value={ov.notes ?? ''} disabled={running} style={{ ...inputSt, height: 56, resize: 'vertical' }}
+              onChange={e => onChange('notes', e.target.value)} />
+          </>, 'notes')}
+        </div>
+      </div>
+    </div>
   )
 }
