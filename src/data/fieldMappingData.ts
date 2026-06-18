@@ -1,5 +1,5 @@
 // Mock data for field mapping dictionary — must stay in sync with V1_2__seed.sql.
-// 29 canonical fields across 7 groups.
+// 31 canonical fields across 7 groups.
 // is_derived fields are included so the UI can render them (greyed out / labelled).
 
 export const ALIAS_GROUPS = [
@@ -18,8 +18,8 @@ export const ALIAS_GROUPS = [
       ],
     },
     {
-      id: 2, canonical: 'Agent LP Classification',
-      lpMasterField: 'Identity & Classification - Agent LP Classification',
+      id: 2, canonical: 'Investor Type',
+      lpMasterField: 'Identity & Classification - Investor Type',
       disambiguation: "The Agent's own classification label, taken verbatim from the Agent BB document. May be a column OR group-header rows that separate sections of LPs (e.g. \"Rated Included\", \"Designated PWM\"); section rows are filled down onto every LP beneath the header. Standard values: Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 Designated, Aggregate Designated PWM. Do not normalise to the UBS tier.",
       isDerived: false,
       aliases: [
@@ -31,17 +31,6 @@ export const ALIAS_GROUPS = [
         { id:12, text:'LP Classification',tier:'Core', bank:null },
         { id:13, text:'Entity Type',      tier:'Bank', bank:'BNY' },
         { id:14, text:'Investor Class',   tier:'Bank', bank:'JPM' },
-      ],
-    },
-    {
-      id: 30, canonical: 'UBS LP Classification',
-      lpMasterField: 'Identity & Classification - UBS LP Classification',
-      disambiguation: 'UBS internal advance-rate tier computed by the platform (Rated, Unrated >2bn, Unrated 1–2bn, Eligible, Excluded). Derived from ratings, AUM, and eligibility — not extracted from the agent document. Captured so the agent label can be cross-checked against the UBS tier.',
-      isDerived: true,
-      aliases: [
-        { id:128, text:'UBS Classification',      tier:'Core', bank:null },
-        { id:129, text:'UBS Tier',                tier:'Core', bank:null },
-        { id:130, text:'Internal Classification', tier:'Core', bank:null },
       ],
     },
     {
@@ -96,6 +85,7 @@ export const ALIAS_GROUPS = [
         { id:34, text:'Individual Original Commitment', tier:'Core', bank:null },
         { id:35, text:'Total Commitment',               tier:'Core', bank:null },
         { id:36, text:'Commitment (USD)',                tier:'Bank', bank:'BNY' },
+        { id:131, text:'Total Capital Commitments ($)',  tier:'Core', bank:null },
       ],
     },
     {
@@ -148,6 +138,7 @@ export const ALIAS_GROUPS = [
         { id:53, text:'Remaining Callable Capital',     tier:'Bank', bank:'SVB' },
         { id:54, text:'Remaining Commitment',           tier:'Core', bank:null },
         { id:55, text:'Uncalled Capital (USD)',          tier:'Bank', bank:'BNY' },
+        { id:132, text:'Unfunded Capital Commitments ($)',tier:'Core', bank:null },
       ],
     },
     {
@@ -227,8 +218,8 @@ export const ALIAS_GROUPS = [
 
   { group: 'Borrowing Base', fields: [
     {
-      id: 17, canonical: 'Agent Advance Rate',
-      lpMasterField: 'Borrowing Base - Agent Advance Rate',
+      id: 17, canonical: 'Advance Rate',
+      lpMasterField: 'Borrowing Base - Advance Rate',
       disambiguation: null, isDerived: false,
       aliases: [
         { id:84, text:'Advance Rate',      tier:'Core', bank:null },
@@ -236,11 +227,12 @@ export const ALIAS_GROUPS = [
         { id:86, text:'Adv. Rate',         tier:'Core', bank:null },
         { id:87, text:'Rate',              tier:'Core', bank:null },
         { id:88, text:'Applicable Rate',   tier:'Core', bank:null },
+        { id:133, text:'Advance Rate (%)', tier:'Core', bank:null },
       ],
     },
     {
-      id: 18, canonical: 'Agent Eligible Commitment',
-      lpMasterField: 'Borrowing Base - Agent Eligible Commitment',
+      id: 18, canonical: 'Eligible Commitment',
+      lpMasterField: 'Borrowing Base - Eligible Commitment',
       disambiguation: 'LP uncalled commitment after per-LP concentration haircut applied; agent-calculated; maps to "Eligible Commitment" (GS/WF) and "Remaining Callable Capital Adjusted for Concentration Limit" (SVB)',
       isDerived: true,
       aliases: [
@@ -272,9 +264,9 @@ export const ALIAS_GROUPS = [
       ],
     },
     {
-      id: 21, canonical: 'Agent Borrowing Base',
-      lpMasterField: 'Borrowing Base - Agent Borrowing Base',
-      disambiguation: 'LP-level borrowing base as reported by the facility agent (= Agent Eligible Commitment × Agent Advance Rate)',
+      id: 21, canonical: 'Borrowing Base',
+      lpMasterField: 'Borrowing Base - Borrowing Base',
+      disambiguation: 'LP-level borrowing base as reported by the facility agent (= Eligible Commitment × Advance Rate)',
       isDerived: true,
       aliases: [
         { id:98,  text:'Agent Borrowing Base',       tier:'Core', bank:null },
@@ -289,8 +281,8 @@ export const ALIAS_GROUPS = [
 
   { group: 'Concentration', fields: [
     {
-      id: 22, canonical: 'Agent Concentration Limit',
-      lpMasterField: 'Concentration - Agent Concentration Limit',
+      id: 22, canonical: 'Concentration Limit',
+      lpMasterField: 'Concentration - Concentration Limit',
       disambiguation: null, isDerived: false,
       aliases: [
         { id:104, text:'Concentration Limit',      tier:'Core', bank:null },
@@ -298,6 +290,18 @@ export const ALIAS_GROUPS = [
         { id:106, text:'Conc. Limit',              tier:'Core', bank:null },
         { id:107, text:'Excel Concentration',      tier:'Bank', bank:'BNY' },
         { id:108, text:'Max Concentration',        tier:'Core', bank:null },
+        { id:134, text:'Aggregate Concentration',  tier:'Core', bank:null },
+      ],
+    },
+    {
+      id: 31, canonical: 'Concentration (%)',
+      lpMasterField: 'Concentration - Concentration (%)',
+      disambiguation: "LP's concentration expressed as a percentage of the relevant base, as reported by the agent.",
+      isDerived: false,
+      aliases: [
+        { id:135, text:'Concentration (%)',  tier:'Core', bank:null },
+        { id:136, text:'Concentration %',    tier:'Core', bank:null },
+        { id:137, text:'LP Concentration',   tier:'Core', bank:null },
       ],
     },
     {
@@ -309,6 +313,17 @@ export const ALIAS_GROUPS = [
         { id:109, text:'Excess Concentration', tier:'Core', bank:null },
         { id:110, text:'Conc. Overage',        tier:'Core', bank:null },
         { id:111, text:'Concentration Excess', tier:'Core', bank:null },
+      ],
+    },
+    {
+      id: 32, canonical: 'Excess Concentration (%)',
+      lpMasterField: 'Concentration - Excess Concentration (%)',
+      disambiguation: 'Excess concentration expressed as a percentage; agent-calculated overage relative to the per-LP concentration cap.',
+      isDerived: true,
+      aliases: [
+        { id:138, text:'Excess Concentration (%)', tier:'Core', bank:null },
+        { id:139, text:'Excess Concentration %',   tier:'Core', bank:null },
+        { id:140, text:'% Excess Concentration',   tier:'Core', bank:null },
       ],
     },
   ]},
@@ -367,8 +382,8 @@ export const ALIAS_GROUPS = [
       ],
     },
     {
-      id: 29, canonical: 'Agent Numeric Rating',
-      lpMasterField: 'Ratings - Agent Numeric Rating',
+      id: 29, canonical: 'Numeric Rating',
+      lpMasterField: 'Ratings - Numeric Rating',
       disambiguation: "Goldman Sachs composite 0–9 score (higher of S&P / Moody's numeric) that drives the advance rate tier; GS-specific; bank-scoped alias — distinct from BNY's letter-rating alias 'Applicable Rating' → Moody's Rating",
       isDerived: true,
       aliases: [

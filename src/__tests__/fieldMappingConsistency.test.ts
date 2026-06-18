@@ -38,9 +38,9 @@ describe('EXTRACTION_FIELD_MAP canonical values match Field Mapping Dictionary l
 })
 
 describe('ALIAS_GROUPS structural integrity', () => {
-  it('all 30 canonical fields are defined', () => {
+  it('all 31 canonical fields are defined', () => {
     const totalFields = ALIAS_GROUPS.reduce((sum, g) => sum + g.fields.length, 0)
-    expect(totalFields).toBe(30)
+    expect(totalFields).toBe(31)
   })
 
   it('every field has at least one alias', () => {

@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields } from '../../services/extractionService'
+import { getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition } from '../../services/templateService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLUMNS } from '../../data/extractionData'
@@ -120,11 +121,15 @@ export default function ExtractionPreview() {
   const [abortOpen,      setAbortOpen]    = useState(false)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
   const [docCollapsed,   setDocCollapsed] = useState(false)
+  const [recogCollapsed, setRecogCollapsed] = useState(false)
   const [mapCollapsed,   setMapCollapsed] = useState(false)
   const [loadError,      setLoadError]    = useState<string | null>(null)
   const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
   const [containerWidth, setContainerWidth] = useState(Infinity)
   const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
+  const [profileId,      setProfileId]    = useState<string>(
+    () => detectTemplate({ facility: activeSubmission ?? undefined }).id
+  )
 
   const layoutRef = useRef<HTMLDivElement>(null)
 
@@ -177,6 +182,9 @@ export default function ExtractionPreview() {
   const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
   const useOverlay    = containerWidth < SIDE_BY_SIDE_MIN
+
+  const profile        = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
+  const profileDocRows = buildDocRecognition(profile)
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
@@ -267,6 +275,84 @@ export default function ExtractionPreview() {
                 </div>
               ))}
             </div>
+          )}
+        </Card>
+
+        <Card
+          title="Template Recognition"
+          subtitle={`Agent BB format · ${profile.fund}`}
+          action={
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Format</label>
+              <select
+                value={profileId}
+                onChange={e => setProfileId(e.target.value)}
+                title="Recognised Agent BB format"
+                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', background: 'var(--card)', color: 'var(--text)' }}
+              >
+                {getTemplateProfiles().map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
+              </select>
+              <CollapseBtn collapsed={recogCollapsed} onToggle={() => setRecogCollapsed(v => !v)} />
+            </div>
+          }
+        >
+          {!recogCollapsed && (
+          <div style={{ padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px 24px' }}>
+              {profileDocRows.map(({ label, value, wide }) => (
+                <div key={label} style={{ gridColumn: wide ? 'span 2' : 'span 1' }}>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                LP-category sections{profile.groupHeaders.length > 0 ? ` (${profile.groupHeaders.length} · each followed by a subtotal row, excluded)` : ''}
+              </div>
+              {profile.groupHeaders.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {profile.groupHeaders.map(g => <Tag key={g}>{g}</Tag>)}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>
+                  Flat list — this format does not group LPs into categories.
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                Column headers ({profile.columns.length})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {profile.columns.map(h => (
+                  <span key={h} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace', border: '1px solid var(--border)', background: 'var(--tbl)', color: 'var(--text)' }}>
+                    {h}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {profile.legend && (
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                  Legend — cell formatting captured as LP flags
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <tbody>
+                    {profile.legend.map(({ style, meaning }) => (
+                      <tr key={style}>
+                        <td style={{ padding: '4px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, whiteSpace: 'nowrap', width: 150 }}>{style}</td>
+                        <td style={{ padding: '4px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>{meaning}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           )}
         </Card>
 

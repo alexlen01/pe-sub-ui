@@ -86,7 +86,7 @@ export const EXTRACTION_FIELD_MAP = [
   { extracted: 'Investor Name (Agent Records)', canonical: 'Identity & Classification - Investor Name',        group: 'Identity & Classification', note: 'Matched via alias dictionary',              tier: 'Core' },
   { extracted: 'Parent / Sponsor',              canonical: 'Identity & Classification - Parent / Sponsor',    group: 'Identity & Classification', note: 'Secondary identity signal used in LP name matching', tier: 'Core' },
   { extracted: 'Transferee',                    canonical: 'Identity & Classification - Transferee',           group: 'Identity & Classification', note: 'Y where LP received a transferred commitment; blank if not applicable', tier: 'Core' },
-  { extracted: 'LP Classification',              canonical: 'Identity & Classification - Agent LP Classification', group: 'Identity & Classification', note: 'Agent-assigned category (column or group-header rows); cross-checked vs UBS classification', tier: 'Core' },
+  { extracted: 'LP Classification',              canonical: 'Identity & Classification - Investor Type', group: 'Identity & Classification', note: 'Agent-assigned category (column or group-header rows); cross-checked vs UBS classification', tier: 'Core' },
   { extracted: 'Commitment (USD)',               canonical: 'Commitment Data - Capital Commitments',            group: 'Commitment Data', note: 'Matched via bank alias (BNY template)',      tier: 'Bank' },
   { extracted: 'Uncalled Capital (USD)',         canonical: 'Uncalled Data - Uncalled Capital',                 group: 'Uncalled Data',   note: 'Matched via bank alias (BNY template)',      tier: 'Bank' },
   { extracted: 'AUM',                            canonical: 'Financial Scale - AUM',                           group: 'Financial Scale', note: 'N/E where not disclosed in document',        tier: 'Core' },
@@ -94,10 +94,10 @@ export const EXTRACTION_FIELD_MAP = [
   { extracted: 'S&P',                            canonical: 'Ratings - S&P Rating',                            group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
   { extracted: "Moody's",                        canonical: "Ratings - Moody's Rating",                        group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
   { extracted: 'Fitch',                          canonical: 'Ratings - Fitch Rating',                          group: 'Ratings',         note: 'Used for LP tier classification',            tier: 'Core' },
-  { extracted: 'Advance Rate',                   canonical: 'Borrowing Base - Agent Advance Rate',             group: 'Borrowing Base',  note: 'Agent-applied rate; compared to BUSA rate',                                              tier: 'Core' },
-  { extracted: 'Borrowing Base Contribution',    canonical: 'Borrowing Base - Agent Borrowing Base',           group: 'Borrowing Base',  note: 'LP uncalled × agent advance rate; agent-calculated; cross-checked vs UBS engine output', tier: 'Core' },
+  { extracted: 'Advance Rate',                   canonical: 'Borrowing Base - Advance Rate',                   group: 'Borrowing Base',  note: 'Agent-applied rate; compared to BUSA rate',                                              tier: 'Core' },
+  { extracted: 'Borrowing Base Contribution',    canonical: 'Borrowing Base - Borrowing Base',                 group: 'Borrowing Base',  note: 'LP uncalled × agent advance rate; agent-calculated; cross-checked vs UBS engine output', tier: 'Core' },
   { extracted: '% of Borrowing Base',            canonical: 'Borrowing Base - % of Borrowing Base',           group: 'Borrowing Base',  note: 'LP BB contribution as % of total facility BB; agent-calculated informational column',    tier: 'Core' },
-  { extracted: 'Concentration Limit',            canonical: 'Concentration - Agent Concentration Limit',       group: 'Concentration',   note: 'Per-LP agent limit; compared to UBS limit',                                              tier: 'Core' },
+  { extracted: 'Concentration Limit',            canonical: 'Concentration - Concentration Limit',             group: 'Concentration',   note: 'Per-LP agent limit; compared to UBS limit',                                              tier: 'Core' },
 ]
 
 export const UNRECOGNIZED_COLUMNS = [
