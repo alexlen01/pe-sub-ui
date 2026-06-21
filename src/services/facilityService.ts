@@ -35,6 +35,25 @@ function formatMoney(n: number | null | undefined): string {
   return `$${n.toLocaleString('en-US')}`
 }
 
+// Shadow BB figures arrive from the API in $millions. Format for display as "$138.6M"
+// (matching the Executive Summary's parseM contract). Returns "—" when no BB has been run.
+function formatM(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `$${n.toFixed(1)}M`
+}
+
+// Signed millions delta, e.g. "-$2.0M" / "+$0.5M". "—" when absent.
+function formatDeltaM(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(1)}M`
+}
+
+// A rate stored as a fraction (0.874) → "87.4%". "—" when absent.
+function formatPctFraction(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `${(n * 100).toFixed(1)}%`
+}
+
 // Inverse of formatMoney for the Facility Edit input — parses "$2.5B" / "150M" / "1,200,000"
 // into a plain dollar amount. Returns null for blank / "—" / unparseable input.
 export function parseMoneyToNumber(s: string | null | undefined): number | null {
@@ -67,7 +86,6 @@ export interface FacilityRow {
   facilitySize:         string
   ubsParticipation:     string
   ubsParticipationRate: string
-  creditAgreementRef:   string
   agentBB:              string
   ubsBB:                string
   delta:                string
@@ -144,11 +162,10 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       ubsParticipationRate: (f.facilitySize && f.ubsParticipation)
                               ? `${((f.ubsParticipation / f.facilitySize) * 100).toFixed(0)}%`
                               : '—',
-      creditAgreementRef:   '—',
-      agentBB:              '—',
-      ubsBB:                '—',
-      delta:                '—',
-      ear:                  '—',
+      agentBB:              formatM(f.agentBB),
+      ubsBB:                formatM(f.ubsBB),
+      delta:                formatDeltaM(f.bbDelta),
+      ear:                  formatPctFraction(f.ear),
       lastRun:              f.lastRunAt ? formatLastRun(f.lastRunAt) : '—',
       step:                 review?.wizardStep ?? null,
       submittedBy:          null as string | null,

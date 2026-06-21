@@ -46,13 +46,16 @@ export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
 // BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LP
 // Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Classification taxonomy
 // ('Rated Investor', …) the Shadow BB now seeds from the Agent Advance Rate.
-export function advanceRateFraction(lp: Pick<LPRecord, 'rate' | 'cls'>): number {
+// `cls` is typed as string (not the legacy LPClassification union): at runtime it carries either
+// taxonomy — the legacy LP Master tiers or the UBS LP Classification labels seeded at Step 5 —
+// and BUSA_RATES is keyed for both. Mirrors the API's advanceRateFraction(Lp).
+export function advanceRateFraction(lp: { rate?: string | null; cls?: string | null }): number {
   const raw = (lp.rate ?? '').trim()
   if (raw) {
     const n = parseFloat(raw.replace('%', ''))
     if (!Number.isNaN(n)) return n > 1 ? n / 100 : n   // "90%"/"90" → 0.90; "0.90" → 0.90
   }
-  return BUSA_RATES[lp.cls] ?? 0
+  return BUSA_RATES[lp.cls ?? ''] ?? 0
 }
 
 export const DEFAULT_FACILITY_PARAMS = { concLimitM: 25.0 }

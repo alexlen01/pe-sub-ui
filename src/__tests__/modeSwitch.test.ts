@@ -20,7 +20,7 @@ describe('FacilityRow extended type', () => {
     const row: FacilityRow = {
       name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lps: 100,
       facilitySize: '$1B', ubsParticipation: '$100M', ubsParticipationRate: '10%',
-      creditAgreementRef: 'CA-001', agentBB: '$80M', ubsBB: '$78M',
+      agentBB: '$80M', ubsBB: '$78M',
       delta: '-$2M', ear: '88%', lastRun: '2d ago',
       step: null, submittedBy: null,
       accountNumber: '5VX1796', loanAmount: '$100M', maturityDate: 'Mar 1, 2029', facilityStatusDate: 'May 26, 2026',
@@ -33,7 +33,7 @@ describe('FacilityRow extended type', () => {
     const row: FacilityRow = {
       name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lps: 100,
       facilitySize: '$1B', ubsParticipation: '$100M', ubsParticipationRate: '10%',
-      creditAgreementRef: 'CA-001', agentBB: '$80M', ubsBB: '$78M',
+      agentBB: '$80M', ubsBB: '$78M',
       delta: '-$2M', ear: '88%', lastRun: '2d ago',
       step: null, submittedBy: null,
       accountNumber: '5VX1796', loanAmount: '$100M', maturityDate: 'Mar 1, 2029', facilityStatusDate: 'May 26, 2026',

@@ -73,7 +73,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 
 async function del(path: string): Promise<void> {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
+  if (!res.ok) throw new Error(await extractApiError(res, `DELETE ${path} failed: ${res.status}`))
 }
 
 async function postForm<T>(path: string, form: FormData): Promise<T> {
@@ -246,8 +246,10 @@ export const api = {
       post<Facility>('/api/facilities', { name, agentBank }),
     setStatus: (id: number, status: string) =>
       patch<Facility>(`/api/facilities/${id}/status`, { status }),
-    update: (id: number, body: { accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
+    update: (id: number, body: { name?: string; agentBank?: string; accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
       patch<Facility>(`/api/facilities/${id}`, body),
+    remove: (id: number) =>
+      del(`/api/facilities/${id}`),
   },
 
   // ── LPs ─────────────────────────────────────────────────────────────────────

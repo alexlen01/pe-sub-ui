@@ -4,6 +4,7 @@ export type FacilityStatus =
   | 'Needs Review'
   | 'Active'
   | 'Pending'
+  | 'Inactive'
 
 export interface Facility {
   id: number
@@ -19,6 +20,11 @@ export interface Facility {
   maturityDate: string | null
   bankStatus: string | null
   bankStatusDate: string | null
+  // Latest Shadow BB figures from the most recent snapshot ($millions); null until a BB is run.
+  agentBB: number | null
+  ubsBB: number | null
+  bbDelta: number | null
+  ear: number | null
   lastRunAt: string | null
   createdAt: string
   updatedAt: string

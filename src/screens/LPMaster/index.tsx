@@ -424,6 +424,7 @@ const STATUS_COLOR: Record<string, string> = {
   'Not Started':   'var(--muted)',
   'Pending':       '#e65100',
   'Review':        '#c2185b',
+  'Inactive':      '#9e9e9e',
 }
 
 // ── Facility grid card ────────────────────────────────────────────────────────
@@ -477,29 +478,43 @@ const toISODate = (display: string) => {
 const fromISODate = (iso: string) =>
   iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
-function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
+type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; maturityDate: string }
+type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount'
+
+function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
   facility: FacilityRow | null
   open: boolean
   onClose: () => void
   onSave: (f: FacilityRow) => void
+  onDeactivate: (f: FacilityRow, status: 'Inactive' | 'Not Started') => void
+  onDelete: (f: FacilityRow) => void
 }) {
-  const [form, setForm] = useState<{ accountNumber: string; loanAmount: string; maturityDate: string }>({
-    accountNumber: '', loanAmount: '', maturityDate: '',
+  const [form, setForm] = useState<FacilityForm>({
+    name: '', agentBank: '', accountNumber: '', loanAmount: '', maturityDate: '',
   })
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!facility) return
     const clean = (v?: string | null) => (!v || v === '—' ? '' : v)
     setForm({
+      name:          clean(facility.name),
+      agentBank:     clean(facility.agentBank),
       accountNumber: clean(facility.accountNumber),
       loanAmount:    clean(facility.loanAmount) || clean(facility.ubsParticipation),
       maturityDate:  clean(facility.maturityDate),
     })
-  }, [facility?.name])
+    setConfirmDelete(false)
+  }, [facility?.id])
 
   if (!open || !facility) return null
 
-  const set = (k: 'accountNumber' | 'loanAmount') => (e: React.ChangeEvent<HTMLInputElement>) =>
+  // A facility may only be deactivated or deleted while it holds no LP records.
+  const hasLPs    = (facility.lps ?? 0) > 0
+  const isInactive = facility.status === 'Inactive'
+  const nameValid  = form.name.trim().length > 0 && form.agentBank.trim().length > 0
+
+  const set = (k: TextKey) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }))
   const handleSave = () => onSave({ ...facility, ...form })
 
@@ -513,22 +528,39 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
       <div style={viewSt}>{value ?? '—'}</div>
     </div>
   )
-  const ed = (label: string, key: 'accountNumber' | 'loanAmount') => (
-    <div key={label} className="form-group" style={{ marginBottom: 0 }}>
+  const ed = (label: string, key: TextKey, span?: boolean) => (
+    <div key={label} className="form-group" style={span ? { marginBottom: 0, gridColumn: '1 / -1' } : { marginBottom: 0 }}>
       <label style={labelSt}>{label}</label>
-      <input type="text" style={{ width: '100%' }} value={form[key]} onChange={set(key)} />
+      <input type="text" style={{ width: '100%' }} value={form[key]} onChange={set(key)} aria-label={label} />
     </div>
   )
   const sec = (t: string) => (
     <div key={t} style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 6, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
   )
 
-  const footer = (
+  const footer = confirmDelete ? (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
-      <span style={{ fontSize: 11, color: 'var(--muted)' }}>Loan Amount is the committed facility size — an input, not a Shadow BB figure.</span>
+      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>Delete "{facility.name}" permanently? This cannot be undone.</span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+        <Button variant="danger" onClick={() => onDelete(facility)}>Confirm Delete</Button>
+      </div>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {isInactive ? (
+          <Button variant="secondary" onClick={() => onDeactivate(facility, 'Not Started')}>Reactivate</Button>
+        ) : (
+          <Button variant="secondary" onClick={() => onDeactivate(facility, 'Inactive')} disabled={hasLPs}
+                  title={hasLPs ? 'Remove all LP records before deactivating' : undefined}>Deactivate</Button>
+        )}
+        <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={hasLPs}
+                title={hasLPs ? 'Remove all LP records before deleting' : undefined}>Delete</Button>
+      </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSave}>Save Changes</Button>
+        <Button onClick={handleSave} disabled={!nameValid}>Save Changes</Button>
       </div>
     </div>
   )
@@ -537,11 +569,12 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
     <Modal open={open} onClose={onClose} title={facility.name} width={620} footer={footer}>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         {facility.agentBank} · {facility.lps?.toLocaleString()} LPs
+        {hasLPs && <span style={{ marginLeft: 8, color: 'var(--amber)' }}>· deactivate / delete disabled while LP records exist</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
         {sec('Identity')}
-        {ro('Borrower', facility.name, true)}
-        {ro('Agent Bank', facility.agentBank)}
+        {ed('Borrower', 'name', true)}
+        {ed('Agent Bank', 'agentBank')}
         {ro('# LPs', facility.lps?.toLocaleString())}
 
         {sec('Agent Bank Summary')}
@@ -549,7 +582,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
         {ed('Loan Amount', 'loanAmount')}
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label style={labelSt}>Maturity Date</label>
-          <input type="date" style={{ width: '100%' }} value={toISODate(form.maturityDate)} onChange={e => setForm(p => ({ ...p, maturityDate: fromISODate(e.target.value) }))} />
+          <input type="date" style={{ width: '100%' }} value={toISODate(form.maturityDate)} onChange={e => setForm(p => ({ ...p, maturityDate: fromISODate(e.target.value) }))} aria-label="Maturity Date" />
         </div>
         {ro('Facility Status', <Tag>{facility.status}</Tag>)}
         {ro('Facility Status Date', facility.facilityStatusDate)}
@@ -630,25 +663,56 @@ export default function LPMaster() {
     toast(`LP record updated — ${updated.name}.`)
   }
 
-  // Facility records are keyed by their (unique) name; the Borrower/name field is read-only.
-  // Persist the Agent Bank Summary inputs (account number / loan amount / maturity date) to the
-  // facility via PATCH, then reflect the saved values locally.
+  // Persist every editable facility field (Identity + Agent Bank Summary) via PATCH, then reflect
+  // the saved values locally. Rows are reconciled by id (the name is itself editable now).
   const handleFacilitySave = async (updated: FacilityRow) => {
     if (updated.id != null) {
       try {
         await api.facilities.update(updated.id, {
+          name:          updated.name.trim(),
+          agentBank:     updated.agentBank.trim(),
           accountNumber: updated.accountNumber === '—' ? null : updated.accountNumber,
           loanAmount:    parseMoneyToNumber(updated.loanAmount),
           maturityDate:  toISODate(updated.maturityDate) || null,
         })
-      } catch {
-        toast('Could not save facility — API unavailable.')
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Could not save facility — API unavailable.')
         return
       }
     }
-    setFacilities(prev => prev.map(f => (f.name === updated.name ? { ...f, ...updated } : f)))
+    setFacilities(prev => prev.map(f => (f.id === updated.id ? { ...f, ...updated } : f)))
     setEditingFacility(null)
     toast(`Facility updated — ${updated.name}.`)
+  }
+
+  // Deactivate (→ Inactive) or reactivate (→ Not Started) a facility with no LP records.
+  const handleFacilityDeactivate = async (target: FacilityRow, status: 'Inactive' | 'Not Started') => {
+    if (target.id != null) {
+      try {
+        await api.facilities.setStatus(target.id, status)
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Could not update facility status — API unavailable.')
+        return
+      }
+    }
+    setFacilities(prev => prev.map(f => (f.id === target.id ? { ...f, status } : f)))
+    setEditingFacility(null)
+    toast(status === 'Inactive' ? `Facility deactivated — ${target.name}.` : `Facility reactivated — ${target.name}.`)
+  }
+
+  // Permanently delete a facility (only reachable when it has no LP records).
+  const handleFacilityDelete = async (target: FacilityRow) => {
+    if (target.id != null) {
+      try {
+        await api.facilities.remove(target.id)
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Could not delete facility — API unavailable.')
+        return
+      }
+    }
+    setFacilities(prev => prev.filter(f => f.id !== target.id))
+    setEditingFacility(null)
+    toast(`Facility deleted — ${target.name}.`)
   }
 
   // ── Facility grid view ────────────────────────────────────────────────────
@@ -689,6 +753,8 @@ export default function LPMaster() {
           open={!!editingFacility}
           onClose={() => setEditingFacility(null)}
           onSave={handleFacilitySave}
+          onDeactivate={handleFacilityDeactivate}
+          onDelete={handleFacilityDelete}
         />
       </div>
     )

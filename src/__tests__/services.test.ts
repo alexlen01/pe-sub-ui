@@ -89,6 +89,32 @@ describe('getFacilities — live', () => {
     expect(rows[0].maturityDate).toBe('—')
   })
 
+  it('maps the latest Shadow BB figures (Agent BB / UBS BB / delta / EAR) from the API', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
+                             agentBB: 138.6, ubsBB: 130.4, bbDelta: -8.2, ear: 0.874, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].agentBB).toBe('$138.6M')
+    expect(rows[0].ubsBB).toBe('$130.4M')
+    expect(rows[0].delta).toBe('-$8.2M')
+    expect(rows[0].ear).toBe('87.4%')
+  })
+
+  it('shows — for Shadow BB figures before any BB has been run', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 2, name: 'New Fund', agentBank: 'Citi', status: 'Not Started', lpCount: 0,
+                             agentBB: null, ubsBB: null, bbDelta: null, ear: null, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].agentBB).toBe('—')
+    expect(rows[0].ubsBB).toBe('—')
+    expect(rows[0].delta).toBe('—')
+    expect(rows[0].ear).toBe('—')
+  })
+
   it('derives the wizard step from the latest in-Review submission', async () => {
     stubFetch({
       '/api/facilities':  [{ id: 7, name: 'Apollo XI', agentBank: 'Citi', status: 'Review', lpCount: 50, lastRunAt: null }],
@@ -140,6 +166,88 @@ describe('api.facilities.update', () => {
     expect(saved.accountNumber).toBe('5VX1796')
     expect(saved.loanAmount).toBe(2_500_000_000)
     expect(saved.maturityDate).toBe('2029-03-15')
+  })
+
+  it('PATCHes the editable Identity fields (name + agentBank)', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(JSON.stringify({
+        id: 1, name: 'Renamed Fund', agentBank: 'JPMorgan', status: 'Active', lpCount: 0, lastRunAt: null,
+      }), { status: 200 }))
+    }))
+
+    const saved = await api.facilities.update(1, { name: 'Renamed Fund', agentBank: 'JPMorgan' })
+
+    expect(calls[0].init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ name: 'Renamed Fund', agentBank: 'JPMorgan' })
+    expect(saved.name).toBe('Renamed Fund')
+    expect(saved.agentBank).toBe('JPMorgan')
+  })
+
+  it('surfaces the API ProblemDetail message on a name conflict (409)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ detail: 'A facility with this name already exists.' }), { status: 409 }))
+    ))
+    await expect(api.facilities.update(1, { name: 'Taken Name' }))
+      .rejects.toThrow('A facility with this name already exists.')
+  })
+})
+
+// ── api.facilities.setStatus (deactivate / reactivate) ─────────────────────────
+
+describe('api.facilities.setStatus', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('PATCHes the status to Inactive (deactivate)', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(JSON.stringify({
+        id: 4, name: 'Idle Fund', agentBank: 'Citi', status: 'Inactive', lpCount: 0, lastRunAt: null,
+      }), { status: 200 }))
+    }))
+
+    const saved = await api.facilities.setStatus(4, 'Inactive')
+
+    expect(calls[0].url).toContain('/api/facilities/4/status')
+    expect(calls[0].init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ status: 'Inactive' })
+    expect(saved.status).toBe('Inactive')
+  })
+
+  it('surfaces the API ProblemDetail message when deactivation is blocked (409)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ detail: 'Cannot deactivate a facility that has LP records.' }), { status: 409 }))
+    ))
+    await expect(api.facilities.setStatus(4, 'Inactive'))
+      .rejects.toThrow('Cannot deactivate a facility that has LP records.')
+  })
+})
+
+// ── api.facilities.remove (DELETE /api/facilities/{id}) ────────────────────────
+
+describe('api.facilities.remove', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('issues a DELETE to the facility resource', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }))
+
+    await api.facilities.remove(9)
+
+    expect(calls[0].url).toContain('/api/facilities/9')
+    expect(calls[0].init?.method).toBe('DELETE')
+  })
+
+  it('rejects with the API ProblemDetail message when the facility still has LP records (409)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ detail: 'Cannot delete a facility that has LP records (3). Remove its LP records first.' }), { status: 409 }))
+    ))
+    await expect(api.facilities.remove(9)).rejects.toThrow('Cannot delete a facility that has LP records')
   })
 })
 

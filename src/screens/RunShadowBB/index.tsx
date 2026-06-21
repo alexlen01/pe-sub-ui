@@ -159,7 +159,7 @@ export function orderSubmissionLPs<T extends { name?: string; _agentName?: strin
 }
 
 export default function RunShadowBB() {
-  const { toast, navigate, bbParams, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
+  const { toast, navigate, bbParams, activeSubmission, activeSubmissionId, abortSubmission, setTargetFacility } = useApp()
   const [matchQueue, setMatchQueue] = useState<Awaited<ReturnType<typeof getMatchQueue>>>([])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
@@ -755,7 +755,7 @@ export default function RunShadowBB() {
           </Card>
         )}
 
-        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag><Button onClick={() => navigate('shadow-bb')}>View BB Results</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
+        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag><Button onClick={() => { setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null); navigate('shadow-bb') }}>View BB Results</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
 
         {result && (
           <Card title="Calculation Results" subtitle={`${submissionLPs.length} LP records processed`}>

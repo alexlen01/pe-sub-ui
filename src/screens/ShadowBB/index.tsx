@@ -240,7 +240,7 @@ function LPDetailPanel({ lp, onClose }: { lp: ComputedLPRecord; onClose: () => v
 type BBResult = ReturnType<typeof computePortfolioBB>
 
 export default function ShadowBB() {
-  const { bbParams, toast } = useApp()
+  const { bbParams, toast, targetFacility, setTargetFacility } = useApp()
   const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string }[]>([])
   const [facilityRows,    setFacilityRows]    = useState<FacilityRow[]>([])
   const [facility,        setFacility]        = useState('')
@@ -259,8 +259,18 @@ export default function ShadowBB() {
       const opts = fs.map(f => ({ id: f.id, name: f.name }))
       setFacilityOptions(opts)
       setFacilityRows(fs)
-      if (opts.length > 0) { setFacility(opts[0].name); setFacilityId(opts[0].id ?? null) }
+      if (opts.length > 0) {
+        // Honor a facility handed off by the navigating screen (e.g. "View BB Results" after a
+        // Shadow BB run) so the selector retains that facility rather than snapping to the first
+        // in the list. Consume it once, then fall back to the first option.
+        const target = targetFacility ? opts.find(o => o.name === targetFacility) : undefined
+        const chosen = target ?? opts[0]
+        setFacility(chosen.name)
+        setFacilityId(chosen.id ?? null)
+        if (targetFacility) setTargetFacility(null)
+      }
     }).catch(e => setLoadError(String(e)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
