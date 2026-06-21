@@ -4,12 +4,25 @@ import type { LPRecord } from './lpService'
 
 // ── Advance rate schedules ────────────────────────────────────────────────────
 
+// Advance rate by LP classification. Covers BOTH taxonomies the platform persists, mirroring
+// BbCalculationService.BUSA_RATES on the API:
+//   • legacy LP Master tiers ('Rated', 'Unrated >2bn', …)
+//   • UBS LP Classification  ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels the
+//     Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
+// A blank/unrecognised classification falls back to 0%. Keeping this in sync with the API map is
+// what lets the LP-Level Shadow BB table resolve a non-zero Rate / UBS BB for UBS-taxonomy LPs
+// that have no stored per-LP ubsRate.
 export const BUSA_RATES: Record<string, number> = {
-  'Rated':         0.90,
-  'Unrated >2bn':  0.75,
-  'Unrated 1–2bn': 0.65,
-  'Eligible':      0.50,
-  'Excluded':      0.00,
+  'Rated':                      0.90,
+  'Unrated >2bn':               0.75,
+  'Unrated 1–2bn':              0.65,
+  'Eligible':                   0.50,
+  'Excluded':                   0.00,
+  'Rated Investor':             0.90,
+  'FoF & Other > $10Bn AUM':    0.75,
+  'Unrated NAV > $1Bn':         0.65,
+  'Corp Pension > $5Bn Assets': 0.65,
+  'Other Institutional':        0.50,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

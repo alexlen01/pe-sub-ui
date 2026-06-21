@@ -246,6 +246,8 @@ export const api = {
       post<Facility>('/api/facilities', { name, agentBank }),
     setStatus: (id: number, status: string) =>
       patch<Facility>(`/api/facilities/${id}/status`, { status }),
+    update: (id: number, body: { accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
+      patch<Facility>(`/api/facilities/${id}`, body),
   },
 
   // ── LPs ─────────────────────────────────────────────────────────────────────

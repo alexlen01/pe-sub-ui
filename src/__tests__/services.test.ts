@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { getFacilityBBSnapshot } from '../services/bbCalculationService'
 import { api } from '../services/api'
 import type { CommitLpRow } from '../services/api'
-import { getFacilities, getSubmissions, formatLastRun } from '../services/facilityService'
+import { getFacilities, getSubmissions, formatLastRun, parseMoneyToNumber } from '../services/facilityService'
 import { getLPs, getLPByName, lookupLPsByName } from '../services/lpService'
 
 // Stub global fetch with a path→body map. The first registered key contained in the request
@@ -36,9 +36,10 @@ describe('formatLastRun', () => {
 describe('getFacilities — live', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('maps API facilities to display rows', async () => {
+  it('maps API facilities to display rows, including Agent Bank Summary fields', async () => {
     stubFetch({
-      '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100, lastRunAt: null }],
+      '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
+                             accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', lastRunAt: null }],
       '/api/submissions': [],
     })
     const rows = await getFacilities()
@@ -46,7 +47,46 @@ describe('getFacilities — live', () => {
     expect(rows[0].name).toBe('Test Fund')
     expect(rows[0].id).toBe(1)
     expect(rows[0].lps).toBe(100)
-    expect(rows[0].accountNumber).toMatch(/^5V/)
+    // Real API values flow through — no client-side stub generation.
+    expect(rows[0].accountNumber).toBe('5VX1796')
+    expect(rows[0].loanAmount).toBe('$2.5B')
+    expect(rows[0].maturityDate).toBe('Mar 15, 2029')
+  })
+
+  it('maps facility size / UBS participation and derives the participation rate', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
+                             facilitySize: 2_000_000_000, ubsParticipation: 500_000_000, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].facilitySize).toBe('$2.0B')
+    expect(rows[0].ubsParticipation).toBe('$500.0M')
+    expect(rows[0].ubsParticipationRate).toBe('25%')
+  })
+
+  it('shows — for facility size / participation when unset', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 2, name: 'New Fund', agentBank: 'Citi', status: 'Not Started', lpCount: 0,
+                             facilitySize: null, ubsParticipation: null, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].facilitySize).toBe('—')
+    expect(rows[0].ubsParticipation).toBe('—')
+    expect(rows[0].ubsParticipationRate).toBe('—')
+  })
+
+  it('shows — for unset Agent Bank Summary fields', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 2, name: 'New Fund', agentBank: 'Citi', status: 'Not Started', lpCount: 0,
+                             accountNumber: null, loanAmount: null, maturityDate: null, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].accountNumber).toBe('—')
+    expect(rows[0].loanAmount).toBe('—')
+    expect(rows[0].maturityDate).toBe('—')
   })
 
   it('derives the wizard step from the latest in-Review submission', async () => {
@@ -57,6 +97,49 @@ describe('getFacilities — live', () => {
     const rows = await getFacilities()
     expect(rows[0].step).toBe(4)
     expect(rows[0].latestSubmissionId).toBe(3)
+  })
+})
+
+// ── parseMoneyToNumber ────────────────────────────────────────────────────────
+
+describe('parseMoneyToNumber', () => {
+  it('parses suffixed dollar amounts to plain numbers', () => {
+    expect(parseMoneyToNumber('$2.5B')).toBe(2_500_000_000)
+    expect(parseMoneyToNumber('150M')).toBe(150_000_000)
+    expect(parseMoneyToNumber('$1,200,000')).toBe(1_200_000)
+    expect(parseMoneyToNumber('500K')).toBe(500_000)
+  })
+  it('returns null for blank / dash / unparseable input', () => {
+    expect(parseMoneyToNumber('')).toBeNull()
+    expect(parseMoneyToNumber('—')).toBeNull()
+    expect(parseMoneyToNumber(null)).toBeNull()
+    expect(parseMoneyToNumber('n/a')).toBeNull()
+  })
+})
+
+// ── api.facilities.update (PATCH /api/facilities/{id}) ─────────────────────────
+
+describe('api.facilities.update', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('PATCHes the Agent Bank Summary fields and returns the saved facility', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(JSON.stringify({
+        id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
+        accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', lastRunAt: null,
+      }), { status: 200 }))
+    }))
+
+    const saved = await api.facilities.update(1, { accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15' })
+
+    expect(calls[0].url).toContain('/api/facilities/1')
+    expect(calls[0].init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15' })
+    expect(saved.accountNumber).toBe('5VX1796')
+    expect(saved.loanAmount).toBe(2_500_000_000)
+    expect(saved.maturityDate).toBe('2029-03-15')
   })
 })
 

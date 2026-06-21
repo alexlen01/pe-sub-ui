@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
@@ -12,9 +13,37 @@ import InfoTip from '../../components/ui/InfoTip'
 import type { LPRecord } from '../../services/lpService'
 import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculationService'
 
-function fmtDollarsRaw(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return '$' + Math.round(n).toLocaleString('en-US')
+// Summary monetary values arrive in $millions (the API summary-ext and the fallback below both
+// emit M-scale numbers). On screen they are always abbreviated to whole millions with an "M"
+// suffix; the Excel export (full=true) renders the exact full-dollar figure instead.
+function fmtMoneyM(m: number | null | undefined, full = false): string {
+  if (m == null) return '—'
+  if (full) return '$' + Math.round(m * 1e6).toLocaleString('en-US')
+  return '$' + Math.round(m).toLocaleString('en-US') + 'M'
+}
+
+// M-scale → exact whole-dollar number, for the Excel export's numeric cells.
+function fullDollar(m: number | null | undefined): number {
+  return m == null ? 0 : Math.round(m * 1e6)
+}
+
+// Roll a granular LP classification (UBS or legacy taxonomy) up into one of the four canonical
+// eligibility buckets (SHADOW_BB_ANALYSIS Table 5). Mirrors BbController.canonicalClassBucket.
+type ClsBucket = 'Rated Investors' | 'Unrated Investors' | 'Eligible Investors' | 'Excluded Investors'
+function canonicalClassBucket(cls: string | null | undefined): ClsBucket {
+  switch (cls) {
+    case 'Rated Investor': case 'Rated':
+      return 'Rated Investors'
+    case 'FoF & Other > $10Bn AUM': case 'Corp Pension > $5Bn Assets': case 'Unrated NAV > $1Bn':
+    case 'Unrated >2bn': case 'Unrated 1–2bn':
+      return 'Unrated Investors'
+    case 'Other Institutional': case 'Eligible':
+      return 'Eligible Investors'
+    case 'Excluded':
+      return 'Excluded Investors'
+    default:
+      return cls ? 'Eligible Investors' : 'Excluded Investors'
+  }
 }
 
 // Parse an AUM display string (e.g. '$4.2B', '$1.4T', '$620M') to $millions.
@@ -30,7 +59,7 @@ function parseAumM(s: string | null | undefined): number {
 
 const BLUE_HD: React.CSSProperties = { background: '#0F2560', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase' }
 const COL_HD: React.CSSProperties  = { padding: '7px 10px', color: 'var(--muted)', fontWeight: 700, fontSize: 9, textTransform: 'uppercase', borderBottom: '1px solid var(--border)', background: 'var(--tbl)' }
-const CELL: React.CSSProperties    = { padding: '7px 10px', color: 'var(--text)', fontSize: 11 }
+const CELL: React.CSSProperties    = { padding: '3px 10px', color: 'var(--text)', fontSize: 11 }
 
 interface KVRow { k: string; v: string; bold?: boolean; hl?: boolean }
 interface BkRow { rate?: string; label?: string; count: number; dollars: number; pct: number }
@@ -51,7 +80,7 @@ function SummaryKVTable({ title, rows }: { title: string; rows: KVRow[] }) {
   )
 }
 
-function SummaryBreakTable({ title, rows, labelHeader = 'Rate' }: { title: string; rows: BkRow[]; labelHeader?: string }) {
+function SummaryBreakTable({ title, rows, full, labelHeader = 'Rate' }: { title: string; rows: BkRow[]; full: boolean; labelHeader?: string }) {
   const totalCount   = rows.reduce((s, r) => s + r.count, 0)
   const totalDollars = rows.reduce((s, r) => s + r.dollars, 0)
   return (
@@ -65,19 +94,80 @@ function SummaryBreakTable({ title, rows, labelHeader = 'Rate' }: { title: strin
           <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             <td style={{ ...CELL, color: 'var(--muted)' }}>{r.rate ?? r.label}</td>
             <td style={{ ...CELL, textAlign: 'right', color: 'var(--muted)' }}>{r.count.toLocaleString()}</td>
-            <td style={{ ...CELL, textAlign: 'right' }}>{fmtDollarsRaw(r.dollars)}</td>
+            <td style={{ ...CELL, textAlign: 'right' }}>{fmtMoneyM(r.dollars, full)}</td>
             <td style={{ ...CELL, textAlign: 'right', color: 'var(--muted)' }}>{r.pct === 0 ? '0%' : `${(r.pct * 100).toFixed(0)}%`}</td>
           </tr>
         ))}
         <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
           <td style={CELL}></td>
           <td style={{ ...CELL, textAlign: 'right' }}>{totalCount.toLocaleString()}</td>
-          <td style={{ ...CELL, textAlign: 'right' }}>{fmtDollarsRaw(totalDollars)}</td>
+          <td style={{ ...CELL, textAlign: 'right' }}>{fmtMoneyM(totalDollars, full)}</td>
           <td style={{ ...CELL, textAlign: 'right' }}>{totalDollars > 0 ? '100%' : '—'}</td>
         </tr>
       </tbody>
     </table>
   )
+}
+
+// Build and download the Shadow BB workbook. Unlike the on-screen tables (which round to whole
+// millions), the export carries exact full-dollar values across both summary tables and every LP
+// data row. Monetary cells are written as numbers so Excel can format/aggregate them.
+function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRecord[]) {
+  const pctStr = (n: number) => `${(n * 100).toFixed(0)}%`
+  type Cell = string | number
+  const summaryAoa: Cell[][] = [
+    ['LP Portfolio', ''],
+    ['Total Capital Commitments', fullDollar(ext.totalCapCommit)],
+    ['Total Called Capital', fullDollar(ext.totalCalledCap)],
+    ['% of Called Capital', ext.pctCalled ? pctStr(ext.pctCalled) : '—'],
+    ['Total Uncalled Capital', fullDollar(ext.totalAllUncalled)],
+    ['# of Limited Partners', ext.totalLPs],
+    ['% Institutional', pctStr(ext.pctInstitutional)],
+    ['% HNW', pctStr(ext.pctHNW)],
+    ['% Top 10', pctStr(ext.pctTop10)],
+    ['% Top 20', pctStr(ext.pctTop20)],
+    ['Investment Grade', `${(ext.igRatio * 100).toFixed(1)}%`],
+    ['% Uncalled from LPs > $25bn AUM', ext.pctUncalledGt25bnAum ? pctStr(ext.pctUncalledGt25bnAum) : '—'],
+    [],
+    ['Borrowing Base', ''],
+    ['Total Facility Size', fullDollar(ext.facilitySize)],
+    ['UBS Participation', fullDollar(ext.ubsParticipation)],
+    ['UBS Participation Rate', ext.ubsParticipationPct ? pctStr(ext.ubsParticipationPct) : '—'],
+    ['Facility LTV', ext.facilityLTV ? pctStr(ext.facilityLTV) : '—'],
+    ['Available Commitment', fullDollar(ext.availableCommit)],
+    ['Facility Adv. Rate', ext.facilityAdvRate ? pctStr(ext.facilityAdvRate) : '—'],
+    ['Agent Borrowing Base', fullDollar(ext.agentBBRaw)],
+    ['UBS Borrowing Base', fullDollar(ext.ubsBBRaw)],
+    ['UBS Advance Rate', pctStr(ext.ubsAdvRate)],
+    [],
+  ]
+  const pushBreak = (title: string, labelHeader: string, bk: BkRow[]) => {
+    summaryAoa.push([title, '', '', ''], [labelHeader, '#', '$', '%'])
+    let tc = 0, td = 0
+    for (const r of bk) {
+      summaryAoa.push([r.rate ?? r.label ?? '', r.count, fullDollar(r.dollars), r.pct === 0 ? '0%' : pctStr(r.pct)])
+      tc += r.count; td += r.dollars
+    }
+    summaryAoa.push(['Total', tc, fullDollar(td), td > 0 ? '100%' : '—'], [])
+  }
+  pushBreak('BUSA', 'Rate', ext.busaBreakdown)
+  pushBreak('Agent', 'Rate', ext.agentBreakdown)
+  pushBreak('LP Classification', 'Classification', ext.clsBreakdown)
+
+  const detailAoa: Cell[][] = [['Investor Name', 'Classification', 'Uncalled', 'UBS Eligible', 'Conc. Excess', 'Rate', 'UBS BB', 'Agent BB', 'Delta', 'Included']]
+  for (const lp of rows) {
+    detailAoa.push([
+      lp.name ?? '', lp.cls ?? '',
+      fullDollar(lp.ucM), fullDollar(lp.uecM), fullDollar(lp.concExcessM),
+      lp.rate ?? '', fullDollar(lp.ubbM), fullDollar(lp.abbM), fullDollar(lp.deltaM),
+      lp.inc && lp.cls !== 'Excluded' ? 'Y' : 'N',
+    ])
+  }
+
+  const wb = utils.book_new()
+  utils.book_append_sheet(wb, utils.aoa_to_sheet(summaryAoa), 'Summary')
+  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LP Detail')
+  writeFile(wb, `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`)
 }
 
 const BB_COLUMN_ITEMS = [
@@ -213,21 +303,21 @@ export default function ShadowBB() {
   const summaryExt = useMemo((): BBSummaryExt => {
     if (summaryExtApi) return summaryExtApi
     const lps = result.lps
+    // All monetary fields below are in $millions, matching the API summary-ext contract so the
+    // width-aware formatter (fmtMoneyM) renders both code paths identically.
     const totalUncalledM = lps.reduce((s, r) => s + r.ucM, 0)
-    const totalDollars = totalUncalledM * 1e6
 
     // LP Portfolio totals are carried per-LP — sum them rather than leaving the panel blank.
     const totalCapCommitM = lps.reduce((s, r) => s + parseM(r.capCommit), 0)
-    const totalCalledM    = lps.reduce((s, r) => s + parseM(r.calledCap), 0)
+    // Called Capital is calculated: Capital Commitments − Uncalled Capital (never negative).
+    const totalCalledM    = lps.reduce((s, r) => s + Math.max(0, parseM(r.capCommit) - r.ucM), 0)
 
     // Borrowing Base header values come from the selected facility's own record (size /
-    // UBS participation), which the API ext supplies in live mode and the facility list
-    // carries in prototype mode. The derived metrics (LTV, available commitment, facility
-    // advance rate) need facility valuation inputs not present here, so they stay blank.
+    // UBS participation). parseAumM handles the $B/$M display strings the facility list carries.
     const facRow     = facilityRows.find(f => f.name === facility)
-    const facSizeM   = facRow ? parseM(facRow.facilitySize) : 0
-    const ubsPartM   = facRow ? parseM(facRow.ubsParticipation) : 0
-    const ubsPartPct = facRow ? (parseFloat((facRow.ubsParticipationRate ?? '').replace('%', '')) || 0) / 100 : 0
+    const facSizeM   = facRow ? parseAumM(facRow.facilitySize) : 0
+    const ubsPartM   = facRow ? parseAumM(facRow.ubsParticipation) : 0
+    const ubsPartPct = facSizeM > 0 ? ubsPartM / facSizeM : 0
 
     // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1): Σ(matching uncalled) ÷ Σ(uncalled)
     const sumUcM = (pred: (r: ComputedLPRecord) => boolean) => lps.filter(pred).reduce((s, r) => s + r.ucM, 0)
@@ -239,29 +329,33 @@ export default function ShadowBB() {
     const agentMap: Record<string, BkRow> = {}
     const clsMap: Record<string, BkRow & { label: string }> = { 'Rated Investors': { label: 'Rated Investors', count: 0, dollars: 0, pct: 0 }, 'Unrated Investors': { label: 'Unrated Investors', count: 0, dollars: 0, pct: 0 }, 'Eligible Investors': { label: 'Eligible Investors', count: 0, dollars: 0, pct: 0 }, 'Excluded Investors': { label: 'Excluded Investors', count: 0, dollars: 0, pct: 0 } }
     for (const lp of lps) {
-      const bkey = lp.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += lp.ucM * 1e6 }
-      const akey = lp.agentRate || '0%'; if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += lp.ucM * 1e6
-      const clsLabel = lp.cls === 'Rated' ? 'Rated Investors' : lp.cls === 'Excluded' ? 'Excluded Investors' : lp.cls === 'Eligible' ? 'Eligible Investors' : 'Unrated Investors'
-      clsMap[clsLabel].count++; clsMap[clsLabel].dollars += lp.ucM * 1e6
+      const bkey = lp.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += lp.ucM }
+      const akey = lp.agentRate || '0%'; if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += lp.ucM
+      const clsLabel = canonicalClassBucket(lp.cls)
+      clsMap[clsLabel].count++; clsMap[clsLabel].dollars += lp.ucM
     }
     const sortedByUC = [...lps].sort((a, b) => b.ucM - a.ucM)
+    const agentBBM = summary.totalABB
+    const ubsBBM   = summary.totalUBB
     return {
-      totalCapCommit: totalCapCommitM * 1e6,
-      totalCalledCap: totalCalledM * 1e6,
+      totalCapCommit: totalCapCommitM,
+      totalCalledCap: totalCalledM,
       pctCalled: totalCapCommitM > 0 ? totalCalledM / totalCapCommitM : 0,
-      totalAllUncalled: totalDollars, totalLPs: lps.length,
+      totalAllUncalled: totalUncalledM, totalLPs: lps.length,
       pctInstitutional: totalUncalledM > 0 ? instUncalledM / totalUncalledM : 0,
       pctHNW: totalUncalledM > 0 ? hnwUncalledM / totalUncalledM : 0,
       pctTop10: totalUncalledM > 0 ? sortedByUC.slice(0, 10).reduce((s, r) => s + r.ucM, 0) / totalUncalledM : 0,
       pctTop20: totalUncalledM > 0 ? sortedByUC.slice(0, 20).reduce((s, r) => s + r.ucM, 0) / totalUncalledM : 0,
       igRatio: totalUncalledM > 0 ? igUncalledM / totalUncalledM : 0,
       pctUncalledGt25bnAum: totalUncalledM > 0 ? gt25bnUncalledM / totalUncalledM : 0,
-      facilitySize: facSizeM * 1e6, ubsParticipation: ubsPartM * 1e6, ubsParticipationPct: ubsPartPct,
-      facilityLTV: 0, availableCommit: 0, facilityAdvRate: 0,
-      agentBBRaw: summary.totalABB * 1e6, ubsBBRaw: summary.totalUBB * 1e6, ubsAdvRate: summary.ear,
-      busaBreakdown: Object.values(busaMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalDollars > 0 ? r.dollars / totalDollars : 0 })),
-      agentBreakdown: Object.values(agentMap).sort((a, b) => parseFloat(b.rate ?? '0') - parseFloat(a.rate ?? '0')).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalDollars > 0 ? r.dollars / totalDollars : 0 })),
-      clsBreakdown: Object.values(clsMap).map(r => ({ ...r, pct: totalDollars > 0 ? r.dollars / totalDollars : 0 })),
+      facilitySize: facSizeM, ubsParticipation: ubsPartM, ubsParticipationPct: ubsPartPct,
+      facilityLTV: totalUncalledM > 0 ? facSizeM / totalUncalledM : 0,
+      availableCommit: Math.min(facSizeM, agentBBM),
+      facilityAdvRate: totalUncalledM > 0 ? agentBBM / totalUncalledM : 0,
+      agentBBRaw: agentBBM, ubsBBRaw: ubsBBM, ubsAdvRate: totalUncalledM > 0 ? ubsBBM / totalUncalledM : 0,
+      busaBreakdown: Object.values(busaMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
+      agentBreakdown: Object.values(agentMap).sort((a, b) => parseFloat(b.rate ?? '0') - parseFloat(a.rate ?? '0')).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
+      clsBreakdown: Object.values(clsMap).map(r => ({ ...r, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
     }
   }, [facility, facilityRows, result, summaryExtApi, summary])
 
@@ -297,10 +391,10 @@ export default function ShadowBB() {
             <div style={{ display: 'flex', gap: 12, padding: '12px 18px 16px', overflowX: 'auto', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="LP Portfolio" rows={[
-                  { k: 'Total Capital Commitments', v: fmtDollarsRaw(summaryExt.totalCapCommit), bold: true },
-                  { k: 'Total Called Capital',       v: fmtDollarsRaw(summaryExt.totalCalledCap) },
+                  { k: 'Total Capital Commitments', v: fmtMoneyM(summaryExt.totalCapCommit), bold: true },
+                  { k: 'Total Called Capital',       v: fmtMoneyM(summaryExt.totalCalledCap) },
                   { k: '% of Called Capital',        v: summaryExt.pctCalled ? p(summaryExt.pctCalled) : '—' },
-                  { k: 'Total Uncalled Capital',     v: fmtDollarsRaw(summaryExt.totalAllUncalled), bold: true },
+                  { k: 'Total Uncalled Capital',     v: fmtMoneyM(summaryExt.totalAllUncalled), bold: true },
                   { k: '# of Limited Partners',      v: summaryExt.totalLPs.toLocaleString(), bold: true },
                   { k: '% Institutional',            v: p(summaryExt.pctInstitutional) },
                   { k: '% HNW',                      v: p(summaryExt.pctHNW) },
@@ -312,25 +406,25 @@ export default function ShadowBB() {
               </div>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="Borrowing Base" rows={[
-                  { k: 'Total Facility Size',    v: fmtDollarsRaw(summaryExt.facilitySize),       bold: true },
-                  { k: 'UBS Participation',      v: fmtDollarsRaw(summaryExt.ubsParticipation),  bold: true },
+                  { k: 'Total Facility Size',    v: fmtMoneyM(summaryExt.facilitySize),       bold: true },
+                  { k: 'UBS Participation',      v: fmtMoneyM(summaryExt.ubsParticipation),  bold: true },
                   { k: 'UBS Participation Rate', v: summaryExt.ubsParticipationPct ? p(summaryExt.ubsParticipationPct) : '—' },
                   { k: 'Facility LTV',           v: summaryExt.facilityLTV ? p(summaryExt.facilityLTV) : '—' },
-                  { k: 'Available Commitment',   v: fmtDollarsRaw(summaryExt.availableCommit),   bold: true },
+                  { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit),   bold: true },
                   { k: 'Facility Adv. Rate',     v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
-                  { k: 'Agent Borrowing Base',   v: fmtDollarsRaw(summaryExt.agentBBRaw),         bold: true, hl: true },
-                  { k: 'UBS Borrowing Base',     v: fmtDollarsRaw(summaryExt.ubsBBRaw),           bold: true },
+                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw),         bold: true, hl: true },
+                  { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw),           bold: true },
                   { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate) },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} />
+                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} full={false}/>
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} />
+                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={false}/>
               </div>
               <div style={{ flex: '1 1 0', minWidth: 165, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="LP Classification" rows={summaryExt.clsBreakdown} labelHeader="Classification" />
+                <SummaryBreakTable title="LP Classification" rows={summaryExt.clsBreakdown} full={false} labelHeader="Classification" />
               </div>
             </div>
           )}
@@ -340,7 +434,7 @@ export default function ShadowBB() {
       <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12, alignItems: 'stretch' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
-            action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => toast('Shadow BB exported to Excel.')}>↓ Export</Button></div>}>
+            action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
             <div className="data-table-wrap">
               <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 940 }}>
                 <colgroup>

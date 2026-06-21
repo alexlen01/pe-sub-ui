@@ -9,8 +9,10 @@ import Button         from '../../components/ui/Button'
 import InfoTip        from '../../components/ui/InfoTip'
 import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
 import { getLPsForFacility } from '../../services/lpService'
+import { api } from '../../services/api'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
-import { buildExecRows } from '../../utils/execSummary'
+import type { BBSummary } from '../../types/bb'
+import { buildExecRowsFromSummary } from '../../utils/execSummary'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
@@ -19,15 +21,18 @@ const FACILITY_STATUS_ITEMS = [
   { label: 'Not Started',  desc: 'No Shadow BB submission processed for this cycle.' },
 ]
 
+// Agent Bank Summary layout (mirrors the prototype's Agent Bank Summary report) with "# LPs"
+// added after Borrower. Account Number / Loan Amount / Maturity Date are facility-edit inputs;
+// Facility Status / Status Date reflect the internal workflow status.
 const FACILITY_COLS = [
-  { key: 'name',    label: 'Facility'  },
-  { key: 'lps',     label: '# LPs',    align: 'right', style: { width: 70  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
-  { key: 'agentBB', label: 'Agent BB', align: 'right', style: { width: 90  } },
-  { key: 'ubsBB',   label: 'UBS BB',   align: 'right', style: { width: 90  } },
-  { key: 'delta',   label: 'Delta',    align: 'right', style: { width: 90  }, neg: (r: FacilityRow) => r.delta?.startsWith('-') ?? false },
-  { key: 'ear',     label: 'EAR',      align: 'right', style: { width: 70  } },
-  { key: 'lastRun', label: 'Last Run', align: 'right', style: { width: 85  }, render: (r: FacilityRow) => <span style={{ color: r.lastRun === '—' ? 'var(--muted)' : 'inherit' }}>{r.lastRun}</span> },
-  { key: 'status',  label: 'Status',                   style: { width: 120 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
+  { key: 'agentBank',          label: 'Agent',                style: { width: 150 } },
+  { key: 'name',               label: 'Borrower',             style: { width: 170 } },
+  { key: 'lps',                label: '# LPs',                align: 'right', style: { width: 60  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
+  { key: 'accountNumber',      label: 'Account Number',       align: 'right', style: { width: 100 } },
+  { key: 'loanAmount',         label: 'Loan Amount',          align: 'right', style: { width: 100 } },
+  { key: 'maturityDate',       label: 'Maturity Date',        align: 'right', style: { width: 105 } },
+  { key: 'status',             label: 'Facility Status',                      style: { width: 110 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
+  { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 115 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
 ]
 
 const CLS_SEGMENTS = [
@@ -46,6 +51,7 @@ export default function Dashboard() {
   const [activityFeed,     setActivityFeed]     = useState<ActivityRow[]>([])
   const [loading,          setLoading]          = useState(false)
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
+  const [execSummary,      setExecSummary]      = useState<BBSummary | null>(null)
   const [error,            setError]            = useState<string | null>(null)
 
   const selectedFacilityId = selectedFacility?.id ?? null
@@ -54,6 +60,15 @@ export default function Dashboard() {
     if (!selectedFacilityId) { setFacilityLPs([]); return }
     getLPsForFacility(selectedFacilityId)
       .then(lps => setFacilityLPs(lps as { cls?: string }[]))
+      .catch(e => setError(String(e)))
+  }, [selectedFacilityId])
+
+  // Executive Summary figures come from the latest persisted Shadow BB snapshot (bb_snapshots),
+  // not from the facility row. null → no run yet → the card shows its empty state.
+  useEffect(() => {
+    if (!selectedFacilityId) { setExecSummary(null); return }
+    api.bb.latestSnapshot(selectedFacilityId)
+      .then(snap => setExecSummary(snap?.result?.summary ?? null))
       .catch(e => setError(String(e)))
   }, [selectedFacilityId])
 
@@ -122,8 +137,8 @@ export default function Dashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 12, padding: '12px 24px 0' }}>
         <Card
-          title="Facility Summary"
-          subtitle={`${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })} · ${statusFilter === 'All' ? `All ${facilities.length}` : `${filteredFacilities.length}`} facilities · Click a row to view LP Classification and Executive Summary`}
+          title="Agent Bank Summary"
+          subtitle={`${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })} · ${statusFilter === 'All' ? `All ${facilities.length}` : `${filteredFacilities.length}`} borrowers · Click a row to view LP Classification and Executive Summary`}
           action={
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <InfoTip title="Facility Status" items={FACILITY_STATUS_ITEMS} />
@@ -234,7 +249,7 @@ export default function Dashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {buildExecRows(f).map((row, i) => (
+                          {buildExecRowsFromSummary(execSummary).map((row, i) => (
                             <tr key={i} style={{ background: row.delta ? 'var(--red-lt)' : 'inherit' }}>
                               <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
                               <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: row.bold || row.delta ? 700 : 400, color: row.delta ? 'var(--red)' : 'var(--navy)', borderBottom: '1px solid var(--border)' }}>{row.ubs}</td>

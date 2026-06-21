@@ -14,27 +14,37 @@ export function formatLastRun(date: Date | string | null | undefined): string {
 }
 
 // "May 27, 2026" style — used for Agent Bank Summary date fields that need the year.
+// Date-only strings ("2029-03-15") are anchored to local midnight so the day isn't shifted
+// back by the UTC offset; full datetimes pass through unchanged.
 function formatFullDate(date: Date | string | null | undefined): string {
   if (!date) return '—'
-  return new Date(date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const d = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(date + 'T00:00:00')
+    : new Date(date as string)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// Deterministic loan account number in the agent's "5V" house format (e.g. "5VX1796"),
-// keyed on facility name so the value is stable across renders/sessions.
-function genAccountNumber(name: string): string {
-  const LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ'
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0
-  h = Math.abs(h)
-  return `5V${LETTERS[h % LETTERS.length]}${String(h % 10000).padStart(4, '0')}`
+// Loan Amount is stored as a NUMERIC dollar amount on the facility; format it for display
+// (e.g. 2_500_000_000 → "$2.5B"). Returns "—" when not yet set.
+function formatMoney(n: number | null | undefined): string {
+  if (n == null) return '—'
+  const abs = Math.abs(n)
+  if (abs >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+  if (abs >= 1e3) return `$${(n / 1e3).toFixed(1)}K`
+  return `$${n.toLocaleString('en-US')}`
 }
 
-// Deterministic facility maturity date in the 2027–2031 window, keyed on facility name.
-function genMaturityDate(name: string): Date {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (Math.imul(37, h) + name.charCodeAt(i)) | 0
-  h = Math.abs(h)
-  return new Date(2027 + (h % 5), h % 12, 1 + (h % 28))
+// Inverse of formatMoney for the Facility Edit input — parses "$2.5B" / "150M" / "1,200,000"
+// into a plain dollar amount. Returns null for blank / "—" / unparseable input.
+export function parseMoneyToNumber(s: string | null | undefined): number | null {
+  if (!s) return null
+  const trimmed = s.trim()
+  if (!trimmed || trimmed === '—') return null
+  const m = trimmed.replace(/[$,\s]/g, '').match(/^(-?\d*\.?\d+)([bmkt]?)$/i)
+  if (!m) return null
+  const mult = { b: 1e9, m: 1e6, k: 1e3, t: 1e12, '': 1 }[m[2].toLowerCase()] ?? 1
+  return parseFloat(m[1]) * mult
 }
 
 function formatAuditTs(isoTs: string): string {
@@ -129,9 +139,11 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       agentBank:            f.agentBank,
       status:               f.status,
       lps:                  f.lpCount,
-      facilitySize:         '—',
-      ubsParticipation:     '—',
-      ubsParticipationRate: '—',
+      facilitySize:         formatMoney(f.facilitySize),
+      ubsParticipation:     formatMoney(f.ubsParticipation),
+      ubsParticipationRate: (f.facilitySize && f.ubsParticipation)
+                              ? `${((f.ubsParticipation / f.facilitySize) * 100).toFixed(0)}%`
+                              : '—',
       creditAgreementRef:   '—',
       agentBB:              '—',
       ubsBB:                '—',
@@ -143,9 +155,9 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       id:                   f.id,
       lastRunAt:            f.lastRunAt,
       latestSubmissionId:   review?.id ?? latestById.get(f.id) ?? null,
-      accountNumber:        genAccountNumber(f.name),
-      loanAmount:           '',
-      maturityDate:         formatFullDate(genMaturityDate(f.name)),
+      accountNumber:        f.accountNumber ?? '—',
+      loanAmount:           formatMoney(f.loanAmount),
+      maturityDate:         f.maturityDate ? formatFullDate(f.maturityDate) : '—',
       facilityStatusDate:   f.lastRunAt ? formatFullDate(f.lastRunAt) : '—',
     }
   }) as FacilityRow[]

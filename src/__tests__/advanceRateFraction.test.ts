@@ -25,6 +25,18 @@ describe('advanceRateFraction', () => {
     expect(advanceRateFraction({ rate: '0%', cls: 'Rated' })).toBe(0) // 0% is explicit, not "missing"
   })
 
+  it('falls back to the BUSA schedule for UBS-taxonomy classes when no explicit rate is present', () => {
+    // The LP-Level Shadow BB recomputes Rate / UBS BB client-side. UBS-taxonomy LPs committed
+    // without a stored ubsRate must still resolve a non-zero rate (matching the API engine),
+    // otherwise the Rate and UBS BB columns render 0% / $0. Mirrors the API
+    // BbCalculationService.BUSA_RATES map.
+    expect(advanceRateFraction({ rate: '', cls: 'Rated Investor' })).toBe(0.9)
+    expect(advanceRateFraction({ rate: '', cls: 'FoF & Other > $10Bn AUM' })).toBe(0.75)
+    expect(advanceRateFraction({ rate: '', cls: 'Unrated NAV > $1Bn' })).toBe(0.65)
+    expect(advanceRateFraction({ rate: '', cls: 'Corp Pension > $5Bn Assets' })).toBe(0.65)
+    expect(advanceRateFraction({ rate: '', cls: 'Other Institutional' })).toBe(0.5)
+  })
+
   it('returns 0 for an unknown class with no rate', () => {
     expect(advanceRateFraction({ rate: '', cls: 'Excluded' })).toBe(0)
   })

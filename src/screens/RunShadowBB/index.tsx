@@ -35,6 +35,14 @@ function parseMoneyM(str: string | undefined | null): number {
 }
 const num = (v: number | '' | undefined): number => (typeof v === 'number' ? v : 0)
 
+// Full-dollar formatter for the Calculation Results card. The BB engine carries monetary values
+// in $M magnitude; expand to whole dollars (e.g. 12.5 → "$12,500,000") rather than fmtM's "$12.5M".
+function fmtFull(n: number): string {
+  if (n === 0) return '$0'
+  const abs = Math.abs(n)
+  return `${n < 0 ? '–' : ''}$${Math.round(abs * 1_000_000).toLocaleString()}`
+}
+
 const YesNo = ({ val }: { val: boolean }) => (
   <span style={{
     fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10,
@@ -503,7 +511,18 @@ export default function RunShadowBB() {
   const newLPs        = submissionLPs.filter(lp => lp._isNew)
   const overrideCount = submissionLPs.filter(lp => !lp._isNew && overrides[lp._key]?.cls !== lp.cls).length
   const unclassified  = submissionLPs.filter(lp => !overrides[lp._key]?.cls).length
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(submissionLPs)
+
+  // "Unclassified" badge acts as a filter: when active (and any exist) the table sorts
+  // unclassified LPs to the top and shows only them; otherwise it falls back to ALL.
+  const [unclassifiedOnly, setUnclassifiedOnly] = useState(false)
+  const displayLPs = useMemo(() => {
+    if (!unclassifiedOnly || unclassified === 0) return submissionLPs
+    return submissionLPs
+      .filter(lp => !overrides[lp._key]?.cls)
+      .sort((a, b) => (a.name ?? a._agentName ?? '').localeCompare(b.name ?? b._agentName ?? ''))
+  }, [submissionLPs, overrides, unclassifiedOnly, unclassified])
+
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(displayLPs)
 
   // Facility-level totals used by formula columns (from overrides, which are editable).
   const totalCommitM = useMemo(() =>
@@ -610,17 +629,17 @@ export default function RunShadowBB() {
   }
 
   const resultRows = result ? [
-    { label: 'UBS Borrowing Base',            value: fmtM(result.summary.totalUBB),       hi: true },
-    { label: 'Agent Borrowing Base',           value: fmtM(result.summary.totalABB)                 },
-    { label: 'BB Delta',                       value: fmtM(result.summary.bbDelta),         neg: result.summary.bbDelta < 0 },
+    { label: 'UBS Borrowing Base',            value: fmtFull(result.summary.totalUBB),       hi: true },
+    { label: 'Agent Borrowing Base',           value: fmtFull(result.summary.totalABB)                 },
+    { label: 'BB Delta',                       value: fmtFull(result.summary.bbDelta),         neg: result.summary.bbDelta < 0 },
     { label: 'Effective Advance Rate (UBS)',   value: fmtPct(result.summary.ear)                    },
     { label: 'Effective Advance Rate (Agent)', value: fmtPct(result.summary.agentEar)               },
     { label: 'EAR Delta',                      value: fmtPct(result.summary.earDelta),      neg: result.summary.earDelta < 0 },
     { label: 'Included LPs',                   value: result.summary.includedCount                  },
     { label: 'Excluded LPs',                   value: result.summary.excludedCount                  },
     { label: 'Reclassified LPs',               value: result.summary.reclassCount                   },
-    { label: 'UBS Elig. Uncalled',             value: fmtM(result.summary.totalUEC)                 },
-    { label: 'Conc. Excess (total)',            value: fmtM(result.summary.totalConcExcess), neg: result.summary.totalConcExcess > 0 },
+    { label: 'UBS Elig. Uncalled',             value: fmtFull(result.summary.totalUEC)                 },
+    { label: 'Conc. Excess (total)',            value: fmtFull(result.summary.totalConcExcess), neg: result.summary.totalConcExcess > 0 },
   ] : []
 
   const selectedLp = submissionLPs.find(lp => lp._key === selectedKey) ?? null
@@ -648,7 +667,7 @@ export default function RunShadowBB() {
             subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'} · select a row to edit the full LP record`}
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {unclassified > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>{unclassified} unclassified</span>}
+                {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--red) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
                 <Button size="sm" onClick={run} disabled={running}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
@@ -670,15 +689,15 @@ export default function RunShadowBB() {
                       <th style={{ width: 52 }}>S&P</th>
                       <th style={{ width: 56 }}>Moody's</th>
                       <th className="num" style={{ width: 64 }}>AUM</th>
-                      <th style={{ width: 60 }}>NAV</th>
+                      <th style={{ width: 55 }}>NAV</th>
                       <th className="num" style={{ width: 90, whiteSpace: 'normal', lineHeight: 1.15 }}>Agent<br />Advance Rate</th>
                       <th className="num" style={{ width: 90, whiteSpace: 'normal', lineHeight: 1.15 }}>UBS<br />Advance Rate</th>
-                      <th className="num" style={{ width: 96, whiteSpace: 'normal', lineHeight: 1.15 }}>Capital Commitments</th>
-                      <th className="num" style={{ width: 76, whiteSpace: 'normal', lineHeight: 1.15 }}>Called Capital</th>
-                      <th className="num" style={{ width: 76, whiteSpace: 'normal', lineHeight: 1.15 }}>Uncalled Capital</th>
-                      <th className="num" style={{ width: 72 }}>Agent BB</th>
-                      <th className="num" style={{ width: 72 }}>UBS BB</th>
-                      <th className="num" style={{ width: 62 }}>Delta</th>
+                      <th className="num" style={{ width: 88, whiteSpace: 'normal', lineHeight: 1.15 }}>Capital Commitments</th>
+                      <th className="num" style={{ width: 68, whiteSpace: 'normal', lineHeight: 1.15 }}>Called Capital</th>
+                      <th className="num" style={{ width: 68, whiteSpace: 'normal', lineHeight: 1.15 }}>Uncalled Capital</th>
+                      <th className="num" style={{ width: 64 }}>Agent BB</th>
+                      <th className="num" style={{ width: 64 }}>UBS BB</th>
+                      <th className="num" style={{ width: 59 }}>Delta</th>
                       <th style={{ width: 52 }}>Incl.</th>
                     </tr>
                   </thead>
@@ -726,7 +745,7 @@ export default function RunShadowBB() {
                 </table>
               </div>
               <div className="tbl-footer">
-                <span>Showing {from}–{to} of {submissionLPs.length} LPs{unclassified > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--blue)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
+                <span>Showing {from}–{to} of {displayLPs.length} LPs{unclassifiedOnly && unclassified > 0 && <span style={{ color: 'var(--muted)' }}> (filtered)</span>}{unclassified > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--blue)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
                   {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}

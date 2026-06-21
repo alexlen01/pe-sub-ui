@@ -48,6 +48,19 @@ The main workflow is a five-step wizard:
 4. **LP Classification & Rate Assignment** (`RunShadowBB`) — edits the **persisted** LP records created in step 3 (live mode reads `api.lps.list({ facilityId })`, not the match queue). **Save** writes the classification & rate edits back to LP Master via `PATCH /api/lps/classification`
 5. **Run Shadow BB** — computes and persists the BB snapshot from the saved LP records
 
+## Dashboard
+
+The Dashboard's main table is the **Agent Bank Summary** (Agent, Borrower, # LPs, Account Number,
+Loan Amount, Maturity Date, Facility Status, Facility Status Date). Account Number / Loan Amount /
+Maturity Date are facility inputs sourced from the facility record and edited on the **Facility
+Edit** overlay in LP Master (persisted via `PATCH /api/facilities/{id}`). Facility Status / Status
+Date reflect the internal workflow status.
+
+Selecting a row populates the **LP Classification** donut (live LP class breakdown) and the
+**Executive Summary**, whose figures (UBS / Agent BB, BB Delta, EAR, EAR Delta) come from the
+latest persisted Shadow BB snapshot via `GET /api/bb/snapshots/{facilityId}/latest` — not from the
+facility row. Facilities with no Shadow BB run yet show the "No Shadow BB this cycle" empty state.
+
 ## Project structure
 
 ```

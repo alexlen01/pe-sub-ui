@@ -8,7 +8,8 @@ import InfoTip     from '../../components/ui/InfoTip'
 import { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS } from '../../config/classificationConfig'
 import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
 import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
-import { getFacilities } from '../../services/facilityService'
+import { getFacilities, parseMoneyToNumber } from '../../services/facilityService'
+import { api } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
@@ -488,10 +489,11 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
 
   useEffect(() => {
     if (!facility) return
+    const clean = (v?: string | null) => (!v || v === '—' ? '' : v)
     setForm({
-      accountNumber: facility.accountNumber ?? '',
-      loanAmount:    facility.loanAmount ?? facility.ubsParticipation ?? '',
-      maturityDate:  facility.maturityDate ?? '',
+      accountNumber: clean(facility.accountNumber),
+      loanAmount:    clean(facility.loanAmount) || clean(facility.ubsParticipation),
+      maturityDate:  clean(facility.maturityDate),
     })
   }, [facility?.name])
 
@@ -629,9 +631,23 @@ export default function LPMaster() {
   }
 
   // Facility records are keyed by their (unique) name; the Borrower/name field is read-only.
-  const handleFacilitySave = (updated: FacilityRow) => {
+  // Persist the Agent Bank Summary inputs (account number / loan amount / maturity date) to the
+  // facility via PATCH, then reflect the saved values locally.
+  const handleFacilitySave = async (updated: FacilityRow) => {
+    if (updated.id != null) {
+      try {
+        await api.facilities.update(updated.id, {
+          accountNumber: updated.accountNumber === '—' ? null : updated.accountNumber,
+          loanAmount:    parseMoneyToNumber(updated.loanAmount),
+          maturityDate:  toISODate(updated.maturityDate) || null,
+        })
+      } catch {
+        toast('Could not save facility — API unavailable.')
+        return
+      }
+    }
     setFacilities(prev => prev.map(f => (f.name === updated.name ? { ...f, ...updated } : f)))
-    setEditingFacility(updated)
+    setEditingFacility(null)
     toast(`Facility updated — ${updated.name}.`)
   }
 
