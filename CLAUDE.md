@@ -6,54 +6,40 @@ State is managed via **React Context** (`src/context/AppContext.tsx`). There is 
 
 ---
 
-## Live / Prototype Indicator
+## Live-only — no in-app Prototype mode
 
-### What it is
+**This UI is always Live. It has no internal "prototype" data mode.** There is no `screenMode`,
+no `useScreenMode`, and no `if (!live)` fallback to hardcoded data. Every screen fetches from the
+real API via the service functions in `src/services/`. If the API is unavailable, screens surface
+their own `loadError` state — they must **not** silently fall back to canned data.
 
-A persistent badge in `TopBar.tsx` that shows the current data mode:
+The prototype lives entirely in the **separate `pe-sub-platform` app on `http://localhost:5173`**.
+The two applications are fully separate; nothing in `pe-sub-ui` imports prototype data.
 
-| Mode | Label | Colors |
-|---|---|---|
-| `live` | `● Live` | Green bg `#e6f4ea`, text `#1e7e34` |
-| `prototype` | `● Prototype` | Amber bg `#fff3cd`, text `#856404` |
-| `detecting` | `○ Checking` | Muted — not clickable |
+### Live badge (TopBar)
 
-These exact colors and labels are canonical. Do not change them unless the user explicitly asks.
+`TopBar.tsx` shows a **single `● Live` badge, rendered only while the app is Live** (the API is
+reachable). It polls `/api/ping` through the same-origin `/api` proxy every 15s with a 2s-timeout
+`fetch`. "Live" means the API is *working* — i.e. it answers at all. A non-2xx response (API up
+but erroring) still counts as reachable; only the `fetch` itself rejecting (network failure /
+connection refused / timeout) is treated as not-live.
 
-### Consistency rule
+| API reachable | Behaviour |
+|---|---|
+| `up` | Green `#e6f4ea`/`#1e7e34` `● Live` pill; **clickable** |
+| `down` / `checking` | Badge is **not rendered** |
 
-Every screen in the app must respect `screenMode` from `useApp()` to decide whether to fetch from the API or use hardcoded data. No screen may hardcode a data source or ignore `screenMode`.
+Clicking the Live badge switches to the prototype: it sets `window.location.href` to
+`http://localhost:5173`, reloading the **same window** onto the prototype app (re-launching it in
+place — not a new tab). It does not toggle `pe-sub-ui`'s own data source; the UI stays Live until
+navigated away.
 
-### Mode persistence rule
+### Service contract
 
-**`screenMode` must never change during navigation.** Once detection completes on initial load (or the user manually toggles), the selected mode sticks across every screen until the user explicitly toggles again.
-
-`navigate()` in `AppContext` must NOT set `screenMode` to `'detecting'`. Detection runs exactly once — on app startup, because the initial state is `'detecting'`. After that, only the TopBar toggle may change `screenMode`.
-
-### Reset-on-toggle rule
-
-**When the user switches between Live and Prototype, the entire application must reset to its default state — equivalent to a fresh browser load.**
-
-The toggle handler lives in `TopBar.tsx:handleToggle`. Whenever it switches `screenMode`, it must also reset all transient app state to its initial values via `resetAppState()`:
-
-- `screen` → `'dashboard'`
-- `lpData` → `[]`
-- `bbParams` → `DEFAULT_FACILITY_PARAMS`
-- `activeSubmission` → `null`
-- `activeSubmissionId` → `null`
-- `activeFacilityId` → `null`
-- `abortedFacilities` → `[]`
-- `targetFacility` → `null`
-
-**Do not implement partial resets.** If any of the above fields are missing, data from the previous mode will bleed into the new one.
-
-`resetAppState` must NOT reset `screenMode` — the toggle handler sets the new mode separately, after the reset.
-
-### What NOT to do
-
-- Do not call `setScreenMode` directly from the toggle without also resetting state.
-- Do not navigate to a different screen and rely on that to clear state — reset first, then navigate.
-- Do not add a "are you sure?" confirmation dialog before the toggle — the reset should be instant and silent.
+- Service functions take no `live`/mode parameter — they always call the API.
+- The only client-resident datasets that remain are `src/data/templateProfiles.ts` and
+  `src/data/fieldMappingData.ts`, used by `templateService` for client-side Agent-BB format
+  recognition (no UI-reachable backend endpoint exists yet — migrate when one does).
 
 ---
 
@@ -63,16 +49,8 @@ Screen names are defined in `src/config/screenConfig.ts`. Navigation goes throug
 
 ---
 
-## Data Hooks
-
-- **Live mode**: components call the real API via service functions in `src/services/`.
-- **Prototype mode**: components fall back to static data in `src/data/`.
-- Always branch on `screenMode === 'live'` — do not invent a new flag or prop.
-
----
-
 ## Test Coverage
 
-- Every screen that reads data must have a test asserting real field values render (no hardcoded prototype strings).
-- Mode-switching must be tested: after toggling, the app must land on `dashboard` with all state at defaults.
+- Every screen that reads data must have a test asserting real field values render against a mocked API response (no hardcoded strings).
+- Every service function must be tested with a mocked `fetch` response that mirrors the API contract.
 - Never use `expect(screen.getByText('—'))` as a passing assertion — null/missing data must be tested with a known fixture.

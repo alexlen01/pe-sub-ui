@@ -3,7 +3,6 @@ export type Region = 'North America' | 'Europe' | 'Asia-Pacific' | 'Middle East'
 export type InvestorType = 'Institutional' | 'HNW'
 
 export interface LP {
-  rank: number
   name: string
   parent: string
   spv: boolean
@@ -45,8 +44,6 @@ export interface LP {
   // ── Shadow BB alignment (Shadow_BB.xlsx, 28-column model) ──
   // `cls` carries the UBS LP Classification; `agentCls` the Agent LP Classification.
   // `rate` carries the UBS Advance Rate; `agentRate` the Agent Advance Rate.
-  lpSizeBil?: string         // LP Size ($ Bil) — display string, e.g. "$134B"
-  lpSizeCriteria?: string    // Basis for LP Size: 'AUM' | 'NAV' | 'Assets'
   agentExcessConc?: string   // Agent Excess Concentration Base (calculated)
   ubsExcessConc?: string     // UBS Excess Concentration Base (calculated)
   // Status

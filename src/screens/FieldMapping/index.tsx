@@ -1,6 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useApp }   from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import Button        from '../../components/ui/Button'
 import { getAliasGroups } from '../../services/fieldMappingService'
 import { api } from '../../services/api'
@@ -17,8 +16,6 @@ const inputStyle: React.CSSProperties = { border: '1px solid var(--border)', bor
 
 export default function FieldMapping() {
   const { toast, navigate } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
   const [groups,      setGroups]      = useState<AliasGroup>([])
   const [addingTo,    setAddingTo]    = useState<{ groupName: string; fieldIdx: number } | null>(null)
   const [newAlias,    setNewAlias]    = useState('')
@@ -29,10 +26,9 @@ export default function FieldMapping() {
   const [loadError,   setLoadError]   = useState<string | null>(null)
 
   useEffect(() => {
-    if (mode === 'detecting') return
     setLoadError(null)
-    getAliasGroups(live).then(setGroups).catch(e => setLoadError(String(e)))
-  }, [mode])
+    getAliasGroups().then(setGroups).catch(e => setLoadError(String(e)))
+  }, [])
 
   const updateAliases = (groupName: string, fieldIdx: number, fn: (aliases: AliasGroup[0]['fields'][0]['aliases']) => AliasGroup[0]['fields'][0]['aliases']) =>
     setGroups(prev => prev.map(g => g.group !== groupName ? g : {

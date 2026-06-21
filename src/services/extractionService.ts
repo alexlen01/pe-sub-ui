@@ -1,5 +1,3 @@
-import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLUMNS } from '../data/extractionData'
-import { ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 import { api, type DocRecognition } from './api'
 
 function parseMoney(s: string): number {
@@ -18,34 +16,41 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
   })
   const totalBB = withRaw.reduce((s, r) => s + ((r.agentBBRaw as number) || 0), 0)
   return withRaw.map(r => {
-    if (r.agentBBFmt !== undefined) return r
+    // % Called is derived (Called ÷ Commitment) — always present it, even when the
+    // API already supplied the BB columns.
+    const c = parseMoney(r.commit as string)
+    const u = parseMoney(r.uncalled as string)
+    const pctCalledFmt = r.pctCalledFmt !== undefined
+      ? r.pctCalledFmt
+      : (c ? Math.max(0, (c - u) / c * 100).toFixed(1) + '%' : '')
+    if (r.agentBBFmt !== undefined) return { ...r, pctCalledFmt }
     const bb = (r.agentBBRaw as number) || 0
     return {
       ...r,
+      pctCalledFmt,
       agentBBFmt: bb ? '$' + bb.toLocaleString('en-US') : '',
       pctBBFmt:   totalBB && bb ? (bb / totalBB * 100).toFixed(2) + '%' : '',
     }
   })
 }
 
-export async function getExtractedLPs(live: boolean, submissionId: number) {
-  if (!live) return EXTRACTED_LPS
+export async function getExtractedLPs(submissionId: number) {
   const rows = await api.extraction.extractedLPs(submissionId)
   return enrichBBFields(rows as unknown as Record<string, unknown>[])
 }
 
-export async function getExtractionFieldMap(live: boolean, submissionId: number) {
-  if (!live) return EXTRACTION_FIELD_MAP
+export async function getExtractionFieldMap(submissionId: number) {
   return await api.extraction.fieldMap(submissionId)
 }
 
-export async function getDocRecognition(live: boolean, submissionId: number) {
-  if (!live) return DOC_RECOGNITION
+export interface DocRecognitionRow { label: string; value: string }
+
+export async function getDocRecognition(submissionId: number): Promise<DocRecognitionRow[]> {
   const raw = await api.extraction.docRecognition(submissionId)
   return toDocRecList(raw)
 }
 
-function toDocRecList(r: DocRecognition): typeof DOC_RECOGNITION {
+function toDocRecList(r: DocRecognition): DocRecognitionRow[] {
   return [
     { label: 'Document',          value: r.document },
     { label: 'Format',            value: r.format },
@@ -56,13 +61,13 @@ function toDocRecList(r: DocRecognition): typeof DOC_RECOGNITION {
   ]
 }
 
-export async function getUnrecognizedColumns(live: boolean, submissionId: number) {
-  if (!live) return UNRECOGNIZED_COLUMNS
+export interface UnrecognizedColumn { extracted: string; reason: string }
+
+export async function getUnrecognizedColumns(submissionId: number): Promise<UnrecognizedColumn[]> {
   const cols = await api.extraction.unrecognizedColumns(submissionId)
   return cols.map(c => ({ extracted: c, reason: 'Not matched to any canonical field' }))
 }
 
-export async function getAllCanonicalFields(live: boolean) {
-  if (!live) return ALL_CANONICAL_FIELDS
+export async function getAllCanonicalFields() {
   return await api.fieldMapping.canonicalFields()
 }

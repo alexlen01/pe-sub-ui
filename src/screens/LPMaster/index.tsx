@@ -2,13 +2,14 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp }  from '../../context/AppContext'
 import Button      from '../../components/ui/Button'
+import Modal       from '../../components/ui/Modal'
 import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
 import { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS } from '../../config/classificationConfig'
-import { BUSA_RATE_MAP, AGENT_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
+import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
+import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getFacilities } from '../../services/facilityService'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 
@@ -17,10 +18,15 @@ const CLS_CRITERIA = _CLS_CRITERIA
 function hash(str: string) {
   return Math.abs([...str].reduce((a, c) => (Math.imul(31, a) + c.charCodeAt(0)) | 0, 0))
 }
-function lpBelongsToFacility(lp: { rank: number }, facilityName: string) {
+// Parse an advance-rate string ("95%", "75%") to a decimal. Returns NaN for "N/A"/blank.
+function parseRatePct(s: string | undefined | null): number {
+  const m = String(s ?? '').match(/([\d.]+)\s*%?/)
+  return m && m[1] ? parseFloat(m[1]) / 100 : NaN
+}
+function lpBelongsToFacility(lp: { name: string }, facilityName: string) {
   if (facilityName === 'Blue Owl GP Stakes V') return true
   const h = hash(facilityName)
-  return (lp.rank + h) % (3 + (h % 5)) !== 0
+  return (hash(lp.name) + h) % (3 + (h % 5)) !== 0
 }
 
 const CLS_LEGEND_ITEMS = [
@@ -72,7 +78,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     setSubview(null)
     setPos({ x: 0, y: 0 })
     setForm({
-      name: lp.name, parent: lp.parent, spv: lp.spv,
+      name: lp.name, parent: lp.parent, spv: lp.spv, agentCls: lp.agentCls ?? '',
       type: lp.type, cls: lp.cls, ig: lp.ig,
       region: lp.region, hq: lp.hq,
       sp: lp.sp, mdy: lp.mdy, fitch: lp.fitch,
@@ -82,7 +88,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       agentConc: lp.agentConc, ubsConc: lp.ubsConc, abb: lp.abb, ubb: lp.ubb,
       inc: lp.inc, notes: lp.notes ?? '',
     })
-  }, [lp?.rank])
+  }, [lp?.name])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -96,7 +102,23 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     setForm(p => ({ ...p, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }))
 
   const handleSave = () => {
-    onSave({ ...lp, ...form as Partial<LPRecord>, rate: BUSA_RATE_MAP[form.cls as string] ?? lp.rate, clsTag: CLS_TAG_MAP[form.cls as string] ?? lp.clsTag } as LPRecord)
+    const eff = { ...lp, ...form as Partial<LPRecord> } as LPRecord
+    const c = computeLPRecord(eff)
+    const capCommitM = parseM(eff.capCommit)
+    const calledCapM = capCommitM - parseM(eff.uc)
+    const agentRateDec = parseRatePct(eff.agentRate)
+    onSave({
+      ...eff,
+      rate: BUSA_RATE_MAP[form.cls as string] ?? lp.rate,
+      clsTag: CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
+      // Calculated columns — kept in sync with the formulas in SHADOW_BB_ANALYSIS.md
+      hq: c.busaRate === 0.90,
+      calledCap: fmtM(calledCapM),
+      pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
+      abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
+      ubb: c.ubb,
+      uec: c.uec,
+    } as LPRecord)
     setEditMode(false)
   }
 
@@ -109,18 +131,34 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
   )
 
+  // A read-only field carries `ro` and is, in this overlay, always a value derived by
+  // formula (see SHADOW_BB_ANALYSIS.md › "Source: Calculated"). Mark it visually and
+  // surface its formula as a caption so inputs and derived values are distinguishable.
+  const fieldLabel = (label: string, calculated: boolean) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
+      {calculated && (
+        <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>
+      )}
+    </div>
+  )
+
   const f = (label: string, viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, neg, pos: posStyle, zero } = cfg
+    const { wide, span2, opts, chk, ta, ro, neg, pos: posStyle, zero, formula } = cfg
     const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
     const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : span2 ? { gridColumn: 'span 2' } : {}
+    const caption = formula
+      ? <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 8px 0' }}>{String(formula)}</div>
+      : null
 
     if (!editMode) {
       return (
         <div style={colSt} key={label || editKey || ''}>
-          <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+          {fieldLabel(label, !!ro)}
           <div style={{ fontSize: 13, fontWeight: neg || posStyle ? 600 : 400, color: neg ? 'var(--red)' : posStyle ? 'var(--green)' : zero ? 'var(--muted)' : 'var(--navy)', minHeight: 28, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
             {String(viewVal || '—')}
           </div>
+          {caption}
         </div>
       )
     }
@@ -128,7 +166,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     const roSt: React.CSSProperties = ro ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
     return (
       <div className="form-group" style={{ ...colSt, marginBottom: 0 }} key={label || editKey || ''}>
-        <label style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', marginBottom: 4, display: 'block' }}>{label}</label>
+        <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
         {chk
           ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
               <input type="checkbox" checked={!!form[editKey!]} onChange={set(editKey!)} /> Yes
@@ -141,35 +179,57 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
             </select>
           : <input type="text" style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={ro ? undefined : set(editKey!)} readOnly={!!ro} />
         }
+        {caption}
       </div>
     )
   }
 
   const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px 28px' }
 
-  const renderDetail = () => (
-    <div style={COLS}>
-      {sec('Identity & Classification')}
-      {f('Investor Name', lp.name, 'name', { span2: true })}
-      {f('Rank', lp.rank ?? '—', null, { ro: true })}
-      {f('Parent / Sponsor', lp.parent, 'parent', { span2: true })}
-      {f('SPV', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
-      {f('Institutional vs HNW', lp.type, 'type', { opts: TYPE_OPTS })}
-      {f('Region / Location', lp.region, 'region', { opts: REGION_OPTS })}
-      {f('HQ', lp.hq ? 'Yes' : 'No', 'hq', { chk: true })}
-      {f('Investment Grade', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
+  const renderDetail = () => {
+    // Effective record reflects live edits so calculated columns update as the user types.
+    const eff = { ...lp, ...form } as LPRecord
+    const c = computeLPRecord(eff)
+    const capCommitM = parseM(eff.capCommit)
+    const ucM = parseM(eff.uc)
+    const calledCapM = capCommitM - ucM
+    const agentRateDec = parseRatePct(eff.agentRate)
+    // Formulas per pe-sub-docs/SHADOW_BB_ANALYSIS.md › "LP Record Columns".
+    const calledCapStr  = fmtM(calledCapM)                                               // Capital Commitments − Uncalled Capital
+    const pctCalledStr  = fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0)            // Called Capital ÷ Capital Commitments
+    const agentBBStr    = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'  // Uncalled Capital × Agent Advance Rate
+    const ubsRateStr    = BUSA_RATE_MAP[eff.cls] ?? lp.rate
+    const highQuality   = c.busaRate === 0.90                                             // flagged when UBS Advance Rate = 0.90
+    const concExcessStr = eff.inc && eff.cls !== 'Excluded' ? fmtM(c.concExcessM) : '—'    // included LPs only
 
-      {sec('Classification')}
-      {f('LP Classification', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
-      {f('BUSA Advance Rate', BUSA_RATE_MAP[lp.cls] ?? lp.rate, null, { ro: true, editVal: BUSA_RATE_MAP[form.cls as string] ?? lp.rate })}
-      {f('Agent Advance Rate', AGENT_RATE_MAP[lp.cls] || '—', null, { ro: true, editVal: AGENT_RATE_MAP[form.cls as string] || '—' })}
+    // Read-only display of a value derived by formula (never hand-editable).
+    const calc = (label: string, val: unknown, cfg: Record<string, unknown> = {}) =>
+      f(label, val, null, { ro: true, editVal: val, ...cfg })
+
+    return (
+    <div style={COLS}>
+      {/* Section order, placement and formulas follow pe-sub-docs/SHADOW_BB_ANALYSIS.md
+          › "LP Record Columns". Manual-input fields are editable; calculated fields are
+          read-only, badged ƒ, and annotated with their formula. */}
+      {sec('Identity')}
+      {f('Investor Name', lp.name, 'name', { span2: true })}
+      {f('Parent', lp.parent, 'parent', { span2: true })}
+      {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
+      {f('Region / Location', lp.region, 'region', { opts: REGION_OPTS })}
+
+      {sec('Classification & Eligibility')}
+      {f('UBS LP Classification', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
+      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls')}
       {Boolean(editMode ? form.cls : lp.cls) && (
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
           <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[(editMode ? form.cls : lp.cls) as string]}
         </div>
       )}
+      {f('Institutional vs HNW', lp.type, 'type', { opts: TYPE_OPTS })}
+      {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
+      {calc('HQ', highQuality ? 'Yes' : 'No', { formula: 'Mirrors the High Quality flag (UBS rate = 0.90)' })}
 
-      {sec('Ratings')}
+      {sec('Credit Ratings')}
       {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS })}
       {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS })}
       {f('Fitch', lp.fitch, 'fitch', { opts: SP_RATING_OPTS })}
@@ -180,21 +240,28 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {f('Pension Assets', lp.pension, 'pension')}
       {f('Pension Funded %', lp.pensionFunded, 'pensionFunded')}
 
-      {sec('Commitment Data')}
+      {sec('Advance Rates')}
+      {calc('UBS Advance Rate', ubsRateStr, { formula: 'Derived from UBS LP Classification' })}
+      {calc('Agent Advance Rate', lp.agentRate || '—', { formula: 'Mirrored from Agent BB advance rate' })}
+
+      {sec('Commitments & Capital')}
       {f('Capital Commitments', lp.capCommit, 'capCommit')}
-      {f('% of Cap. Commitments', lp.pctCapCommit, 'pctCapCommit')}
-      {f('Called Capital', lp.calledCap, 'calledCap')}
-
-      {sec('Uncalled / Eligible Capital')}
+      {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
+      {calc('Called Capital', calledCapStr, { formula: 'Capital Commitments − Uncalled Capital' })}
       {f('Uncalled Capital', lp.uc, 'uc')}
-      {f('% of Uncalled Capital', lp.pctUncalled, 'pctUncalled')}
-      {f('% of LP Called', lp.pctCalled, 'pctCalled')}
+      {calc('% of Uncalled Capital', lp.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
+      {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
-      {sec('Concentration & BB')}
-      {f('Agent Conc. Limit', lp.agentConc, 'agentConc')}
-      {f('UBS Conc. Limit', lp.ubsConc, 'ubsConc')}
-      {f('Agent BB', lp.abb, 'abb')}
-      {f('UBS BB', lp.ubb, 'ubb', { pos: lp.ubb !== '$0', zero: lp.ubb === '$0' })}
+      {sec('Concentration Limits')}
+      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
+      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
+
+      {sec('Borrowing Base')}
+      {calc('UBS Eligible Uncalled Cap', c.uec, { formula: 'Lesser of Uncalled Capital or (Total Uncalled × UBS Conc. Limit)' })}
+      {calc('Agent Borrowing Base', agentBBStr, { formula: 'Uncalled Capital × Agent Advance Rate' })}
+      {calc('UBS Borrowing Base', c.ubb, { pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'UBS Advance Rate × UBS Eligible Uncalled Capital' })}
+      {calc('UBS Included', c.ubbM > 0 ? 'Included' : 'Excluded', { formula: 'Included when UBS Borrowing Base > 0' })}
+      {calc('Included UnCalled Conc. Excess', concExcessStr, { formula: 'Excess uncalled above concentration limit (included LPs only)' })}
 
       {sec('Notes')}
       {editMode
@@ -205,7 +272,8 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
         : <div style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{lp.notes || '—'}</div>
       }
     </div>
-  )
+    )
+  }
 
   const renderHistory = () => (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -282,8 +350,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
               </div>
               <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
                 <Tag>{lp.cls}</Tag>
-                <span style={{ fontSize: 11, opacity: .7 }}>Rank #{lp.rank}</span>
-                <span style={{ fontSize: 11, opacity: .7 }}>{BUSA_RATE_MAP[lp.cls] ?? lp.rate} BUSA · {AGENT_RATE_MAP[lp.cls] || '—'} Agent</span>
+                <span style={{ fontSize: 11, opacity: .7 }}>{BUSA_RATE_MAP[lp.cls] ?? lp.rate} BUSA · {lp.agentRate || '—'} Agent</span>
                 {lp.rcl && <span className="rcl-badge">Reclassified</span>}
                 {lp.tf  && <span className="tf-badge">Transferee</span>}
                 {!canEdit && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 8, background: 'rgba(255,255,255,.15)', color: 'rgba(255,255,255,.8)', fontWeight: 600 }}>View Only</span>}
@@ -359,7 +426,7 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 // ── Facility grid card ────────────────────────────────────────────────────────
-function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: () => void }) {
+function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: FacilityRow; onClick: () => void; onEdit: (f: FacilityRow) => void; canEdit: boolean }) {
   const color = STATUS_COLOR[facility.status] ?? 'var(--muted)'
   return (
     <div
@@ -373,8 +440,17 @@ function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: (
       onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(0,0,0,.10)'}
       onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-        {facility.name}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+          {facility.name}
+        </div>
+        {canEdit && (
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(facility) }}
+            title="Edit facility details"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 13, lineHeight: 1, padding: 2, flexShrink: 0 }}
+          >&#9998;</button>
+        )}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{facility.agentBank}</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
@@ -388,18 +464,107 @@ function FacilityCard({ facility, onClick }: { facility: FacilityRow; onClick: (
   )
 }
 
+// ── Facility detail / edit overlay ────────────────────────────────────────────
+// Mirrors the Prototype's facility detail (shared Modal, Identity + Agent Bank
+// Summary sections), but the editable fields are always live — no view-only step.
+// Maturity is stored as a display string ("Mar 15, 2029"); convert to/from ISO so
+// the form can use a native date picker without changing the stored format.
+const toISODate = (display: string) => {
+  const d = new Date(display)
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+const fromISODate = (iso: string) =>
+  iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+
+function FacilityDetailOverlay({ facility, open, onClose, onSave }: {
+  facility: FacilityRow | null
+  open: boolean
+  onClose: () => void
+  onSave: (f: FacilityRow) => void
+}) {
+  const [form, setForm] = useState<{ accountNumber: string; loanAmount: string; maturityDate: string }>({
+    accountNumber: '', loanAmount: '', maturityDate: '',
+  })
+
+  useEffect(() => {
+    if (!facility) return
+    setForm({
+      accountNumber: facility.accountNumber ?? '',
+      loanAmount:    facility.loanAmount ?? facility.ubsParticipation ?? '',
+      maturityDate:  facility.maturityDate ?? '',
+    })
+  }, [facility?.name])
+
+  if (!open || !facility) return null
+
+  const set = (k: 'accountNumber' | 'loanAmount') => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(p => ({ ...p, [k]: e.target.value }))
+  const handleSave = () => onSave({ ...facility, ...form })
+
+  const labelSt: React.CSSProperties = { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', marginBottom: 4, display: 'block' }
+  const viewSt:  React.CSSProperties = { fontSize: 13, color: 'var(--navy)', minHeight: 26, display: 'flex', alignItems: 'center' }
+
+  // Read-only field cell (functions, not components, to avoid input focus loss)
+  const ro = (label: string, value: React.ReactNode, span?: boolean) => (
+    <div key={label} style={span ? { gridColumn: '1 / -1' } : undefined}>
+      <div style={labelSt}>{label}</div>
+      <div style={viewSt}>{value ?? '—'}</div>
+    </div>
+  )
+  const ed = (label: string, key: 'accountNumber' | 'loanAmount') => (
+    <div key={label} className="form-group" style={{ marginBottom: 0 }}>
+      <label style={labelSt}>{label}</label>
+      <input type="text" style={{ width: '100%' }} value={form[key]} onChange={set(key)} />
+    </div>
+  )
+  const sec = (t: string) => (
+    <div key={t} style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 6, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
+  )
+
+  const footer = (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+      <span style={{ fontSize: 11, color: 'var(--muted)' }}>Loan Amount is the committed facility size — an input, not a Shadow BB figure.</span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave}>Save Changes</Button>
+      </div>
+    </div>
+  )
+
+  return (
+    <Modal open={open} onClose={onClose} title={facility.name} width={620} footer={footer}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+        {facility.agentBank} · {facility.lps?.toLocaleString()} LPs
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+        {sec('Identity')}
+        {ro('Borrower', facility.name, true)}
+        {ro('Agent Bank', facility.agentBank)}
+        {ro('# LPs', facility.lps?.toLocaleString())}
+
+        {sec('Agent Bank Summary')}
+        {ed('Account Number', 'accountNumber')}
+        {ed('Loan Amount', 'loanAmount')}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={labelSt}>Maturity Date</label>
+          <input type="date" style={{ width: '100%' }} value={toISODate(form.maturityDate)} onChange={e => setForm(p => ({ ...p, maturityDate: fromISODate(e.target.value) }))} />
+        </div>
+        {ro('Facility Status', <Tag>{facility.status}</Tag>)}
+        {ro('Facility Status Date', facility.facilityStatusDate)}
+      </div>
+    </Modal>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
   const { toast, lpData, setLpData, updateLPRecord, currentUser, setActiveFacilityId } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
   const canEdit = currentUser?.role === 'Analyst' || currentUser?.role === 'Account/Transaction Manager'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
   useEffect(() => {
-    if (mode === 'detecting') return
-    getFacilities(live).then(setFacilities).catch(() => {})
-  }, [mode])
+    getFacilities().then(setFacilities).catch(() => {})
+  }, [])
 
   // view: 'grid' = facility picker, 'list' = LP table
   const [view,      setView]      = useState<'grid' | 'list'>('grid')
@@ -409,6 +574,7 @@ export default function LPMaster() {
   const [clsFilter, setClsFilter] = useState('')
   const [incFilter, setIncFilter] = useState('')
   const [selected,  setSelected]  = useState<LPRecord | null>(null)
+  const [editingFacility, setEditingFacility] = useState<FacilityRow | null>(null)
 
   // Live: pull the facility's LP records fresh on open so newly-committed LPs always show,
   // independent of whatever facility the shared context last loaded.
@@ -418,9 +584,9 @@ export default function LPMaster() {
     setClsFilter('')
     setIncFilter('')
     setView('list')
-    if (live && fac.id != null) {
+    if (fac.id != null) {
       setActiveFacilityId(fac.id)
-      getLPsForFacility(true, fac.id).then(setLpData).catch(() => {})
+      getLPsForFacility(fac.id).then(setLpData).catch(() => {})
     }
   }
 
@@ -430,7 +596,7 @@ export default function LPMaster() {
     setClsFilter('')
     setIncFilter('')
     setView('list')
-    if (live) getLPs(true).then(setLpData).catch(() => {})
+    getLPs().then(setLpData).catch(() => {})
   }
 
   const backToGrid = () => {
@@ -462,6 +628,13 @@ export default function LPMaster() {
     toast(`LP record updated — ${updated.name}.`)
   }
 
+  // Facility records are keyed by their (unique) name; the Borrower/name field is read-only.
+  const handleFacilitySave = (updated: FacilityRow) => {
+    setFacilities(prev => prev.map(f => (f.name === updated.name ? { ...f, ...updated } : f)))
+    setEditingFacility(updated)
+    toast(`Facility updated — ${updated.name}.`)
+  }
+
   // ── Facility grid view ────────────────────────────────────────────────────
   if (view === 'grid') {
     return (
@@ -485,7 +658,7 @@ export default function LPMaster() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
             {visibleFacilities.map(f => (
-              <FacilityCard key={f.name} facility={f} onClick={() => openFacility(f)} />
+              <FacilityCard key={f.name} facility={f} canEdit={canEdit} onClick={() => openFacility(f)} onEdit={setEditingFacility} />
             ))}
           </div>
           {visibleFacilities.length === 0 && (
@@ -494,6 +667,13 @@ export default function LPMaster() {
             </div>
           )}
         </div>
+
+        <FacilityDetailOverlay
+          facility={editingFacility}
+          open={!!editingFacility}
+          onClose={() => setEditingFacility(null)}
+          onSave={handleFacilitySave}
+        />
       </div>
     )
   }
@@ -543,13 +723,13 @@ export default function LPMaster() {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: 40 }}>Rank</th>
               <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
               <th style={{ width: '20%', maxWidth: 200 }}>Parent</th>
               <th style={{ width: 48, textAlign: 'center' }}>SPV</th>
-              <th style={{ width: 110 }}>Classification</th>
+              <th style={{ width: 110 }}>Agent Classification</th>
+              <th style={{ width: 110 }}>UBS Classification</th>
               <th style={{ width: 44, textAlign: 'center' }}>HQ</th>
-              <th style={{ width: 100 }}>Type</th>
+              <th style={{ width: 100 }}>Inst/HNW</th>
               <th style={{ width: 44, textAlign: 'center' }}>Inv. Grade</th>
               <th className="num" style={{ width: 75 }}>AUM</th>
               <th className="num" style={{ width: 100 }}>Uncalled Cap.</th>
@@ -562,8 +742,7 @@ export default function LPMaster() {
           </thead>
           <tbody>
             {pageItems.map((lp, i) => (
-              <tr key={lp.rank ?? `lp-${i}`} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
-                <td style={{ color: 'var(--muted)' }}>{lp.rank}</td>
+              <tr key={lp.name ?? `lp-${i}`} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
                 <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong title={lp.name}>{lp.name}</strong>
                   {lp.rcl && <span className="rcl-badge">R</span>}
@@ -571,6 +750,7 @@ export default function LPMaster() {
                 </td>
                 <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }} title={lp.parent}>{lp.parent || '—'}</td>
                 <td style={{ textAlign: 'center' }}><YN val={lp.spv} /></td>
+                <td style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.agentCls || ''}>{lp.agentCls || '—'}</td>
                 <td><Tag>{lp.cls}</Tag></td>
                 <td style={{ textAlign: 'center' }}><YN val={lp.hq} /></td>
                 <td style={{ fontSize: 11 }}>{lp.type}</td>

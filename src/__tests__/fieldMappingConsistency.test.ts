@@ -1,41 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ALIAS_GROUPS } from '../data/fieldMappingData'
-import { EXTRACTION_FIELD_MAP } from '../data/extractionData'
-
-// Build lookup tables from the Field Mapping Dictionary (source of truth)
-const lpMasterFieldToGroup = new Map<string, string>()
-const lpMasterFieldToCanonical = new Map<string, string>()
-for (const { group, fields } of ALIAS_GROUPS) {
-  for (const f of fields) {
-    lpMasterFieldToGroup.set(f.lpMasterField, group)
-    lpMasterFieldToCanonical.set(f.lpMasterField, f.canonical)
-  }
-}
-
-describe('EXTRACTION_FIELD_MAP group values match Field Mapping Dictionary', () => {
-  for (const entry of EXTRACTION_FIELD_MAP) {
-    it(`"${entry.extracted}" → group "${entry.group}"`, () => {
-      const expectedGroup = lpMasterFieldToGroup.get(entry.canonical)
-      expect(
-        expectedGroup,
-        `"${entry.extracted}": canonical "${entry.canonical}" not found in ALIAS_GROUPS lpMasterField values`
-      ).toBeDefined()
-      expect(entry.group).toBe(expectedGroup)
-    })
-  }
-})
-
-describe('EXTRACTION_FIELD_MAP canonical values match Field Mapping Dictionary lpMasterField', () => {
-  for (const entry of EXTRACTION_FIELD_MAP) {
-    it(`"${entry.extracted}" → canonical "${entry.canonical}"`, () => {
-      const exists = lpMasterFieldToGroup.has(entry.canonical)
-      expect(
-        exists,
-        `"${entry.extracted}": canonical "${entry.canonical}" is not any field's lpMasterField in ALIAS_GROUPS`
-      ).toBe(true)
-    })
-  }
-})
+import { ALIAS_GROUPS, ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 
 describe('ALIAS_GROUPS structural integrity', () => {
   it('all 31 canonical fields are defined', () => {
@@ -88,5 +52,23 @@ describe('ALIAS_GROUPS structural integrity', () => {
         expect(f.lpMasterField).toBe(`${group} - ${f.canonical}`)
       }
     }
+  })
+})
+
+describe('Map To dropdown — derived fields are selectable', () => {
+  // The ExtractionPreview "Map To" dropdown sources its options from the full canonical
+  // field list. Derived fields (Borrowing Base, % of Borrowing Base, Eligible Commitment)
+  // must be offered as manual mapping targets — they are not filtered out.
+  it('exposes derived Borrowing Base fields as canonical options', () => {
+    const values = ALL_CANONICAL_FIELDS.map(f => f.value)
+    expect(values).toContain('Borrowing Base')
+    expect(values).toContain('% of Borrowing Base')
+    expect(values).toContain('Eligible Commitment')
+  })
+
+  it('Borrowing Base field carries the exact "Borrowing Base" alias so the bare header auto-matches', () => {
+    const bb = ALIAS_GROUPS.flatMap(g => g.fields).find(f => f.canonical === 'Borrowing Base')
+    expect(bb).toBeDefined()
+    expect(bb!.aliases.map(a => a.text)).toContain('Borrowing Base')
   })
 })

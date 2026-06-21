@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import { api } from '../../services/api'
 import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../../config/eligibilityConfig'
 import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
@@ -81,8 +80,6 @@ const unit = (s: string) => (
 
 export default function Configuration() {
   const { toast } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
 
   const [busa,           setBusa]           = useState<RateTier[]>(BUSA_TIERS)
   const [agentTiers,     setAgentTiers]     = useState<RateTier[]>(AGENT_TIERS)
@@ -95,9 +92,7 @@ export default function Configuration() {
   const [loadError,      setLoadError]      = useState<string | null>(null)
 
   useEffect(() => {
-    if (mode === 'detecting') return
     setLoadError(null)
-    if (!live) { setLoading(false); return }
     api.config.eligibility()
       .then((result: unknown) => {
         const config = result as EligibilityConfig
@@ -110,7 +105,7 @@ export default function Configuration() {
       })
       .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
-  }, [mode])
+  }, [])
 
   const handleSave = useCallback(async (section: string, saves: Array<[string, unknown]>) => {
     setSaving(section)

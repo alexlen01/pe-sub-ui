@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useApp }    from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import KpiCard        from '../../components/ui/KpiCard'
 import Card           from '../../components/ui/Card'
 import DataTable      from '../../components/ui/DataTable'
@@ -41,8 +40,6 @@ const CLS_SEGMENTS = [
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, screen } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
   const [facilities,       setFacilities]       = useState<FacilityRow[]>([])
   const [selectedFacility, setSelectedFacility] = useState<FacilityRow | null>(null)
   const [statusFilter,     setStatusFilter]     = useState('All')
@@ -54,16 +51,16 @@ export default function Dashboard() {
   const selectedFacilityId = selectedFacility?.id ?? null
 
   useEffect(() => {
-    if (!selectedFacilityId || mode === 'detecting') { setFacilityLPs([]); return }
-    getLPsForFacility(live, selectedFacilityId)
+    if (!selectedFacilityId) { setFacilityLPs([]); return }
+    getLPsForFacility(selectedFacilityId)
       .then(lps => setFacilityLPs(lps as { cls?: string }[]))
-      .catch(e => { if (live) setError(String(e)) })
-  }, [selectedFacilityId, mode])
+      .catch(e => setError(String(e)))
+  }, [selectedFacilityId])
 
   const load = () => {
     setLoading(true)
     setError(null)
-    Promise.all([getFacilities(live), getActivityFeed(live)]).then(([data, activity]) => {
+    Promise.all([getFacilities(), getActivityFeed()]).then(([data, activity]) => {
       setFacilities(data)
       setSelectedFacility(prev => prev ? (data.find(f => f.name === prev.name) ?? data[0] ?? null) : (data[0] ?? null))
       setActivityFeed(data.length > 0 ? activity : [])
@@ -73,12 +70,11 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    if (screen !== 'dashboard' || mode === 'detecting') return
+    if (screen !== 'dashboard') return
     load()
-    if (!live) return
     const interval = setInterval(load, 30_000)
     return () => clearInterval(interval)
-  }, [screen, mode])
+  }, [screen])
 
   const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
   const donut = useMemo(() => {

@@ -24,7 +24,7 @@ export default function Modal({ open, onClose, title, subtitle, children, footer
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose?.() }}>
       <div className="modal-box" style={boxStyle}>
-        {(title || onClose) && (
+        {title && (
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: subtitle ? 4 : 16 }}>
             <div style={{ minWidth: 0 }}>
               {title && <div className="modal-title">{title}</div>}

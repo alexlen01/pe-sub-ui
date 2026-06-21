@@ -1,34 +1,47 @@
+import { useEffect, useState } from 'react'
 import { useApp, SCREENS } from '../../context/AppContext'
-import type { ScreenMode } from '../../context/AppContext'
 
 const ROLE_COLOR: Record<string, string> = {
   'Analyst':                    'var(--navy)',
   'Account/Transaction Manager': 'var(--amber)',
 }
 
-const MODE_STYLE: Record<ScreenMode, { bg: string; color: string; label: string }> = {
-  live:      { bg: '#e6f4ea', color: '#1e7e34', label: '● Live'      },
-  prototype: { bg: '#fff3cd', color: '#856404', label: '● Prototype' },
-  detecting: { bg: 'var(--tbl)', color: 'var(--muted)', label: '○ Checking' },
-}
+// The prototype is a separate application (pe-sub-platform) served on its own port. Selecting
+// the Prototype segment navigates the current window to it, re-launching the prototype in place.
+const PROTOTYPE_URL = 'http://localhost:5173'
 
-const MODE_TITLE: Record<ScreenMode, string> = {
-  live:      'Live — all data from API. Click to switch to Prototype.',
-  prototype: 'Prototype — all data hardcoded. Click to switch to Live.',
-  detecting: 'Checking API…',
+type Reachability = 'checking' | 'up' | 'down'
+
+// Poll pe-sub-api for reachability via the same-origin /api proxy (no CORS concern). "Live" means
+// the API is *working* — it answers at all. A non-2xx response (the API up but erroring) still
+// counts as up; only a network failure / connection-refused (the fetch itself rejecting) is down.
+function useApiReachable(): Reachability {
+  const [state, setState] = useState<Reachability>('checking')
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      try {
+        await fetch('/api/ping', { signal: AbortSignal.timeout(2000) })
+        if (!cancelled) setState('up')
+      } catch {
+        if (!cancelled) setState('down')
+      }
+    }
+    check()
+    const id = setInterval(check, 15_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+  return state
 }
 
 export default function TopBar() {
-  const { screen, currentUser, screenMode, setScreenMode, resetAppState } = useApp()
-  const info      = SCREENS[screen] ?? { title: screen, sub: '' }
-  const modeStyle = MODE_STYLE[screenMode]
-  const clickable = screenMode !== 'detecting'
+  const { screen, currentUser } = useApp()
+  const info     = SCREENS[screen] ?? { title: screen, sub: '' }
+  const apiState = useApiReachable()
 
-  function handleToggle() {
-    if (screenMode !== 'live' && screenMode !== 'prototype') return
-    resetAppState()
-    setScreenMode(screenMode === 'live' ? 'prototype' : 'live')
-  }
+  // Selecting Prototype reloads in the same window onto the prototype app (re-launching :5173),
+  // rather than opening a new tab.
+  const switchToPrototype = () => { window.location.href = PROTOTYPE_URL }
 
   return (
     <header className="topbar">
@@ -38,19 +51,22 @@ export default function TopBar() {
       </div>
       <div className="topbar-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            title={MODE_TITLE[screenMode]}
-            onClick={clickable ? handleToggle : undefined}
-            style={{
-              fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10,
-              background: modeStyle.bg, color: modeStyle.color, letterSpacing: '0.03em',
-              whiteSpace: 'nowrap',
-              cursor: clickable ? 'pointer' : 'default',
-              userSelect: 'none',
-            }}
-          >
-            {modeStyle.label}
-          </div>
+          {/* The badge appears only while the app is Live (API reachable). Clicking it switches
+              to the prototype, navigating this window to :5173. */}
+          {apiState === 'up' && (
+            <button
+              type="button"
+              title={`Live — pe-sub-api on :3001 is responding. Click to switch to the prototype (reloads this window at ${PROTOTYPE_URL}).`}
+              onClick={switchToPrototype}
+              style={{
+                fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10,
+                background: '#e6f4ea', color: '#1e7e34', letterSpacing: '0.03em',
+                whiteSpace: 'nowrap', border: 'none', cursor: 'pointer',
+              }}
+            >
+              ● Live
+            </button>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{currentUser.name}</div>

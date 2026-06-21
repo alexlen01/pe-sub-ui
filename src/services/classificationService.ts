@@ -3,8 +3,7 @@ import { api } from './api'
 
 const _local = { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, FITCH_RATING_OPTS }
 
-export async function getClassificationOptions(live: boolean) {
-  if (!live) return _local
+export async function getClassificationOptions() {
   return (await api.config.classification()) as typeof _local
 }
 

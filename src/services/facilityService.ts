@@ -1,9 +1,3 @@
-import {
-  FACILITIES, SUBMISSIONS, ACTIVITY, AUDIT_LOG,
-  PROTOTYPE_CYCLE_BDAYS, PROTOTYPE_OWNERS,
-  PROTOTYPE_STATUS_OVERRIDES, PROTOTYPE_SUBMITTED_BY_OVERRIDES, PROTOTYPE_PINNED_RUN_DATES,
-} from '../data/facilityData'
-import { DONUT_DATA } from '../data/lpData'
 import { api } from './api'
 
 // ── Date formatters ───────────────────────────────────────────────────────────
@@ -19,14 +13,28 @@ export function formatLastRun(date: Date | string | null | undefined): string {
   return diffD === 0 ? `${Math.max(1, diffH)}h ago` : `${diffD}d ago`
 }
 
-function formatRunDate(date: Date | string): string {
+// "May 27, 2026" style — used for Agent Bank Summary date fields that need the year.
+function formatFullDate(date: Date | string | null | undefined): string {
   if (!date) return '—'
-  return new Date(date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return new Date(date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function formatShortDate(isoDate: string): string {
-  if (!isoDate) return '—'
-  return new Date(isoDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+// Deterministic loan account number in the agent's "5V" house format (e.g. "5VX1796"),
+// keyed on facility name so the value is stable across renders/sessions.
+function genAccountNumber(name: string): string {
+  const LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ'
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0
+  h = Math.abs(h)
+  return `5V${LETTERS[h % LETTERS.length]}${String(h % 10000).padStart(4, '0')}`
+}
+
+// Deterministic facility maturity date in the 2027–2031 window, keyed on facility name.
+function genMaturityDate(name: string): Date {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (Math.imul(37, h) + name.charCodeAt(i)) | 0
+  h = Math.abs(h)
+  return new Date(2027 + (h % 5), h % 12, 1 + (h % 28))
 }
 
 function formatAuditTs(isoTs: string): string {
@@ -39,71 +47,67 @@ function formatActivityTime(isoTs: string): string {
   return isoTs.slice(11, 16)
 }
 
-// ── Local computation ─────────────────────────────────────────────────────────
+// ── Row types (API response shapes after display formatting) ───────────────────
 
-function _localGetFacilities() {
-  const latestStep: Record<string, { date: string; step: number }> = {}
-  SUBMISSIONS.forEach(s => {
-    if (!latestStep[s.facility] || s.date > latestStep[s.facility].date) latestStep[s.facility] = s
-  })
-
-  const STATUS_PRIORITY: Record<string, number> = { 'Not Started': 0, 'In Progress': 1, 'Needs Review': 2, 'Active': 3 }
-
-  return FACILITIES.map(f => {
-    const status = PROTOTYPE_STATUS_OVERRIDES[f.name] ?? 'Active'
-    const h = f.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-    const hasSubmission = status === 'Active' || status === 'Needs Review' || status === 'In Progress'
-    const submittedBy   = hasSubmission ? (PROTOTYPE_SUBMITTED_BY_OVERRIDES[f.name] ?? PROTOTYPE_OWNERS[h % PROTOTYPE_OWNERS.length]) : null
-    const step          = latestStep[f.name]?.step ?? null
-    if (status === 'Not Started') return { ...f, status, step: null, lastRun: '—', submittedBy: null, _sort: new Date(0) }
-    if (status === 'In Progress')  return { ...f, status, step, lastRun: '—', submittedBy, _sort: new Date('2026-05-26T00:00:00') }
-    const runDate = PROTOTYPE_PINNED_RUN_DATES[f.name] ?? PROTOTYPE_CYCLE_BDAYS[h % PROTOTYPE_CYCLE_BDAYS.length]
-    return { ...f, status, step, lastRun: formatRunDate(runDate), submittedBy, _sort: runDate }
-  })
-    .sort((a, b) => {
-      const pd = (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9)
-      return pd !== 0 ? pd : b._sort.getTime() - a._sort.getTime()
-    })
-    .map(({ _sort: _s, ...f }) => f)
+export interface FacilityRow {
+  name:                 string
+  agentBank:            string
+  status:               string
+  lps:                  number
+  facilitySize:         string
+  ubsParticipation:     string
+  ubsParticipationRate: string
+  creditAgreementRef:   string
+  agentBB:              string
+  ubsBB:                string
+  delta:                string
+  ear:                  string
+  lastRun:              string
+  step:                 number | null
+  submittedBy:          string | null
+  accountNumber:        string
+  loanAmount:           string
+  maturityDate:         string
+  facilityStatusDate:   string
+  id?:                  number
+  lastRunAt?:           string | null
+  latestSubmissionId?:  number | null
 }
 
-
-function _localGetFacilityNames() { return FACILITIES.map(f => f.name).sort((a, b) => a.localeCompare(b)) }
-
-function _localGetSubmissions() {
-  return [...SUBMISSIONS]
-    .sort((a, b) => b.date.localeCompare(a.date) || a.facility.localeCompare(b.facility))
-    .map(s => ({ ...s, date: formatShortDate(s.date) }))
+export interface SubmissionRow {
+  id?:         number
+  facilityId?: number
+  facility:    string
+  date:        string
+  status:      string
+  action:      string
+  step:        number
+  file:        string
+  agentBank:   string
+  notes:       string
 }
 
-function _localGetActivityFeed() { return ACTIVITY.map(a => ({ ...a, time: formatActivityTime(a.ts) })) }
-
-function _localGetAuditLog()    { return AUDIT_LOG.map(r => ({ ...r, ts: formatAuditTs(r.ts) })) }
-
-function _localGetDonutData() {
-  function formatPeriod(isoMonth: string) {
-    if (!isoMonth) return '—'
-    const [y, m] = isoMonth.split('-')
-    return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  }
-  return Object.fromEntries(
-    Object.entries(DONUT_DATA).map(([k, v]) => [k, { ...v, lastBBRun: formatLastRun(v.lastBBRun), lastBBSub: formatPeriod(v.lastBBSub) }])
-  )
+export interface ActivityRow {
+  ts:     string
+  event:  string
+  detail: string
+  user:   string
+  color:  string
+  time:   string
 }
 
-// ── API-first exports ─────────────────────────────────────────────────────────
-
-export type FacilityRow = ReturnType<typeof _localGetFacilities>[0] & {
-  id?: number
-  lastRunAt?: string | null
-  latestSubmissionId?: number | null
+export interface AuditRow {
+  ts:       string
+  event:    string
+  facility: string
+  detail:   string
+  user:     string
+  ip:       string
 }
-export type SubmissionRow = ReturnType<typeof _localGetSubmissions>[0]
-export type ActivityRow   = ReturnType<typeof _localGetActivityFeed>[0]
-export type AuditRow      = ReturnType<typeof _localGetAuditLog>[0]
 
-export async function getFacilities(live: boolean): Promise<FacilityRow[]> {
-  if (!live) return _localGetFacilities()
+// ── API exports ────────────────────────────────────────────────────────────────
+
+export async function getFacilities(): Promise<FacilityRow[]> {
   const [facilities, submissions] = await Promise.all([api.facilities.list(), api.submissions.list()])
   const latestById = new Map<number, number>()
   submissions.forEach(s => {
@@ -139,14 +143,15 @@ export async function getFacilities(live: boolean): Promise<FacilityRow[]> {
       id:                   f.id,
       lastRunAt:            f.lastRunAt,
       latestSubmissionId:   review?.id ?? latestById.get(f.id) ?? null,
+      accountNumber:        genAccountNumber(f.name),
+      loanAmount:           '',
+      maturityDate:         formatFullDate(genMaturityDate(f.name)),
+      facilityStatusDate:   f.lastRunAt ? formatFullDate(f.lastRunAt) : '—',
     }
   }) as FacilityRow[]
 }
 
-export function getFacilityNames(): string[] { return _localGetFacilityNames() }
-
-export async function getSubmissions(live: boolean): Promise<SubmissionRow[]> {
-  if (!live) return _localGetSubmissions()
+export async function getSubmissions(): Promise<SubmissionRow[]> {
   const data = await api.submissions.list()
   return data.map(s => ({
     id:         s.id,
@@ -171,8 +176,7 @@ function activityColor(event: string): string {
   return '#767676'
 }
 
-export async function getActivityFeed(live: boolean): Promise<ActivityRow[]> {
-  if (!live) return _localGetActivityFeed()
+export async function getActivityFeed(): Promise<ActivityRow[]> {
   const data = await api.audit.list()
   return data
     .filter(r => !ACTIVITY_EXCLUDED.has(r.event) && !r.event.endsWith('Exported'))
@@ -187,8 +191,7 @@ export async function getActivityFeed(live: boolean): Promise<ActivityRow[]> {
     }))
 }
 
-export async function getAuditLog(live: boolean): Promise<AuditRow[]> {
-  if (!live) return _localGetAuditLog()
+export async function getAuditLog(): Promise<AuditRow[]> {
   const data = await api.audit.list()
   return data.map(r => ({ ...r, ts: formatAuditTs(r.ts) }))
 }
@@ -204,5 +207,3 @@ export async function createFacility(name: string, agentBank: string): Promise<{
     return { ok: false, error: 'Unable to save — API unavailable. Restart pe-sub-api and try again.' }
   }
 }
-
-export function getDonutData() { return _localGetDonutData() }

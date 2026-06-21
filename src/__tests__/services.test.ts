@@ -3,9 +3,18 @@ import { getFacilityBBSnapshot } from '../services/bbCalculationService'
 import { api } from '../services/api'
 import type { CommitLpRow } from '../services/api'
 import { getFacilities, getSubmissions, formatLastRun } from '../services/facilityService'
-import { getLPs, getLPById, lookupLPsByName } from '../services/lpService'
-import { LP_DATA } from '../data/lpData'
-import { FACILITIES, SUBMISSIONS } from '../data/facilityData'
+import { getLPs, getLPByName, lookupLPsByName } from '../services/lpService'
+
+// Stub global fetch with a path→body map. The first registered key contained in the request
+// URL wins, so register only the routes a given test needs.
+function stubFetch(routes: Record<string, unknown>) {
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    const path = String(url)
+    const key  = Object.keys(routes).find(k => path.includes(k))
+    const body = key ? routes[key] : []
+    return Promise.resolve(new Response(JSON.stringify(body ?? []), { status: 200 }))
+  }))
+}
 
 // ── formatLastRun ─────────────────────────────────────────────────────────────
 
@@ -22,123 +31,83 @@ describe('formatLastRun', () => {
   })
 })
 
-// ── getFacilities (prototype mode) ────────────────────────────────────────────
+// ── getFacilities (live, mocked API) ──────────────────────────────────────────
 
-describe('getFacilities — prototype mode', () => {
-  it('returns an array', async () => {
-    const rows = await getFacilities(false)
-    expect(Array.isArray(rows)).toBe(true)
-    expect(rows.length).toBeGreaterThan(0)
+describe('getFacilities — live', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('maps API facilities to display rows', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].name).toBe('Test Fund')
+    expect(rows[0].id).toBe(1)
+    expect(rows[0].lps).toBe(100)
+    expect(rows[0].accountNumber).toMatch(/^5V/)
   })
 
-  it('every row has required display fields', async () => {
-    const rows = await getFacilities(false)
-    for (const row of rows) {
-      expect(typeof row.name).toBe('string')
-      expect(typeof row.agentBank).toBe('string')
-      expect(typeof row.status).toBe('string')
-      expect(typeof row.lastRun).toBe('string')
-    }
-  })
-
-  it('status values are valid', async () => {
-    const valid = new Set(['Active', 'Needs Review', 'In Progress', 'Not Started'])
-    const rows = await getFacilities(false)
-    for (const row of rows) {
-      expect(valid.has(row.status), `Unexpected status: ${row.status}`).toBe(true)
-    }
-  })
-
-  it('total row count matches FACILITIES data', async () => {
-    const rows = await getFacilities(false)
-    expect(rows.length).toBe(FACILITIES.length)
-  })
-
-  it('prototype id and latestSubmissionId are absent (undefined)', async () => {
-    const rows = await getFacilities(false)
-    for (const row of rows) {
-      expect(row.id).toBeUndefined()
-      expect(row.latestSubmissionId).toBeUndefined()
-    }
+  it('derives the wizard step from the latest in-Review submission', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 7, name: 'Apollo XI', agentBank: 'Citi', status: 'Review', lpCount: 50, lastRunAt: null }],
+      '/api/submissions': [{ id: 3, facilityId: 7, status: 'Review', wizardStep: 4 }],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].step).toBe(4)
+    expect(rows[0].latestSubmissionId).toBe(3)
   })
 })
 
-// ── getSubmissions (prototype mode) ──────────────────────────────────────────
+// ── getSubmissions (live, mocked API) ─────────────────────────────────────────
 
-describe('getSubmissions — prototype mode', () => {
-  it('returns an array with facility and date fields', async () => {
-    const rows = await getSubmissions(false)
-    expect(rows.length).toBeGreaterThan(0)
-    for (const row of rows) {
-      expect(typeof row.facility).toBe('string')
-      expect(typeof row.date).toBe('string')
-      expect(typeof row.status).toBe('string')
-    }
-  })
+describe('getSubmissions — live', () => {
+  afterEach(() => vi.unstubAllGlobals())
 
-  it('rows are sorted most-recent first', async () => {
-    const rows = await getSubmissions(false)
-    const expectedOrder = [...SUBMISSIONS]
-      .sort((a, b) => b.date.localeCompare(a.date) || a.facility.localeCompare(b.facility))
-      .map(s => s.facility)
-    expect(rows.map(r => r.facility)).toEqual(expectedOrder)
+  it('maps API submissions to display rows', async () => {
+    stubFetch({
+      '/api/submissions': [{ id: 5, facilityId: 1, facilityName: 'Test Fund', status: 'Review', wizardStep: 3, fileName: 'bb.xlsx', agentBank: 'Bank NA', notes: null, createdAt: '2026-06-01T00:00:00' }],
+    })
+    const rows = await getSubmissions()
+    expect(rows[0].facility).toBe('Test Fund')
+    expect(rows[0].action).toBe('Resolve')
+    expect(rows[0].step).toBe(3)
   })
 })
 
-// ── LP service (prototype mode) ───────────────────────────────────────────────
+// ── LP service (live, mocked API) ─────────────────────────────────────────────
 
-describe('getLPs — prototype mode', () => {
-  it('returns LP_DATA unchanged', async () => {
-    const lps = await getLPs(false)
-    expect(lps).toEqual(LP_DATA)
+describe('getLPs / getLPByName / lookupLPsByName — live', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('getLPs returns the API LP list', async () => {
+    stubFetch({ '/api/lps': [{ name: 'CalPERS' }, { name: 'CalSTRS' }] })
+    const lps = await getLPs()
+    expect(lps.map(l => l.name)).toEqual(['CalPERS', 'CalSTRS'])
   })
 
-  it('every LP has required typed fields', async () => {
-    const lps = await getLPs(false)
-    for (const lp of lps) {
-      expect(typeof lp.name).toBe('string')
-      expect(typeof lp.rank).toBe('number')
-      expect(typeof lp.cls).toBe('string')
-      expect(typeof lp.pension).toBe('string')
-      expect(typeof lp.pensionFunded).toBe('string')
-    }
-  })
-})
-
-describe('getLPById — prototype mode', () => {
-  it('returns matching LP by rank', async () => {
-    const lp = await getLPById(false, 1)
-    expect(lp).not.toBeNull()
-    expect(lp!.rank).toBe(1)
+  it('getLPByName returns the exact match from lookup', async () => {
+    stubFetch({ '/api/lps/lookup': [{ name: 'CalPERS' }, { name: 'CalPERS Trust' }] })
+    const lp = await getLPByName('CalPERS')
+    expect(lp?.name).toBe('CalPERS')
   })
 
-  it('returns null for non-existent rank', async () => {
-    const lp = await getLPById(false, 99999)
+  it('getLPByName returns null when no exact match', async () => {
+    stubFetch({ '/api/lps/lookup': [{ name: 'CalPERS Trust' }] })
+    const lp = await getLPByName('CalPERS')
     expect(lp).toBeNull()
   })
-})
 
-describe('lookupLPsByName — prototype mode', () => {
-  it('filters by name case-insensitively', async () => {
-    const results = await lookupLPsByName(false, 'apollo')
-    expect(results.length).toBeGreaterThan(0)
-    for (const lp of results) {
-      expect(lp.name.toLowerCase()).toContain('apollo')
-    }
-  })
-
-  it('limits results to 8', async () => {
-    const results = await lookupLPsByName(false, 'a')
-    expect(results.length).toBeLessThanOrEqual(8)
-  })
-
-  it('returns empty array for no match', async () => {
-    const results = await lookupLPsByName(false, 'ZZZNOMATCH_XYZ')
-    expect(results).toHaveLength(0)
+  it('lookupLPsByName passes through API results', async () => {
+    stubFetch({ '/api/lps/lookup': [{ name: 'Apollo Global' }] })
+    const rows = await lookupLPsByName('apollo')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].name).toBe('Apollo Global')
   })
 })
 
-// ── getFacilityBBSnapshot (live mode, mocked fetch) ───────────────────────────
+// ── getFacilityBBSnapshot (live, mocked fetch) ────────────────────────────────
 
 describe('getFacilityBBSnapshot — live mode', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -148,30 +117,23 @@ describe('getFacilityBBSnapshot — live mode', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ facilityId: 1, result: { summary } }), { status: 200 })
     ))
-    const result = await getFacilityBBSnapshot(true, 1)
+    const result = await getFacilityBBSnapshot(1)
     expect(result).toEqual(summary)
   })
 
   it('returns null when the API responds 204 (no snapshot yet)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
-    await expect(getFacilityBBSnapshot(true, 1)).resolves.toBeNull()
+    await expect(getFacilityBBSnapshot(1)).resolves.toBeNull()
   })
 
   it('returns null when the API responds 200 with an empty body', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })))
-    await expect(getFacilityBBSnapshot(true, 1)).resolves.toBeNull()
+    await expect(getFacilityBBSnapshot(1)).resolves.toBeNull()
   })
 
   it('throws on a non-OK response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 500 })))
-    await expect(getFacilityBBSnapshot(true, 1)).rejects.toThrow('500')
-  })
-
-  it('returns null in prototype mode without calling the API', async () => {
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
-    await expect(getFacilityBBSnapshot(false, 1)).resolves.toBeNull()
-    expect(fetchSpy).not.toHaveBeenCalled()
+    await expect(getFacilityBBSnapshot(1)).rejects.toThrow('500')
   })
 })
 

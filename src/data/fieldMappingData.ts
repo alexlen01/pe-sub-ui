@@ -269,6 +269,7 @@ export const ALIAS_GROUPS = [
       disambiguation: 'LP-level borrowing base as reported by the facility agent (= Eligible Commitment × Advance Rate)',
       isDerived: true,
       aliases: [
+        { id:141, text:'Borrowing Base',             tier:'Core', bank:null },
         { id:98,  text:'Agent Borrowing Base',       tier:'Core', bank:null },
         { id:99,  text:'Agent BB',                   tier:'Core', bank:null },
         { id:100, text:'Facility BB',                tier:'Core', bank:null },

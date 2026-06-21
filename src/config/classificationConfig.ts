@@ -50,6 +50,34 @@ export const UBS_CLS_DEFAULT_RATE: Record<string, string> = {
   'Excluded':                   '0%',
 }
 
+// Agent Advance Rate → UBS LP Classification ladder (PE_SUB_SOLUTION rule).
+// The advance rate reflects each LP's credit quality — how confident the lender is that the LP
+// will honour its commitment if called. Higher quality, higher rate. The agent's own advance
+// rate therefore seeds a sensible default UBS LP Classification, from which the UBS Advance Rate
+// follows via UBS_CLS_DEFAULT_RATE. Both stay editable on the Shadow BB.
+//   Agent 95% → Rated Investor            (UBS 90%)
+//   Agent 75% → FoF & Other > $10Bn AUM   (UBS 75%)
+//   Agent 65% → Corp Pension > $5Bn Assets (UBS 65%)
+//   Agent 50% → Other Institutional       (UBS 50%)
+//   Agent  0% → Excluded                  (UBS  0%)
+// Tiers are matched at-or-above by descending rate so non-canonical agent rates (e.g. 90, 60)
+// still land on the nearest lower tier rather than dropping out — never over-rating an LP.
+const AGENT_RATE_UBS_TIERS: ReadonlyArray<{ min: number; cls: UbsClsOpt }> = [
+  { min: 90, cls: 'Rated Investor' },
+  { min: 75, cls: 'FoF & Other > $10Bn AUM' },
+  { min: 65, cls: 'Corp Pension > $5Bn Assets' },
+  { min: 50, cls: 'Other Institutional' },
+]
+
+// Resolve the suggested UBS LP Classification for an Agent Advance Rate (whole-number %).
+// A rate of 0 maps to Excluded; a missing/blank rate returns '' so the row stays unclassified
+// for the credit officer to assign manually.
+export function ubsClassFromAgentRate(agentRatePct: number | '' | undefined): UbsClsOpt {
+  if (typeof agentRatePct !== 'number') return ''
+  if (agentRatePct <= 0) return 'Excluded'
+  return AGENT_RATE_UBS_TIERS.find(t => agentRatePct >= t.min)?.cls ?? 'Other Institutional'
+}
+
 // Basis used for the "LP Size ($ Bil)" column on the Shadow BB.
 export const LP_SIZE_CRITERIA_OPTS = ['', 'AUM', 'NAV', 'Assets'] as const
 export type LpSizeCriteriaOpt = typeof LP_SIZE_CRITERIA_OPTS[number]

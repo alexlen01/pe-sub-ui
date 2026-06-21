@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { api } from '../../services/api'
@@ -9,8 +8,6 @@ import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS } from '../../c
 
 export default function MatchThresholds() {
   const { toast, navigate } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
 
   const [thresholds,    setThresholds]    = useState<MatchingThresholds>(DEFAULT_THRESHOLDS)
   const [suffixes,      setSuffixes]      = useState<LegalSuffix[]>(LEGAL_SUFFIXES)
@@ -23,9 +20,7 @@ export default function MatchThresholds() {
   const [loadError,     setLoadError]     = useState<string | null>(null)
 
   useEffect(() => {
-    if (mode === 'detecting') return
     setLoadError(null)
-    if (!live) { setLoading(false); return }
     api.config.matching()
       .then(cfg => {
         setThresholds(cfg.thresholds)
@@ -34,7 +29,7 @@ export default function MatchThresholds() {
       })
       .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
-  }, [mode])
+  }, [])
 
   const buildConfig = useCallback((): MatchingConfig => ({
     thresholds,

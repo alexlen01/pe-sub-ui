@@ -28,6 +28,20 @@ export function fmtM(n: number): string {
 
 export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
 
+// Advance rate (as a fraction) for an LP. An explicit per-LP rate — e.g. the UBS Advance Rate
+// assigned on the Run Shadow BB screen, "90%" — takes precedence; otherwise fall back to the
+// BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LP
+// Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Classification taxonomy
+// ('Rated Investor', …) the Shadow BB now seeds from the Agent Advance Rate.
+export function advanceRateFraction(lp: Pick<LPRecord, 'rate' | 'cls'>): number {
+  const raw = (lp.rate ?? '').trim()
+  if (raw) {
+    const n = parseFloat(raw.replace('%', ''))
+    if (!Number.isNaN(n)) return n > 1 ? n / 100 : n   // "90%"/"90" → 0.90; "0.90" → 0.90
+  }
+  return BUSA_RATES[lp.cls] ?? 0
+}
+
 export const DEFAULT_FACILITY_PARAMS = { concLimitM: 25.0 }
 
 
@@ -52,12 +66,14 @@ export interface BBResult { lps: ComputedLPRecord[]; summary: BBSummary; breache
 
 export function computeLPRecord(lp: LPRecord, params = DEFAULT_FACILITY_PARAMS): ComputedLPRecord {
   const concLimitM = (lp as LPRecord & { concLimitM?: number }).concLimitM ?? params.concLimitM ?? 25.0
-  const busaRate = BUSA_RATES[lp.cls] ?? 0
+  const busaRate = advanceRateFraction(lp)
   const ucM  = (lp as LPRecord & { ucM?: number }).ucM != null ? (lp as LPRecord & { ucM?: number }).ucM! : parseM(lp.uc)
   const abbM = parseM(lp.abb)
   const navM = parseM(lp.nav)
   const aumM = parseM(lp.aum)
-  const highQuality = ['Rated', 'Unrated >2bn', 'Unrated 1–2bn'].includes(lp.cls)
+  // High Quality tracks the advance rate (UBS Advance Rate = 0.90), not a fixed class list, so
+  // it holds across both classification taxonomies.
+  const highQuality = Math.abs(busaRate - 0.9) < 1e-9
   const navAumRatio = navM > 0 && aumM > 0 ? (navM / aumM).toFixed(2) : ''
   const excluded = !lp.inc || lp.cls === 'Excluded'
   const uecM = excluded ? 0 : Math.min(ucM, concLimitM)
@@ -101,7 +117,11 @@ export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PA
     const top10Pct = sorted.slice(0, 10).reduce((s, r) => s + r.ubbM, 0) / totalUBB
     if (top10Pct > 0.60) breaches.push({ rule: 'Top-10 LP Concentration', entity: 'Top 10 LPs', value: fmtPct(top10Pct), limit: '60%', severity: 'breach' })
     else if (top10Pct > 0.50) breaches.push({ rule: 'Top-10 LP Concentration', entity: 'Top 10 LPs', value: fmtPct(top10Pct), limit: '60%', severity: 'warning' })
-    const unratedPct = included.filter(r => ['Unrated >2bn','Unrated 1–2bn','Eligible'].includes(r.cls)).reduce((s,r) => s+r.ubbM, 0) / totalUBB
+    // "Unrated" = any included LP outside the rated tier. Stated as the complement of the rated
+    // classes so it holds for both the legacy taxonomy (non-'Rated' included = the old explicit
+    // list) and the UBS taxonomy (non-'Rated Investor' included).
+    const RATED_CLASSES = ['Rated', 'Rated Investor']
+    const unratedPct = included.filter(r => !RATED_CLASSES.includes(r.cls)).reduce((s,r) => s+r.ubbM, 0) / totalUBB
     if (unratedPct > 0.50) breaches.push({ rule: 'Unrated Aggregate Concentration', entity: 'Unrated LPs', value: fmtPct(unratedPct), limit: '50%', severity: 'breach' })
     const nonUSPct = included.filter(r => r.region !== 'North America').reduce((s,r) => s+r.ubbM, 0) / totalUBB
     if (nonUSPct > 0.30) breaches.push({ rule: 'Non-US LP Concentration', entity: 'Non-US LPs', value: fmtPct(nonUSPct), limit: '30%', severity: 'breach' })
@@ -113,13 +133,11 @@ export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PA
 
 export function getBusaRates() { return BUSA_RATES }
 
-export async function getFacilityBBSnapshot(live: boolean, facilityId: number): Promise<Record<string, unknown> | null> {
-  if (!live) return null
+export async function getFacilityBBSnapshot(facilityId: number): Promise<Record<string, unknown> | null> {
   const snapshot = await api.bb.latestSnapshot(facilityId)
   return (snapshot?.result?.summary as unknown as Record<string, unknown>) ?? null
 }
 
-export async function getFacilitySummaryExt(live: boolean, facilityId: number): Promise<BBSummaryExt | null> {
-  if (!live) return null
+export async function getFacilitySummaryExt(facilityId: number): Promise<BBSummaryExt | null> {
   return await api.bb.summaryExt(facilityId)
 }

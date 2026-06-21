@@ -122,7 +122,6 @@ export interface CommitLpRow {
   agentCls?: string | null
   sp: string; mdy: string; fitch: string
   aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
-  lpSizeBil?: string | null; lpSizeCriteria?: string | null
   capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
   uc: string | null; pctUncalled: string | null; pctCalled: string | null
   agentConc: string | null; ubsConc: string | null
@@ -178,8 +177,10 @@ export interface LpClassificationRequest {
     agentCls?: string         // Agent LP Classification
     sp?: string; mdy?: string; fitch?: string
     // Scale (manual)
-    lpSizeBil?: string        // LP Size ($ Bil)
-    lpSizeCriteria?: string   // AUM | NAV | Assets
+    aum?: string              // Assets Under Management
+    nav?: string              // Net Asset Value
+    pension?: string          // Pension Assets
+    pensionFunded?: string    // Pension Funded %
     // Commitment / capital (manual)
     capCommit?: string
     uc?: string               // Uncalled Capital

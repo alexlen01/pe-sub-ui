@@ -148,16 +148,10 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     id: 'gs-blue-owl',
     fund: 'Goldman Sachs Bank USA',
     workbook: { tabs: 'single', tabLabel: 'Borrowing Base' },
-    title: { row: 1, text: 'Blue Owl GP Stakes V — Borrowing Base Certificate' },
+    title: { row: 1, text: 'Blue Owl GP Stakes V — Agent Borrowing Base Certificate' },
     summaryRows: '1-6',
     headerRow: 7,
-    groupHeaders: [
-      'Rated Included Investors',
-      'Non-Rated Included Investors',
-      'Designated Institutional Investors',
-      'Designated PWM Investors',
-      'Excluded Investors',
-    ],
+    groupHeaders: [],
     columns: [
       'Investor Name (Agent Records)', 'LP Classification', 'Commitment (USD)',
       'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Advance Rate',
@@ -166,7 +160,7 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     detectKeys: ['blue owl gp stakes', 'goldman sachs', 'gp stakes v'],
     legend: null,
     notes: [
-      'Pilot facility format (Blue Owl GP Stakes V, ~900 LPs). LP-category banner rows; each section is followed by an excluded subtotal row.',
+      'Pilot facility format (Blue Owl GP Stakes V, ~900 LPs). Flat LP list — no LP-category banner rows or per-section subtotals; a single "Total — 900 LPs" grand-total row closes the table.',
     ],
   },
 ]

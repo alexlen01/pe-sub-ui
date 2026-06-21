@@ -84,8 +84,8 @@ body {
 /* ── Tag / Badge ───────────────────────────────────────────── */
 .tag            { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
 .tag-rated      { background: var(--blue-lt); color: var(--navy); }
-.tag-un2        { background: #EBEBEB; color: #333333; }
-.tag-un1        { background: #E4E4E4; color: #444444; }
+.tag-un2        { background: var(--amber-lt); color: var(--amber); }
+.tag-un1        { background: #FFE0B3; color: #8A4B00; }
 .tag-elig       { background: var(--green-lt); color: var(--green); }
 .tag-excl       { background: var(--red-lt); color: var(--red); }
 .tag-active      { background: var(--green-lt);  color: var(--green); }
@@ -136,6 +136,11 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--blue); }
 .data-table .neg { color: var(--red); }
 .data-table .zero{ color: var(--muted); }
 .data-table .bold{ font-weight: 700; }
+/* Dense variant — packs the maximum number of columns into the available width
+   without a horizontal scrollbar (used by LP Classification & Rate Assignment). */
+.data-table.dense    { font-size: 11px; }
+.data-table.dense th { padding: 7px 9px; }
+.data-table.dense td { padding: 7px 9px; overflow: hidden; text-overflow: ellipsis; }
 .tbl-footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #fff; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
 
 /* ── KPI Card ──────────────────────────────────────────────── */

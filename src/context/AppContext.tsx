@@ -8,8 +8,6 @@ import type { LPRecord } from '../services/lpService'
 
 export { SCREEN_MAP as SCREENS }
 
-export type ScreenMode = 'detecting' | 'live' | 'prototype'
-
 export interface ToastItem { id: number; msg: string; variant?: 'warning' | 'success' }
 export interface User { name: string; initials: string; role: string; department: string; notifications: number }
 
@@ -36,9 +34,6 @@ interface AppState {
   abortSubmission: (facility: string) => void
   targetFacility: string | null
   setTargetFacility: (f: string | null) => void
-  screenMode: ScreenMode
-  setScreenMode: (mode: ScreenMode) => void
-  resetAppState: () => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -54,18 +49,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeFacilityId,   setActiveFacilityId] = useState<number | null>(null)
   const [abortedFacilities,  setAbortedFacilities] = useState<string[]>([])
   const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
-  const [screenMode,         setScreenMode]        = useState<ScreenMode>('detecting')
 
   // Loads LP Master records for the active facility. Exposed as refreshLpData so callers can
   // re-pull after a write (e.g. committing match decisions creates new LP records) without
-  // waiting for activeFacilityId/screenMode to change.
+  // waiting for activeFacilityId to change.
   const refreshLpData = useCallback((): Promise<void> => {
-    if (activeFacilityId == null || screenMode === 'detecting') return Promise.resolve()
+    if (activeFacilityId == null) return Promise.resolve()
     setLpLoading(true)
-    return getLPsForFacility(screenMode === 'live', activeFacilityId)
+    return getLPsForFacility(activeFacilityId)
       .then(setLpData)
       .finally(() => setLpLoading(false))
-  }, [activeFacilityId, screenMode])
+  }, [activeFacilityId])
 
   useEffect(() => { void refreshLpData() }, [refreshLpData])
 
@@ -80,24 +74,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const updateLPRecord = useCallback((updated: LPRecord) => {
-    setLpData(prev => prev.map(lp => lp.rank === updated.rank ? updated : lp))
+    setLpData(prev => prev.map(lp => lp.name === updated.name ? updated : lp))
   }, [])
 
   const abortSubmission = useCallback((facility: string) => {
     if (facility) setAbortedFacilities(prev => [...prev, facility])
-  }, [])
-
-  const resetAppState = useCallback(() => {
-    setScreen('dashboard')
-    setToasts([])
-    setLpData([])
-    setLpLoading(false)
-    setBbParams(DEFAULT_FACILITY_PARAMS)
-    setActiveSubmission(null)
-    setActiveSubmissionId(null)
-    setActiveFacilityId(null)
-    setAbortedFacilities([])
-    setTargetFacility(null)
   }, [])
 
   useServerEvents(toast)
@@ -114,8 +95,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeFacilityId, setActiveFacilityId,
       abortedFacilities, abortSubmission,
       targetFacility, setTargetFacility,
-      screenMode, setScreenMode,
-      resetAppState,
     }}>
       {children}
     </AppContext.Provider>

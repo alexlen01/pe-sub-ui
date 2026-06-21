@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useApp }    from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import Button        from '../../components/ui/Button'
 import { REPORT_TABS, CONCENTRATION_TESTS, REPORT_SCHEDULES } from '../../config/reportConfig'
 import { getFacilities } from '../../services/facilityService'
@@ -33,15 +32,12 @@ function FacilitySelect({ facilities }: { facilities: string[] }) {
 
 export default function Reports() {
   const { toast }           = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
   const [tab, setTab]       = useState('collateral')
   const [facilities, setFacilities] = useState<string[]>([])
 
   useEffect(() => {
-    if (mode === 'detecting') return
-    getFacilities(live).then(rows => setFacilities(rows.map(r => r.name))).catch(() => {})
-  }, [mode])
+    getFacilities().then(rows => setFacilities(rows.map(r => r.name))).catch(() => {})
+  }, [])
 
   const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })
 

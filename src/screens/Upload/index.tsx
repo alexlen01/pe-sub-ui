@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useApp }        from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import StepBar            from '../../components/ui/StepBar'
 import Card               from '../../components/ui/Card'
 import Button             from '../../components/ui/Button'
@@ -220,19 +219,16 @@ const NEW_SENTINEL = '__new__'
 
 export default function Upload() {
   const { toast, navigate, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, abortedFacilities, abortSubmission } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
   const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
   const [loadError,      setLoadError]      = useState<string | null>(null)
 
   useEffect(() => {
-    if (mode === 'detecting') return
     setLoadError(null)
     Promise.all([
-      getSubmissions(live),
-      getFacilities(live),
+      getSubmissions(),
+      getFacilities(),
     ]).then(([subs, fs]) => {
       setAllSubmissions(subs)
       setFacilities(fs.map(f => ({
@@ -241,7 +237,7 @@ export default function Upload() {
         agentBank: f.agentBank ?? '',
       })))
     }).catch(e => setLoadError(String(e)))
-  }, [mode])
+  }, [])
 
   const submissions = allSubmissions.filter(s => !abortedFacilities.includes(s.facility))
 
@@ -266,7 +262,7 @@ export default function Upload() {
     if (!abortTarget) return
     setAborting(true)
     try {
-      if (live && abortTarget.id != null) {
+      if (abortTarget.id != null) {
         await api.submissions.abort(abortTarget.id)
         setAllSubmissions(prev => prev.map(s => s.id === abortTarget.id ? { ...s, status: 'Aborted', action: '—' } : s))
       } else {

@@ -1,22 +1,17 @@
-import { ALIAS_GROUPS, GLOBAL_BLOCKLIST, PENDING_SUGGESTIONS, ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 import { api } from './api'
 
-export async function getAliasGroups(live: boolean) {
-  if (!live) return ALIAS_GROUPS
+export async function getAliasGroups() {
   return await api.fieldMapping.aliasGroups()
 }
 
-export async function getAllCanonicalFields(live: boolean) {
-  if (!live) return ALL_CANONICAL_FIELDS
+export async function getAllCanonicalFields() {
   return await api.fieldMapping.canonicalFields()
 }
 
-export async function getGlobalBlocklist(live: boolean) {
-  if (!live) return GLOBAL_BLOCKLIST
+export async function getGlobalBlocklist() {
   return await api.fieldMapping.blocklist()
 }
 
-export async function getPendingSuggestions(live: boolean) {
-  if (!live) return PENDING_SUGGESTIONS
+export async function getPendingSuggestions() {
   return await api.fieldMapping.suggestions()
 }

@@ -33,6 +33,14 @@ describe('template registry', () => {
     expect(cp.groupHeaders).toHaveLength(0)
   })
 
+  it('captures the Goldman Sachs / Blue Owl pilot as a flat list (no LP-category sections)', () => {
+    const gs = getTemplateProfile('gs-blue-owl')!
+    expect(gs.fund).toBe('Goldman Sachs Bank USA')
+    expect(gs.headerRow).toBe(7)
+    expect(gs.groupHeaders).toHaveLength(0)
+    expect(gs.columns[0]).toBe('Investor Name (Agent Records)')
+  })
+
   it('captures the AEP VII cell-format legend', () => {
     const aep = getTemplateProfile('aep-vii')!
     expect(aep.legend).not.toBeNull()
@@ -69,5 +77,11 @@ describe('buildDocRecognition', () => {
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
     expect(byLabel['LP grouping']).toMatch(/4 LP-category sections/)
     expect(byLabel['Legend']).toMatch(/4 cell-format rules/)
+  })
+
+  it('renders the Goldman Sachs / Blue Owl pilot as a flat list', () => {
+    const rows = buildDocRecognition(getTemplateProfile('gs-blue-owl')!)
+    const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
+    expect(byLabel['LP grouping']).toMatch(/Flat list/i)
   })
 })

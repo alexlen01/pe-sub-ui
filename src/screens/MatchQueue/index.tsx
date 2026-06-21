@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
@@ -10,12 +9,11 @@ import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, ABBREV_REGEX_MAP } from '../../config/matchingConfig'
-import { MATCH_QUEUE } from '../../data/matchQueueData'
 import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
 import { analysisCandidates, normalisedAgentName } from './matchAnalysis'
 import type { MatchAnalysis } from '../../services/api'
 
-type QueueRow = (typeof MATCH_QUEUE)[0] & { status: string; matchDetails?: MatchAnalysis | null }
+type QueueRow = Awaited<ReturnType<typeof getMatchQueue>>[0] & { status: string; matchDetails?: MatchAnalysis | null }
 
 const SUFFIX_RE = new RegExp(`\\b(${LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.')).join('|')})\\b`, 'gi')
 
@@ -142,9 +140,7 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
 
 export default function MatchQueue() {
   const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId, refreshLpData } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
-  const [queue, setQueue] = useState<QueueRow[]>(MATCH_QUEUE as QueueRow[])
+  const [queue, setQueue] = useState<QueueRow[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [bandFilter, setBandFilter] = useState('')
   const [checked, setChecked] = useState(new Set<number>())
@@ -154,7 +150,7 @@ export default function MatchQueue() {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleAbort = async (msg = 'Submission aborted.') => {
-    if (live && activeSubmissionId != null) {
+    if (activeSubmissionId != null) {
       try { await api.submissions.abort(activeSubmissionId) }
       catch (e) { toast(`Abort failed: ${String(e)}`); return }
     } else {
@@ -167,12 +163,11 @@ export default function MatchQueue() {
   }
 
   useEffect(() => {
-    if (mode === 'detecting') return
     setLoadError(null)
-    getMatchQueue(live, activeSubmissionId ?? 0)
+    getMatchQueue(activeSubmissionId ?? 0)
       .then(q => setQueue(q as QueueRow[]))
       .catch(e => setLoadError(String(e)))
-  }, [mode, activeSubmissionId])
+  }, [activeSubmissionId])
 
   const filtered = useMemo(() => queue.filter(r => {
     const matchStatus = !statusFilter || r.status === statusFilter
@@ -219,7 +214,7 @@ export default function MatchQueue() {
       setAllRejectedOpen(true)
       return
     }
-    if (live && activeSubmissionId) {
+    if (activeSubmissionId) {
       // Wait for the accept/reject PATCHes, then commit the accepted matches to LP Master and
       // refresh LP Master — so the records exist before Run Shadow BB loads its classification table.
       setCommitting(true)

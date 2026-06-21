@@ -84,7 +84,7 @@ export function detectTemplate(meta: { fileName?: string; facility?: string; fun
 // order mirror the pe-sub-platform prototype so the Document Recognition grid matches it.
 export function buildDocRecognition(
   profile: TemplateProfile,
-  opts: { fileName?: string } = {},
+  opts: { fileName?: string; columnsMatched?: number; columnsTotal?: number } = {},
 ): DocRecognitionRow[] {
   const tabs = profile.workbook.tabs === 'single'
     ? `Single tab · "${profile.workbook.tabLabel}"`
@@ -95,7 +95,10 @@ export function buildDocRecognition(
   const grouping = profile.groupHeaders.length > 0
     ? `${profile.groupHeaders.length} LP-category sections (subtotal row excluded per section)`
     : 'Flat list — no LP-category sections'
-  const matched = mapColumns(profile).filter(c => c.mapping).length
+  // Prefer the live extraction's column counts when supplied; fall back to the static
+  // profile only in prototype mode (no submission to extract from).
+  const matched = opts.columnsMatched ?? mapColumns(profile).filter(c => c.mapping).length
+  const total   = opts.columnsTotal ?? profile.columns.length
 
   return [
     { label: 'Document',          value: opts.fileName || '—' },
@@ -105,7 +108,7 @@ export function buildDocRecognition(
     { label: 'Column header row', value: headerRow },
     { label: 'Summary block',     value: profile.summaryRows ? `Rows ${profile.summaryRows} (skipped)` : 'None' },
     { label: 'LP grouping',       value: grouping, wide: true },
-    { label: 'Columns matched',   value: `${matched} of ${profile.columns.length} mapped to canonical LP fields` },
+    { label: 'Columns matched',   value: `${matched} of ${total} mapped to canonical LP fields` },
     { label: 'Legend',            value: profile.legend ? `${profile.legend.length} cell-format rules` : 'None' },
   ]
 }

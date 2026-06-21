@@ -1,32 +1,55 @@
 import { useState, useEffect, useRef, startTransition } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
-import { useScreenMode } from '../../hooks/useScreenMode'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
-import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields } from '../../services/extractionService'
-import { getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition, mapColumns } from '../../services/templateService'
+import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields, type DocRecognitionRow, type UnrecognizedColumn } from '../../services/extractionService'
+import { getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition, type MappedColumn } from '../../services/templateService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
-import { EXTRACTED_LPS, EXTRACTION_FIELD_MAP, DOC_RECOGNITION, UNRECOGNIZED_COLUMNS } from '../../data/extractionData'
-import { ALL_CANONICAL_FIELDS } from '../../data/fieldMappingData'
 
-type ExtractedRow = (typeof EXTRACTED_LPS)[0]
-type UnrecogRow = (typeof UNRECOGNIZED_COLUMNS)[0] & { suggestedCanonical: string; dismissed: boolean }
+type FieldMapRow = Awaited<ReturnType<typeof getExtractionFieldMap>>[0]
+type CanonicalField = Awaited<ReturnType<typeof getAllCanonicalFields>>[0]
+
+// Extracted Agent-BB row after BB-field enrichment. All cells render as display strings;
+// the engine supplies them per the canonical LP_FIELDS keys below.
+interface ExtractedRow {
+  id: number
+  name: string
+  transferee?: boolean
+  agentClass?: string
+  commit?: string
+  uncalled?: string
+  pctCalledFmt?: string
+  aum?: string
+  nav?: string
+  sp?: string
+  moodys?: string
+  fitch?: string
+  agentRate?: string
+  agentConc?: string
+  agentBBFmt?: string
+  pctBBFmt?: string
+}
+type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: boolean }
 
 // Order mirrors the Extracted LP Data table columns. `extracted` is the join key
 // into the canonical field map; `label` (when present) is the display override.
 // Transferee is intentionally not a field here — it is surfaced as a marker next
 // to the investor name (see LPDetailPanel header and the table's name cell).
-const LP_FIELDS: { key: string; extracted: string; label?: string }[] = [
+// `canonical` (optional) overrides the field-map lookup — used for derived fields
+// such as % Called, which is computed from extracted columns rather than matched
+// from a source column, yet still maps to a canonical LP Master field.
+const LP_FIELDS: { key: string; extracted: string; label?: string; canonical?: string }[] = [
   { key: 'name',       extracted: 'Investor Name (Agent Records)'                                    },
   { key: 'parent',     extracted: 'Parent / Sponsor'                                                 },
-  { key: 'agentClass', extracted: 'LP Classification'                                                },
+  { key: 'agentClass', extracted: 'LP Classification', label: 'Agent LP Classification'                                                },
   { key: 'commit',     extracted: 'Commitment (USD)',       label: 'Original Commitment'             },
   { key: 'uncalled',   extracted: 'Uncalled Capital (USD)', label: 'Unfunded Capital Commitment'     },
+  { key: 'pctCalledFmt', extracted: '% Called', label: '% Called (derived)', canonical: 'Uncalled Data - % of LP Called' },
   { key: 'aum',        extracted: 'AUM'                                                              },
   { key: 'nav',        extracted: 'NAV',                    label: 'Net Assets (range)'              },
   { key: 'sp',         extracted: 'S&P'                                                              },
@@ -52,16 +75,20 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
-// Sum of explicit <th> widths (280+120+130+150+68+84+50+60+56+96+130+108+78=1410)
+// Extracted LP Data header cells wrap onto two lines (the global `.data-table th`
+// rule forces nowrap, so each th overrides it inline via HDR).
+const HDR: React.CSSProperties = { whiteSpace: 'normal', verticalAlign: 'middle', lineHeight: 1.25 }
+
+// Sum of explicit <th> widths (240+92+100+104+72+64+78+48+60+54+80+96+86+74=1248)
 // + 12px gap + 360px detail panel.
-const SIDE_BY_SIDE_MIN = 1782
+const SIDE_BY_SIDE_MIN = 1620
 
 function LPDetailPanel({
   row, onClose, fieldMap, overlay = false,
 }: {
   row: ExtractedRow
   onClose: () => void
-  fieldMap: typeof EXTRACTION_FIELD_MAP
+  fieldMap: FieldMapRow[]
   overlay?: boolean
 }) {
   return (
@@ -82,15 +109,16 @@ function LPDetailPanel({
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {LP_FIELDS.map(({ key, extracted, label }, i) => {
+          {LP_FIELDS.map(({ key, extracted, label, canonical }, i) => {
             const mapping = fieldMap.find(m => m.extracted === extracted)
-            const value = (row as Record<string, unknown>)[key] as string | undefined
+            const canonicalField = canonical ?? mapping?.canonical
+            const value = (row as unknown as Record<string, unknown>)[key] as string | undefined
             return (
               <div key={key} style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'var(--card)' : 'var(--tbl)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', fontFamily: 'monospace' }}>{label ?? extracted}</div>
-                    {mapping && <div style={{ fontSize: 10, color: 'var(--blue)', marginTop: 2 }}>→ {mapping.canonical}</div>}
+                    {canonicalField && <div style={{ fontSize: 10, color: 'var(--blue)', marginTop: 2 }}>→ {canonicalField}</div>}
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: !value ? 'var(--muted)' : 'var(--navy)', whiteSpace: 'nowrap' }}>{value || '—'}</div>
                 </div>
@@ -111,12 +139,10 @@ const CollapseBtn = ({ collapsed, onToggle }: { collapsed: boolean; onToggle: ()
 
 export default function ExtractionPreview() {
   const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
-  const mode = useScreenMode()
-  const live = mode === 'live'
   const [extracted,      setExtracted]    = useState<ExtractedRow[]>([])
-  const [fieldMap,       setFieldMap]     = useState<typeof EXTRACTION_FIELD_MAP>([])
-  const [docRec,         setDocRec]       = useState<typeof DOC_RECOGNITION>([])
-  const [canonicals,     setCanonicals]   = useState<typeof ALL_CANONICAL_FIELDS>([])
+  const [fieldMap,       setFieldMap]     = useState<FieldMapRow[]>([])
+  const [docRec,         setDocRec]       = useState<DocRecognitionRow[]>([])
+  const [canonicals,     setCanonicals]   = useState<CanonicalField[]>([])
   const [confirmed,      setConfirmed]    = useState(false)
   const [abortOpen,      setAbortOpen]    = useState(false)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
@@ -135,38 +161,37 @@ export default function ExtractionPreview() {
   const loadData = async (sid: number) => {
     try {
       const [rows, cf, cols, fm, dr] = await Promise.all([
-        getExtractedLPs(live, sid),
-        getAllCanonicalFields(live),
-        getUnrecognizedColumns(live, sid),
-        getExtractionFieldMap(live, sid),
-        getDocRecognition(live, sid),
+        getExtractedLPs(sid),
+        getAllCanonicalFields(),
+        getUnrecognizedColumns(sid),
+        getExtractionFieldMap(sid),
+        getDocRecognition(sid),
       ])
       setExtracted(rows as unknown as ExtractedRow[])
-      setCanonicals(cf as unknown as typeof ALL_CANONICAL_FIELDS)
+      setCanonicals(cf)
       setUnrecog(prev => {
         const dismissed = new Set(prev.filter(c => c.dismissed).map(c => c.extracted))
-        return (cols as typeof UNRECOGNIZED_COLUMNS).map(c => ({
+        return cols.map(c => ({
           ...c,
           suggestedCanonical: prev.find(p => p.extracted === c.extracted)?.suggestedCanonical ?? '',
           dismissed: dismissed.has(c.extracted),
         }))
       })
-      setFieldMap(fm as typeof EXTRACTION_FIELD_MAP)
-      setDocRec(dr as typeof DOC_RECOGNITION)
+      setFieldMap(fm)
+      setDocRec(dr)
     } catch (e) {
       setLoadError(String(e))
     }
   }
 
   useEffect(() => {
-    if (mode === 'detecting') return
-    if (live && activeSubmissionId == null) {
+    if (activeSubmissionId == null) {
       setLoadError('No active submission — please start from the upload step.')
       return
     }
     setLoadError(null)
-    loadData(activeSubmissionId ?? 0)
-  }, [mode])
+    loadData(activeSubmissionId)
+  }, [activeSubmissionId])
 
   useEffect(() => {
     const el = layoutRef.current
@@ -183,19 +208,28 @@ export default function ExtractionPreview() {
   const useOverlay    = containerWidth < SIDE_BY_SIDE_MIN
 
   const profile     = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
-  const profileCols = mapColumns(profile)
+
+  // The authoritative column set is the actual extraction result — matched fieldMap entries
+  // plus columns the engine could not map. This keeps the Document Recognition counts in
+  // lock-step with the Canonical Field Mapping card.
+  const displayCols: MappedColumn[] = [
+    ...fieldMap.map(m => ({ header: m.extracted, mapping: { canonical: m.canonical, group: m.group, tier: m.tier ?? 'Core' } })),
+    ...activeUnrecog.map(c => ({ header: c.extracted, mapping: null })),
+  ]
+  const colsMatched = displayCols.filter(c => c.mapping).length
 
   // Document Recognition grid mirrors the prototype: file name comes from the live
-  // per-document detection; the remaining rows are profile-driven.
+  // per-document detection; the remaining structural rows are profile-driven, while the
+  // column-match counts track the live extraction.
   const docFileName = docRec.find(r => r.label === 'Document')?.value
-  const docRows     = buildDocRecognition(profile, { fileName: docFileName })
+  const docRows     = buildDocRecognition(profile, { fileName: docFileName, columnsMatched: colsMatched, columnsTotal: displayCols.length })
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
   const suggestMapping = async (extractedKey: string) => {
     const col = unrecog.find(c => c.extracted === extractedKey)
     if (!col?.suggestedCanonical) return
-    if (!live || activeSubmissionId == null) {
+    if (activeSubmissionId == null) {
       setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
       toast(`"${extractedKey}" mapped to ${col.suggestedCanonical}.`)
       return
@@ -217,7 +251,7 @@ export default function ExtractionPreview() {
   const dismissUnrecog = async (extractedKey: string) => {
     setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
     toast('Column discarded.')
-    if (live && activeSubmissionId != null) {
+    if (activeSubmissionId != null) {
       try {
         await api.extraction.reextract(activeSubmissionId)
         await loadData(activeSubmissionId)
@@ -228,7 +262,7 @@ export default function ExtractionPreview() {
   }
 
   const handleAbort = async () => {
-    if (live && activeSubmissionId != null) {
+    if (activeSubmissionId != null) {
       try { await api.submissions.abort(activeSubmissionId) }
       catch (e) { toast(`Abort failed: ${String(e)}`); return }
     } else {
@@ -241,7 +275,7 @@ export default function ExtractionPreview() {
 
   const handleConfirm = async () => {
     setConfirmed(true)
-    if (live && activeSubmissionId != null) {
+    if (activeSubmissionId != null) {
       toast('Extraction confirmed. Running LP name matching...')
       try {
         const res = await api.submissions.confirm(activeSubmissionId)
@@ -315,10 +349,10 @@ export default function ExtractionPreview() {
 
             <div>
               <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                Column headers ({profileCols.filter(c => c.mapping).length}/{profileCols.length} mapped to canonical LP fields)
+                Column headers ({colsMatched}/{displayCols.length} mapped to canonical LP fields)
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {profileCols.map(({ header, mapping }) => (
+                {displayCols.map(({ header, mapping }) => (
                   <span
                     key={header}
                     title={mapping ? `→ ${mapping.group} › ${mapping.canonical}` : 'No canonical mapping — routes to “Unmatched — action required”'}
@@ -395,8 +429,11 @@ export default function ExtractionPreview() {
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                         <select value={col.suggestedCanonical} onChange={e => setUnrecog(prev => prev.map(c => c.extracted === col.extracted ? { ...c, suggestedCanonical: e.target.value } : c))} style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px' }}>
                           <option value="">— select mapping —</option>
+                          {/* All canonical fields are valid manual targets, including derived
+                              ones (Borrowing Base, % of Borrowing Base, Eligible Commitment, …)
+                              which the agent reports for display/cross-check. The remap endpoint
+                              handles derived targets, so they must not be filtered out here. */}
                           {(canonicals as Array<{ value: string; label: string; extractable?: boolean }>)
-                            .filter(f => f.extractable !== false)
                             .map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                         </select>
                       </td>
@@ -436,19 +473,20 @@ export default function ExtractionPreview() {
               <table className="data-table" style={{ tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 280 }}>Investor Name</th>
-                    <th style={{ width: 120 }}>Investor Type</th>
-                    <th style={{ width: 130, textAlign: 'right' }}>Commitment (USD)</th>
-                    <th style={{ width: 150, textAlign: 'right' }}>Uncalled Capital (USD)</th>
-                    <th style={{ width: 68, textAlign: 'right' }}>AUM</th>
-                    <th style={{ width: 84, textAlign: 'right' }}>NAV</th>
-                    <th style={{ width: 50, textAlign: 'center' }}>S&P</th>
-                    <th style={{ width: 60, textAlign: 'center' }}>Moody's</th>
-                    <th style={{ width: 56, textAlign: 'center' }}>Fitch</th>
-                    <th style={{ width: 96, textAlign: 'center' }}>Advance Rate</th>
-                    <th style={{ width: 130, textAlign: 'center' }}>Concentration Limit</th>
-                    <th style={{ width: 108, textAlign: 'right' }}>Borrowing Base</th>
-                    <th style={{ width: 78, textAlign: 'right', paddingRight: 20 }}>% of BB</th>
+                    <th style={{ ...HDR, width: 240 }}>Investor Name</th>
+                    <th style={{ ...HDR, width: 92 }}>LP Classification</th>
+                    <th style={{ ...HDR, width: 100, textAlign: 'right' }}>Commitment (USD)</th>
+                    <th style={{ ...HDR, width: 104, textAlign: 'right' }}>Uncalled Capital (USD)</th>
+                    <th style={{ ...HDR, width: 72, textAlign: 'right' }}>% Called</th>
+                    <th style={{ ...HDR, width: 64, textAlign: 'right' }}>AUM</th>
+                    <th style={{ ...HDR, width: 78, textAlign: 'right' }}>NAV</th>
+                    <th style={{ ...HDR, width: 48, textAlign: 'center' }}>S&P</th>
+                    <th style={{ ...HDR, width: 60, textAlign: 'center' }}>Moody's</th>
+                    <th style={{ ...HDR, width: 54, textAlign: 'center' }}>Fitch</th>
+                    <th style={{ ...HDR, width: 80, textAlign: 'center' }}>Advance Rate</th>
+                    <th style={{ ...HDR, width: 96, textAlign: 'center' }}>Concentration Limit</th>
+                    <th style={{ ...HDR, width: 86, textAlign: 'right' }}>Borrowing Base</th>
+                    <th style={{ ...HDR, width: 74, textAlign: 'right', paddingRight: 20 }}>% of BB</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -458,6 +496,7 @@ export default function ExtractionPreview() {
                       <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctCalledFmt ? 'var(--muted)' : undefined }}>{r.pctCalledFmt || '—'}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
