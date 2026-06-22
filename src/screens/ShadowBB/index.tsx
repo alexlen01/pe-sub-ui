@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import Button from '../../components/ui/Button'
@@ -12,23 +12,23 @@ import type { FacilityRow } from '../../services/facilityService'
 import InfoTip from '../../components/ui/InfoTip'
 import type { LPRecord } from '../../services/lpService'
 import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculationService'
+import { api } from '../../services/api'
+import type { LpClassificationRequest } from '../../services/api'
+import {
+  UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE,
+  TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, REGION_OPTS,
+} from '../../config/classificationConfig'
 
-// Summary monetary values arrive in $millions (the API summary-ext and the fallback below both
-// emit M-scale numbers). On screen they are always abbreviated to whole millions with an "M"
-// suffix; the Excel export (full=true) renders the exact full-dollar figure instead.
 function fmtMoneyM(m: number | null | undefined, full = false): string {
   if (m == null) return '—'
   if (full) return '$' + Math.round(m * 1e6).toLocaleString('en-US')
   return '$' + Math.round(m).toLocaleString('en-US') + 'M'
 }
 
-// M-scale → exact whole-dollar number, for the Excel export's numeric cells.
 function fullDollar(m: number | null | undefined): number {
   return m == null ? 0 : Math.round(m * 1e6)
 }
 
-// Roll a granular LP classification (UBS or legacy taxonomy) up into one of the four canonical
-// eligibility buckets (SHADOW_BB_ANALYSIS Table 5). Mirrors BbController.canonicalClassBucket.
 type ClsBucket = 'Rated Investors' | 'Unrated Investors' | 'Eligible Investors' | 'Excluded Investors'
 function canonicalClassBucket(cls: string | null | undefined): ClsBucket {
   switch (cls) {
@@ -46,7 +46,6 @@ function canonicalClassBucket(cls: string | null | undefined): ClsBucket {
   }
 }
 
-// Parse an AUM display string (e.g. '$4.2B', '$1.4T', '$620M') to $millions.
 function parseAumM(s: string | null | undefined): number {
   if (!s) return 0
   const m = String(s).match(/\$?\s*([\d,.]+)\s*([KMBT]?)/i)
@@ -55,6 +54,11 @@ function parseAumM(s: string | null | undefined): number {
   const unit = m[2].toUpperCase()
   const mult = unit === 'T' ? 1e6 : unit === 'B' ? 1e3 : unit === 'K' ? 1e-3 : 1
   return val * mult
+}
+
+function parsePct(str: string | undefined | null): number | '' {
+  if (!str || str === '—') return ''
+  return parseFloat(String(str).replace('%', '')) || ''
 }
 
 const BLUE_HD: React.CSSProperties = { background: '#0F2560', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 700, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase' }
@@ -109,9 +113,6 @@ function SummaryBreakTable({ title, rows, full, labelHeader = 'Rate' }: { title:
   )
 }
 
-// Build and download the Shadow BB workbook. Unlike the on-screen tables (which round to whole
-// millions), the export carries exact full-dollar values across both summary tables and every LP
-// data row. Monetary cells are written as numbers so Excel can format/aggregate them.
 function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRecord[]) {
   const pctStr = (n: number) => `${(n * 100).toFixed(0)}%`
   type Cell = string | number
@@ -177,61 +178,239 @@ const BB_COLUMN_ITEMS = [
   { label: 'UBS BB',             desc: 'The UBS borrowing base contribution for this LP: eligible uncalled capital × UBS advance rate, after the UBS per-LP concentration limit.' },
 ]
 
-const SECTION_KEYS = ['Identity & Classification','Ratings','Financial Scale','Borrowing Base Inputs','Commitment Data','Uncalled / Eligible Capital','Concentration & BB','Notes']
-const ALL_OPEN = Object.fromEntries(SECTION_KEYS.map(k => [k, true]))
+// ── Editable LP detail panel (right-side, shadow BB screen) ──────────────────────────────
+// Derives a local draft from the selected ComputedLPRecord so all fields are editable.
+// On save the changes are persisted to LP Master and the BB is recomputed immediately.
 
-function LPDetailPanel({ lp, onClose }: { lp: ComputedLPRecord; onClose: () => void }) {
-  const [open, setOpen] = useState(ALL_OPEN)
-  useEffect(() => { setOpen(ALL_OPEN) }, [lp?.name])
+type SBBDraft = {
+  cls: string; agentCls: string
+  rate: string; agentRate: string
+  ubsConc: string; agentConc: string
+  uc: string; capCommit: string
+  inc: boolean; ig: boolean; type: string
+  sp: string; mdy: string; fitch: string
+  aum: string; nav: string; pension: string; pensionFunded: string
+  parent: string; spv: boolean; region: string
+  notes: string
+}
+
+function buildDraft(lp: ComputedLPRecord): SBBDraft {
+  return {
+    cls:          lp.cls          ?? '',
+    agentCls:     lp.agentCls     ?? '',
+    rate:         lp.rate         ?? '',
+    agentRate:    lp.agentRate    ?? '',
+    ubsConc:      lp.ubsConc      ?? '',
+    agentConc:    lp.agentConc    ?? '',
+    uc:           lp.uc           ?? '',
+    capCommit:    lp.capCommit    ?? '',
+    inc:          !!(lp.inc),
+    ig:           !!(lp.ig),
+    type:         lp.type         ?? 'Institutional',
+    sp:           lp.sp && lp.sp !== 'NR'     ? lp.sp     : '',
+    mdy:          lp.mdy && lp.mdy !== 'NR'   ? lp.mdy   : '',
+    fitch:        lp.fitch && lp.fitch !== 'NR' ? lp.fitch : '',
+    aum:          lp.aum          ?? '',
+    nav:          lp.nav          ?? '',
+    pension:      lp.pension      ?? '',
+    pensionFunded: lp.pensionFunded ?? '',
+    parent:       lp.parent       ?? '',
+    spv:          !!(lp.spv),
+    region:       lp.region       ?? '',
+    notes:        lp.notes        ?? '',
+  }
+}
+
+function draftToLPRecord(d: SBBDraft): Partial<LPRecord> {
+  return {
+    cls: d.cls || undefined,
+    agentCls: d.agentCls || undefined,
+    rate: d.rate || undefined,
+    agentRate: d.agentRate || undefined,
+    ubsConc: d.ubsConc || undefined,
+    agentConc: d.agentConc || undefined,
+    uc: d.uc || undefined,
+    capCommit: d.capCommit || undefined,
+    inc: d.inc,
+    ig: d.ig,
+    type: d.type as LPRecord['type'] || undefined,
+    sp: d.sp || undefined,
+    mdy: d.mdy || undefined,
+    fitch: d.fitch || undefined,
+    aum: d.aum || undefined,
+    nav: d.nav || undefined,
+    pension: d.pension || undefined,
+    pensionFunded: d.pensionFunded || undefined,
+    parent: d.parent || undefined,
+    spv: d.spv,
+    region: d.region as LPRecord['region'] || undefined,
+    notes: d.notes || undefined,
+  }
+}
+
+const YesNo = ({ val }: { val: boolean }) => (
+  <span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: val ? '#e6f4ea' : 'var(--tbl)', color: val ? 'var(--green)' : 'var(--muted)' }}>
+    {val ? 'Yes' : 'No'}
+  </span>
+)
+
+const SECTION_KEYS = ['Identity & Classification','Ratings','Financial Scale','Borrowing Base Inputs','Commitment Data','Uncalled / Eligible Capital','Concentration & BB','Notes']
+
+function LPDetailPanel({ lp, onClose, onSave }: {
+  lp: ComputedLPRecord
+  onClose: () => void
+  onSave?: (lpName: string, changes: Partial<LPRecord>) => Promise<void>
+}) {
+  const [draft, setDraft] = useState<SBBDraft>(() => buildDraft(lp))
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => { setDraft(buildDraft(lp)); setSaveStatus('idle') }, [lp?.name])
+
   useEffect(() => {
     if (!lp) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [lp, onClose])
+
   if (!lp) return null
-  const yn = (v: boolean | undefined) => v ? 'Yes' : 'No'
-  const na = (v: string | undefined | null) => v || '—'
-  const toggle = (s: string) => setOpen(o => ({ ...o, [s]: !o[s] }))
-  const sections = [
-    { title: 'Identity & Classification', rows: [{ k: 'Investor Name', v: lp.name ?? '—' }, { k: 'Agent LP Classification', v: lp.agentCls ?? '—' }, { k: 'UBS LP Classification', v: lp.cls ? <Tag>{lp.cls}</Tag> : '—' }, { k: 'Parent', v: na(lp.parent) }, { k: 'SPV', v: yn(lp.spv) }, { k: 'Institutional vs HNW', v: lp.type ?? '—' }, { k: 'Region / Location', v: lp.region ?? '—' }, { k: 'High Quality', v: yn(lp.hq) }, { k: 'Investment Grade', v: yn(lp.ig) }] },
-    { title: 'Ratings', rows: [{ k: 'S&P', v: (lp.sp && lp.sp !== 'NR') ? lp.sp : '—' }, { k: "Moody's", v: (lp.mdy && lp.mdy !== 'NR') ? lp.mdy : '—' }, { k: 'Fitch', v: (lp.fitch && lp.fitch !== 'NR') ? lp.fitch : '—' }] },
-    { title: 'Financial Scale', rows: [{ k: 'AUM', v: na(lp.aum) }, { k: 'NAV', v: na(lp.nav) }, { k: 'Pension Assets', v: na(lp.pension) }, { k: 'Pension Funded %', v: na(lp.pensionFunded) }] },
-    { title: 'Borrowing Base Inputs', rows: [{ k: 'UBS Advance Rate', v: lp.rate ?? '—' }, { k: 'Agent Advance Rate', v: na(lp.agentRate) }] },
-    { title: 'Commitment Data', rows: [{ k: 'Capital Commitments', v: na(lp.capCommit) }, { k: '% of Capital Commitments', v: na(lp.pctCapCommit) }, { k: 'Called Capital', v: na(lp.calledCap) }] },
-    { title: 'Uncalled / Eligible Capital', rows: [{ k: 'Uncalled Capital', v: lp.uc ?? '—' }, { k: '% of Uncalled', v: na(lp.pctUncalled) }, { k: '% of LP Called', v: na(lp.pctCalled) }] },
-    { title: 'Concentration & BB', rows: [{ k: 'Agent Concentration Limit', v: na(lp.agentConc) }, { k: 'UBS Concentration Limit', v: na(lp.ubsConc) }, { k: 'Agent Excess Concentration', v: lp.agentExcess }, { k: 'UBS Excess Concentration', v: lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—' }, { k: 'Agent Borrowing Base', v: lp.abb ?? '$0' }, { k: 'UBS Borrowing Base', v: lp.ubb ?? '$0' }, { k: 'UBS Included', v: yn(lp.inc && lp.cls !== 'Excluded') }] },
-    { title: 'Notes', rows: [{ k: null as string | null, v: lp.notes || '—' }] },
-  ]
+
+  const set = (field: keyof SBBDraft, value: unknown) =>
+    setDraft(prev => {
+      const next = { ...prev, [field]: value } as SBBDraft
+      // Seeding the UBS rate when classification changes mirrors RunShadowBB behaviour
+      if (field === 'cls') next.rate = UBS_CLS_DEFAULT_RATE[value as string] ?? prev.rate
+      return next
+    })
+
+  const handleSave = async () => {
+    if (!onSave) return
+    setSaveStatus('saving')
+    try {
+      await onSave(lp.name ?? '', draftToLPRecord(draft))
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 2000)
+    } catch {
+      setSaveStatus('error')
+    }
+  }
+
+  const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
+  const lbl = (t: string) => <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 3 }}>{t}</div>
+
+  const field = (label: string, node: React.ReactNode) => (
+    <div className="detail-row" key={label} style={{ display: 'flex', flexDirection: 'column', padding: '4px 18px' }}>
+      {lbl(label)}{node}
+    </div>
+  )
+  const roVal = (label: string, v: React.ReactNode) => (
+    <div className="detail-row" key={label}><span className="detail-key">{label}</span><span className="detail-val">{v}</span></div>
+  )
+  const txtF = (label: string, f: keyof SBBDraft) =>
+    field(label, <input type="text" value={String(draft[f] ?? '')} style={inputSt} onChange={e => set(f, e.target.value)} />)
+  const selF = (label: string, f: keyof SBBDraft, opts: readonly string[]) =>
+    field(label, <select value={String(draft[f] ?? '')} style={inputSt} onChange={e => set(f, e.target.value)}>
+      {opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}
+    </select>)
+  const chkF = (label: string, f: keyof SBBDraft) =>
+    field(label, <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}>
+      <input type="checkbox" checked={!!(draft[f])} onChange={e => set(f, e.target.checked)} /> Yes
+    </label>)
+
+  const secHd = (t: string) => (
+    <button style={{ width: '100%', background: 'var(--tbl)', border: 'none', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '7px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'default', textAlign: 'left' }}>
+      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)' }}>{t}</span>
+    </button>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--card)' }}>
       <div style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{lp.name}</div>
           <div style={{ fontSize: 11, opacity: 0.7, marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Tag>{lp.cls}</Tag>{lp.rcl && <span className="rcl-badge">Reclassified</span>}
+            <Tag>{draft.cls || lp.cls}</Tag>{lp.rcl && <span className="rcl-badge">Reclassified</span>}
+            {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving…</span>}
+            {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>✓ Saved</span>}
+            {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>✕ Failed</span>}
           </div>
         </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 0 0 12px', opacity: 0.75, flexShrink: 0 }}>×</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {onSave && (
+            <button onClick={handleSave} disabled={saveStatus === 'saving'} style={{ fontSize: 11, fontWeight: 600, background: saveStatus === 'saving' ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', borderRadius: 4, padding: '3px 10px', cursor: 'pointer' }}>
+              {saveStatus === 'saving' ? 'Saving…' : 'Save'}
+            </button>
+          )}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0, opacity: 0.75 }}>×</button>
+        </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0 8px' }}>
-        {sections.map(({ title, rows }) => (
-          <div key={title}>
-            <button onClick={() => toggle(title)} style={{ width: '100%', background: 'var(--tbl)', border: 'none', borderTop: '1px solid var(--border)', borderBottom: open[title] ? '1px solid var(--border)' : 'none', padding: '7px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)' }}>{title}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-block', transform: open[title] ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▾</span>
-            </button>
-            {open[title] && (
-              <div style={{ padding: '0 18px' }}>
-                {rows.map((r, i) => r.k === null ? (
-                  <p key={i} style={{ fontSize: 12, color: 'var(--navy)', lineHeight: 1.5, margin: '8px 0' }}>{r.v}</p>
-                ) : (
-                  <div className="detail-row" key={i}><span className="detail-key">{r.k}</span><span className="detail-val">{r.v}</span></div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+
+        {secHd('Identity & Classification')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {roVal('Investor Name', lp.name ?? '—')}
+          {selF('UBS LP Classification', 'cls', UBS_CLS_OPTS)}
+          {roVal('Agent LP Classification', lp.agentCls ?? '—')}
+          {txtF('Parent', 'parent')}
+          {chkF('SPV?', 'spv')}
+          {selF('Institutional vs HNW', 'type', TYPE_OPTS)}
+          {selF('Region / Location', 'region', ['', ...REGION_OPTS])}
+          {chkF('Investment Grade?', 'ig')}
+          {roVal('High Quality', <YesNo val={lp.hq ?? false} />)}
+        </div>
+
+        {secHd('Ratings')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {selF('S&P', 'sp', SP_RATING_OPTS)}
+          {selF("Moody's", 'mdy', MDY_RATING_OPTS)}
+          {selF('Fitch', 'fitch', SP_RATING_OPTS)}
+        </div>
+
+        {secHd('Financial Scale')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {txtF('AUM', 'aum')}
+          {txtF('NAV', 'nav')}
+          {txtF('Pension Assets', 'pension')}
+          {txtF('Pension Funded %', 'pensionFunded')}
+        </div>
+
+        {secHd('Borrowing Base Inputs')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {txtF('UBS Advance Rate', 'rate')}
+          {txtF('Agent Advance Rate', 'agentRate')}
+          {txtF('UBS Concentration Limit', 'ubsConc')}
+          {txtF('Agent Concentration Limit', 'agentConc')}
+        </div>
+
+        {secHd('Commitment Data')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {txtF('Capital Commitments', 'capCommit')}
+          {roVal('% of Capital Commitments', lp.pctCapCommit ?? '—')}
+          {roVal('Called Capital', lp.calledCap ?? '—')}
+        </div>
+
+        {secHd('Uncalled / Eligible Capital')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {txtF('Uncalled Capital', 'uc')}
+          {roVal('% of Uncalled', lp.pctUncalled ?? '—')}
+          {roVal('% of LP Called', lp.pctCalled ?? '—')}
+        </div>
+
+        {secHd('Concentration & BB')}
+        <div style={{ padding: '4px 0 8px' }}>
+          {roVal('Agent Excess Concentration', lp.agentExcess ?? '—')}
+          {roVal('UBS Excess Concentration', lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—')}
+          {roVal('Agent Borrowing Base', lp.abb ?? '$0')}
+          {roVal('UBS Borrowing Base', lp.ubb ?? '$0')}
+          {chkF('Included in BB?', 'inc')}
+        </div>
+
+        {secHd('Notes')}
+        <div style={{ padding: '8px 18px' }}>
+          <textarea value={draft.notes} style={{ ...inputSt, height: 64, resize: 'vertical' }}
+            onChange={e => set('notes', e.target.value)} />
+        </div>
+
       </div>
     </div>
   )
@@ -245,13 +424,21 @@ export default function ShadowBB() {
   const [facilityRows,    setFacilityRows]    = useState<FacilityRow[]>([])
   const [facility,        setFacility]        = useState('')
   const [facilityId,      setFacilityId]      = useState<number | null>(null)
-  const [clsFilter,     setClsFilter]     = useState('')
-  const [selectedLP,    setSelectedLP]    = useState<ComputedLPRecord | null>(null)
-  const [summaryHidden, setSummaryHidden] = useState(false)
-  const [summaryExtApi, setSummaryExtApi] = useState<BBSummaryExt | null>(null)
-  const [result,        setResult]        = useState<BBResult>(() => computePortfolioBB([], bbParams))
-  const [calcMeta,      setCalcMeta]      = useState<{ facility: string; ts: Date } | null>(null)
-  const [loadError,     setLoadError]     = useState<string | null>(null)
+  const [clsFilter,       setClsFilter]       = useState('')
+  const [selectedName,    setSelectedName]    = useState<string | null>(null)
+  const [summaryHidden,   setSummaryHidden]   = useState(false)
+  const [summaryExtApi,   setSummaryExtApi]   = useState<BBSummaryExt | null>(null)
+  const [calcMeta,        setCalcMeta]        = useState<{ facility: string; ts: Date } | null>(null)
+  const [loadError,       setLoadError]       = useState<string | null>(null)
+
+  // Raw LP records + snapshot kept in state so local overrides can trigger recomputation.
+  const [rawLPs,       setRawLPs]       = useState<LPRecord[]>([])
+  const [snapshot,     setSnapshot]     = useState<Record<string, unknown>>({})
+  const [overrideMap,  setOverrideMap]  = useState<Record<string, Partial<LPRecord>>>({})
+
+  // Per-LP save status for the "Saving… / ✓ Saved" indicator
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   useEffect(() => {
     setLoadError(null)
@@ -260,9 +447,6 @@ export default function ShadowBB() {
       setFacilityOptions(opts)
       setFacilityRows(fs)
       if (opts.length > 0) {
-        // Honor a facility handed off by the navigating screen (e.g. "View BB Results" after a
-        // Shadow BB run) so the selector retains that facility rather than snapping to the first
-        // in the list. Consume it once, then fall back to the first option.
         const target = targetFacility ? opts.find(o => o.name === targetFacility) : undefined
         const chosen = target ?? opts[0]
         setFacility(chosen.name)
@@ -280,56 +464,110 @@ export default function ShadowBB() {
       getLPsForFacility(facilityId),
       getFacilityBBSnapshot(facilityId),
       getFacilitySummaryExt(facilityId),
-    ]).then(([lps, snapshot, ext]) => {
-      const hasSnapshot = snapshot != null && Object.keys(snapshot).length > 0
-      // The Shadow BB exists only once "Run Shadow BB" has persisted a snapshot. Until then
-      // show nothing — never compute a BB on the fly from LP Master records that were just committed.
+    ]).then(([lps, snap, ext]) => {
+      const hasSnapshot = snap != null && Object.keys(snap).length > 0
       if (!hasSnapshot) {
-        setResult(computePortfolioBB([], bbParams))
+        setRawLPs([])
+        setSnapshot({})
+        setOverrideMap({})
         setSummaryExtApi(null)
         setCalcMeta(null)
-        setSelectedLP(null)
+        setSelectedName(null)
         setClsFilter('')
         return
       }
-      const computed = computePortfolioBB(lps as LPRecord[], { ...bbParams })
-      const snapshotData = snapshot ?? {}
-      const patched = Object.keys(snapshotData).length
-        ? { ...computed, summary: { ...computed.summary, ...snapshotData }, breaches: [] }
-        : computed
-      setResult(patched)
+      setRawLPs(lps as LPRecord[])
+      setSnapshot(snap ?? {})
+      setOverrideMap({})
       setCalcMeta({ facility, ts: new Date() })
-      setSelectedLP(null)
+      setSelectedName(null)
       setClsFilter('')
       if (ext) setSummaryExtApi(ext)
     }).catch(e => setLoadError(String(e)))
   }, [facility, facilityId])
 
-  const filtered = useMemo(() => clsFilter ? result.lps.filter(r => r.cls === clsFilter) : result.lps, [result.lps, clsFilter])
+  // Re-run the BB engine whenever rawLPs or overrideMap changes. When no overrides exist,
+  // patch in the server snapshot summary so the persisted figures show correctly.
+  const result = useMemo<BBResult>(() => {
+    if (rawLPs.length === 0) return computePortfolioBB([], bbParams)
+    const merged = rawLPs.map(lp => ({ ...lp, ...(overrideMap[lp.name ?? ''] ?? {}) }))
+    const computed = computePortfolioBB(merged, bbParams)
+    const hasOverrides = Object.keys(overrideMap).length > 0
+    return hasOverrides || Object.keys(snapshot).length === 0
+      ? computed
+      : { ...computed, summary: { ...computed.summary, ...snapshot }, breaches: [] }
+  }, [rawLPs, overrideMap, bbParams, snapshot])
+
+  // The selected LP is always derived from the latest computed result so it reflects edits.
+  const selectedLP = useMemo(
+    () => (selectedName ? (result.lps as ComputedLPRecord[]).find(r => r.name === selectedName) ?? null : null),
+    [result.lps, selectedName],
+  )
+
+  // Persist LP field edits: update overrideMap (triggering recompute) then call the API.
+  const handleSave = async (lpName: string, changes: Partial<LPRecord>) => {
+    // Merge into overrideMap — causes immediate recompute
+    setOverrideMap(prev => ({ ...prev, [lpName]: { ...(prev[lpName] ?? {}), ...changes } }))
+
+    if (facilityId == null) return
+    setSaveStatuses(s => ({ ...s, [lpName]: 'saving' }))
+    try {
+      type ClassificationRow = LpClassificationRequest['rows'][number]
+      const row: ClassificationRow = {
+        name:              lpName,
+        cls:               changes.cls,
+        agentCls:          changes.agentCls,
+        sp:                changes.sp,
+        mdy:               changes.mdy,
+        fitch:             changes.fitch,
+        aum:               changes.aum,
+        nav:               changes.nav,
+        pension:           changes.pension,
+        pensionFunded:     changes.pensionFunded,
+        capCommit:         changes.capCommit,
+        uc:                changes.uc,
+        ubsAdvRatePct:     changes.rate ? parsePct(changes.rate) as number : undefined,
+        agentRatePct:      changes.agentRate ? parsePct(changes.agentRate) as number : undefined,
+        ubsConcLimitPct:   changes.ubsConc ? parsePct(changes.ubsConc) as number : undefined,
+        agentConcLimitPct: changes.agentConc ? parsePct(changes.agentConc) as number : undefined,
+        inc:               changes.inc,
+        ig:                changes.ig,
+        type:              changes.type,
+        parent:            changes.parent,
+        spv:               changes.spv,
+        region:            changes.region,
+        notes:             changes.notes,
+      }
+      await api.lps.saveClassification({ facilityId, rows: [row] })
+      setSaveStatuses(s => ({ ...s, [lpName]: 'saved' }))
+      clearTimeout(saveTimers.current[lpName])
+      saveTimers.current[lpName] = setTimeout(() => {
+        setSaveStatuses(s => { const n = { ...s }; delete n[lpName]; return n })
+      }, 2000)
+    } catch (e) {
+      setSaveStatuses(s => ({ ...s, [lpName]: 'error' }))
+      toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`)
+      throw e
+    }
+  }
+
+  useEffect(() => () => { Object.values(saveTimers.current).forEach(clearTimeout) }, [])
+
+  const filtered = useMemo(() => clsFilter ? (result.lps as ComputedLPRecord[]).filter(r => r.cls === clsFilter) : (result.lps as ComputedLPRecord[]), [result.lps, clsFilter])
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
   const { summary } = result
-  const clsOptions = [...new Set(result.lps.map(r => r.cls))].sort()
+  const clsOptions = [...new Set((result.lps as ComputedLPRecord[]).map(r => r.cls))].sort()
 
   const summaryExt = useMemo((): BBSummaryExt => {
     if (summaryExtApi) return summaryExtApi
-    const lps = result.lps
-    // All monetary fields below are in $millions, matching the API summary-ext contract so the
-    // width-aware formatter (fmtMoneyM) renders both code paths identically.
+    const lps = result.lps as ComputedLPRecord[]
     const totalUncalledM = lps.reduce((s, r) => s + r.ucM, 0)
-
-    // LP Portfolio totals are carried per-LP — sum them rather than leaving the panel blank.
     const totalCapCommitM = lps.reduce((s, r) => s + parseM(r.capCommit), 0)
-    // Called Capital is calculated: Capital Commitments − Uncalled Capital (never negative).
     const totalCalledM    = lps.reduce((s, r) => s + Math.max(0, parseM(r.capCommit) - r.ucM), 0)
-
-    // Borrowing Base header values come from the selected facility's own record (size /
-    // UBS participation). parseAumM handles the $B/$M display strings the facility list carries.
     const facRow     = facilityRows.find(f => f.name === facility)
     const facSizeM   = facRow ? parseAumM(facRow.facilitySize) : 0
     const ubsPartM   = facRow ? parseAumM(facRow.ubsParticipation) : 0
     const ubsPartPct = facSizeM > 0 ? ubsPartM / facSizeM : 0
-
-    // Uncalled-weighted population shares (SHADOW_BB_ANALYSIS Table 1): Σ(matching uncalled) ÷ Σ(uncalled)
     const sumUcM = (pred: (r: ComputedLPRecord) => boolean) => lps.filter(pred).reduce((s, r) => s + r.ucM, 0)
     const instUncalledM   = sumUcM(r => r.type === 'Institutional')
     const hnwUncalledM    = sumUcM(r => r.type === 'HNW')
@@ -348,8 +586,7 @@ export default function ShadowBB() {
     const agentBBM = summary.totalABB
     const ubsBBM   = summary.totalUBB
     return {
-      totalCapCommit: totalCapCommitM,
-      totalCalledCap: totalCalledM,
+      totalCapCommit: totalCapCommitM, totalCalledCap: totalCalledM,
       pctCalled: totalCapCommitM > 0 ? totalCalledM / totalCapCommitM : 0,
       totalAllUncalled: totalUncalledM, totalLPs: lps.length,
       pctInstitutional: totalUncalledM > 0 ? instUncalledM / totalUncalledM : 0,
@@ -411,7 +648,7 @@ export default function ShadowBB() {
                   { k: '% Top 10',                   v: p(summaryExt.pctTop10) },
                   { k: '% Top 20',                   v: p(summaryExt.pctTop20) },
                   { k: 'Investment Grade',            v: `${(summaryExt.igRatio * 100).toFixed(1)}%` },
-                  { k: '% Uncalled from LPs > $25bn AUM',  v: summaryExt.pctUncalledGt25bnAum ? p(summaryExt.pctUncalledGt25bnAum) : '—' },
+                  { k: '% Uncalled from LPs > $25bn AUM', v: summaryExt.pctUncalledGt25bnAum ? p(summaryExt.pctUncalledGt25bnAum) : '—' },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -444,7 +681,7 @@ export default function ShadowBB() {
       <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12, alignItems: 'stretch' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
-            action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
+            action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
             <div className="data-table-wrap">
               <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 940 }}>
                 <colgroup>
@@ -474,20 +711,26 @@ export default function ShadowBB() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((lp, i) => {
-                    const clp = lp as ComputedLPRecord
-                    const included = clp.inc && clp.cls !== 'Excluded'
+                  {(pageItems as ComputedLPRecord[]).map((lp, i) => {
+                    const included = lp.inc && lp.cls !== 'Excluded'
+                    const isSelected = lp.name === selectedName
+                    const st = saveStatuses[lp.name ?? '']
                     return (
-                      <tr key={i} onClick={() => setSelectedLP(clp)} style={{ cursor: 'pointer', background: selectedLP === lp ? 'var(--blue-lt)' : undefined }}>
-                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}</td>
+                      <tr key={i} onClick={() => setSelectedName(lp.name ?? null)} style={{ cursor: 'pointer', background: isSelected ? 'var(--blue-lt)' : undefined }}>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}
+                          {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 4 }}>Saving…</span>}
+                          {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', marginLeft: 4 }}>✓</span>}
+                          {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 4 }}>✕</span>}
+                        </td>
                         <td><Tag>{lp.cls}</Tag></td>
                         <td className="num">{lp.uc}</td>
-                        <td className="num">{clp.uec}</td>
-                        <td className={`num ${clp.concExcessM > 0 ? 'neg' : 'zero'}`}>{clp.concExcessM > 0 ? fmtM(clp.concExcessM) : '—'}</td>
-                        <td className="num">{clp.rate}</td>
-                        <td className={`num ${clp.ubbM === 0 ? 'zero' : ''}`}>{clp.ubb}</td>
-                        <td className={`num ${clp.abbM === 0 ? 'zero' : ''}`}>{lp.abb}</td>
-                        <td className={`num ${clp.deltaM < 0 ? 'neg' : clp.deltaM === 0 ? 'zero' : ''}`}>{clp.delta}</td>
+                        <td className="num">{lp.uec}</td>
+                        <td className={`num ${lp.concExcessM > 0 ? 'neg' : 'zero'}`}>{lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—'}</td>
+                        <td className="num">{lp.rate}</td>
+                        <td className={`num ${lp.ubbM === 0 ? 'zero' : ''}`}>{lp.ubb}</td>
+                        <td className={`num ${lp.abbM === 0 ? 'zero' : ''}`}>{lp.abb}</td>
+                        <td className={`num ${lp.deltaM < 0 ? 'neg' : lp.deltaM === 0 ? 'zero' : ''}`}>{lp.delta}</td>
                         <td style={{ textAlign: 'center' }}><Tag variant={included ? 'active' : 'excl'}>{included ? 'Y' : 'N'}</Tag></td>
                       </tr>
                     )
@@ -506,12 +749,12 @@ export default function ShadowBB() {
         </div>
         <div style={{ width: 300, flexShrink: 0, overflowY: 'auto' }}>
           {selectedLP ? (
-            <LPDetailPanel lp={selectedLP} onClose={() => setSelectedLP(null)} />
+            <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
           ) : (
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, color: 'var(--muted)', textAlign: 'center', minHeight: 200 }}>
               <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>LP Detail</div>
-              <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to see the full LP record across all {SECTION_KEYS.length - 1} field groups.</div>
+              <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to view and edit the full LP record. Changes are applied immediately and saved to LP Master.</div>
             </div>
           )}
         </div>

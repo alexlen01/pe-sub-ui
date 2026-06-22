@@ -501,8 +501,8 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
       name:          clean(facility.name),
       agentBank:     clean(facility.agentBank),
       accountNumber: clean(facility.accountNumber),
-      loanAmount:    clean(facility.loanAmount) || clean(facility.ubsParticipation),
-      maturityDate:  clean(facility.maturityDate),
+      loanAmount:   clean(facility.loanAmount),
+      maturityDate: clean(facility.maturityDate),
     })
     setConfirmDelete(false)
   }, [facility?.id])
@@ -586,6 +586,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
         </div>
         {ro('Facility Status', <Tag>{facility.status}</Tag>)}
         {ro('Facility Status Date', facility.facilityStatusDate)}
+
       </div>
     </Modal>
   )

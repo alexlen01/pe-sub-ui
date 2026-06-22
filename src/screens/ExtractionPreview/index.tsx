@@ -474,17 +474,16 @@ export default function ExtractionPreview() {
                 <thead>
                   <tr>
                     <th style={{ ...HDR, width: 240 }}>Investor Name</th>
-                    <th style={{ ...HDR, width: 92 }}>LP Classification</th>
+                    <th style={{ ...HDR, width: 142 }}>LP Classification</th>
                     <th style={{ ...HDR, width: 100, textAlign: 'right' }}>Commitment (USD)</th>
-                    <th style={{ ...HDR, width: 104, textAlign: 'right' }}>Uncalled Capital (USD)</th>
+                    <th style={{ ...HDR, width: 120, textAlign: 'right' }}>Uncalled Capital (USD)</th>
                     <th style={{ ...HDR, width: 72, textAlign: 'right' }}>% Called</th>
-                    <th style={{ ...HDR, width: 64, textAlign: 'right' }}>AUM</th>
+                    <th style={{ ...HDR, width: 54, textAlign: 'right' }}>AUM</th>
                     <th style={{ ...HDR, width: 78, textAlign: 'right' }}>NAV</th>
                     <th style={{ ...HDR, width: 48, textAlign: 'center' }}>S&P</th>
                     <th style={{ ...HDR, width: 60, textAlign: 'center' }}>Moody's</th>
-                    <th style={{ ...HDR, width: 54, textAlign: 'center' }}>Fitch</th>
-                    <th style={{ ...HDR, width: 80, textAlign: 'center' }}>Advance Rate</th>
-                    <th style={{ ...HDR, width: 96, textAlign: 'center' }}>Concentration Limit</th>
+                    <th style={{ ...HDR, width: 70, textAlign: 'right' }}>Advance Rate</th>
+                    <th style={{ ...HDR, width: 86, textAlign: 'right' }}>Concentration Limit</th>
                     <th style={{ ...HDR, width: 86, textAlign: 'right' }}>Borrowing Base</th>
                     <th style={{ ...HDR, width: 74, textAlign: 'right', paddingRight: 20 }}>% of BB</th>
                   </tr>
@@ -501,9 +500,8 @@ export default function ExtractionPreview() {
                       <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.fitch ? 'var(--navy)' : 'var(--muted)' }}>{r.fitch || '—'}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
-                      <td style={{ textAlign: 'center', fontSize: 11 }}>{r.agentConc}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11 }}>{r.agentConc}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, paddingRight: 20, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
                     </tr>

@@ -13,6 +13,7 @@ import { api } from '../../services/api'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
+import { UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
@@ -35,13 +36,23 @@ const FACILITY_COLS = [
   { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 115 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
 ]
 
-const CLS_SEGMENTS = [
-  { cls: 'Rated',          label: 'Rated (90%)',           color: '#4F4F4F' },
-  { cls: 'Unrated >2bn',   label: 'Unrated >$2bn (75%)',   color: '#E60000' },
-  { cls: 'Unrated 1–2bn', label: 'Unrated $1–2bn (65%)', color: '#767676' },
-  { cls: 'Eligible',       label: 'Eligible <$1bn (50%)',  color: '#007A38' },
-  { cls: 'Excluded',       label: 'Excluded (0%)',         color: '#C8C8C8' },
-]
+// Colors for each UBS LP Classification tier (aligned to Shadow_BB.xlsx classification column)
+const UBS_CLS_COLORS: Record<string, string> = {
+  'Rated Investor':             '#4F4F4F',
+  'FoF & Other > $10Bn AUM':   '#E60000',
+  'Unrated NAV > $1Bn':         '#767676',
+  'Corp Pension > $5Bn Assets': '#005BBB',
+  'Other Institutional':        '#007A38',
+  'Excluded':                   '#C8C8C8',
+}
+
+const CLS_SEGMENTS = UBS_CLS_OPTS
+  .filter((cls): cls is Exclude<typeof UBS_CLS_OPTS[number], ''> => cls !== '')
+  .map(cls => ({
+    cls,
+    label: `${cls} (${UBS_CLS_DEFAULT_RATE[cls] ?? ''})`,
+    color: UBS_CLS_COLORS[cls] ?? '#999999',
+  }))
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, screen } = useApp()
