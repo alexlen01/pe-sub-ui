@@ -154,8 +154,8 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     groupHeaders: [],
     columns: [
       'Investor Name (Agent Records)', 'LP Classification', 'Commitment (USD)',
-      'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Advance Rate',
-      'Concentration Limit', '% Called', '% of Borrowing Base',
+      'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Fitch', 'Advance Rate',
+      'Borrowing Base Contribution', 'Concentration Limit', '% Called', '% of Borrowing Base',
     ],
     detectKeys: ['blue owl gp stakes', 'goldman sachs', 'gp stakes v'],
     legend: null,
