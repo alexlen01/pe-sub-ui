@@ -5,10 +5,10 @@ import {
 import { TEMPLATE_PROFILES, ALL_GROUP_HEADERS } from '../data/templateProfiles'
 
 describe('template registry', () => {
-  it('holds the sampled Agent BB formats plus the Goldman Sachs pilot template', () => {
-    expect(TEMPLATE_PROFILES).toHaveLength(6)
+  it('holds the sampled Agent BB formats plus both Blue Owl templates (WF current, GS legacy)', () => {
+    expect(TEMPLATE_PROFILES).toHaveLength(7)
     expect(getTemplateProfiles().map(p => p.id)).toEqual([
-      'kkr-ascendant', 'audax-vii', 'ccp-vii-lev', 'aep-vii', 'cp-vii', 'gs-blue-owl',
+      'kkr-ascendant', 'audax-vii', 'ccp-vii-lev', 'aep-vii', 'cp-vii', 'wf-blue-owl', 'gs-blue-owl',
     ])
   })
 
@@ -33,7 +33,18 @@ describe('template registry', () => {
     expect(cp.groupHeaders).toHaveLength(0)
   })
 
-  it('captures the Goldman Sachs / Blue Owl pilot as a flat list (no LP-category sections)', () => {
+  it('captures the Wells Fargo Blue Owl format: 4 LP-category sections, 18 columns, row 18 header', () => {
+    const wf = getTemplateProfile('wf-blue-owl')!
+    expect(wf.fund).toBe('Blue Owl GP Stakes V')
+    expect(wf.headerRow).toBe(18)
+    expect(wf.groupHeaders).toHaveLength(4)
+    expect(wf.groupHeaders[0]).toBe('A. Rated Investors')
+    expect(wf.columns).toHaveLength(18)
+    expect(wf.columns[0]).toBe('Investor')
+    expect(wf.legend).toHaveLength(2)
+  })
+
+  it('captures the legacy Goldman Sachs Blue Owl as a flat list (no LP-category sections)', () => {
     const gs = getTemplateProfile('gs-blue-owl')!
     expect(gs.fund).toBe('Goldman Sachs Bank USA')
     expect(gs.headerRow).toBe(7)
@@ -55,9 +66,12 @@ describe('detectTemplate', () => {
   it('matches by facility text', () => {
     expect(detectTemplate({ facility: 'Carlyle CP VII Facility' }).id).toBe('cp-vii')
   })
-  it('recognises the Blue Owl GP Stakes V pilot as the Goldman Sachs format', () => {
-    expect(detectTemplate({ facility: 'Blue Owl GP Stakes V' }).id).toBe('gs-blue-owl')
-    expect(detectTemplate({ fileName: 'Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx' }).id).toBe('gs-blue-owl')
+  it('recognises Blue Owl GP Stakes V as the Wells Fargo format (current agent)', () => {
+    expect(detectTemplate({ facility: 'Blue Owl GP Stakes V' }).id).toBe('wf-blue-owl')
+    expect(detectTemplate({ fileName: 'Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx' }).id).toBe('wf-blue-owl')
+  })
+  it('recognises the legacy Goldman Sachs Blue Owl format when agent bank is in the metadata', () => {
+    expect(detectTemplate({ fund: 'Goldman Sachs Blue Owl GP Stakes V' }).id).toBe('gs-blue-owl')
   })
   it('falls back to the first profile when nothing matches', () => {
     expect(detectTemplate({ fileName: 'unknown.xlsx' }).id).toBe('kkr-ascendant')
@@ -79,7 +93,14 @@ describe('buildDocRecognition', () => {
     expect(byLabel['Legend']).toMatch(/4 cell-format rules/)
   })
 
-  it('renders the Goldman Sachs / Blue Owl pilot as a flat list', () => {
+  it('renders the Wells Fargo Blue Owl as 4 LP-category sections', () => {
+    const rows = buildDocRecognition(getTemplateProfile('wf-blue-owl')!)
+    const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
+    expect(byLabel['LP grouping']).toMatch(/4 LP-category sections/)
+    expect(byLabel['Legend']).toMatch(/2 cell-format rules/)
+  })
+
+  it('renders the legacy Goldman Sachs / Blue Owl pilot as a flat list', () => {
     const rows = buildDocRecognition(getTemplateProfile('gs-blue-owl')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
     expect(byLabel['LP grouping']).toMatch(/Flat list/i)

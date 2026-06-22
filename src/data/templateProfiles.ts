@@ -145,6 +145,38 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     ],
   },
   {
+    id: 'wf-blue-owl',
+    fund: 'Blue Owl GP Stakes V',
+    workbook: { tabs: 'multiple', tabLabel: 'Agent BB' },
+    title: { row: 2, text: 'Blue Owl GP Stakes V – Subscription Facility Borrowing Base' },
+    summaryRows: '3-17',
+    headerRow: 18,
+    groupHeaders: [
+      'A. Rated Investors',
+      'B. Unrated Investors',
+      'C. Eligible Investors',
+      'D. Excluded Investors',
+    ],
+    columns: [
+      'Investor', 'Parent / Sponsor / Manager', 'S&P', "Moody's", 'Net Assets (range)',
+      'Individual Original Commitment', 'Original Commitment',
+      'Individual Unfunded Commitment', 'Unfunded Capital Commitment',
+      '% Called', '% Total Unfunded Commitment', '% Eligible Unfunded Commitment',
+      'Concentration Limit', 'Excess Concentration', 'Eligible Commitment',
+      'Advance Rate', 'Borrowing Base Contribution', '% of Borrowing Base',
+    ],
+    detectKeys: ['blue owl gp stakes', 'gp stakes v'],
+    legend: [
+      { style: 'Rose Background',            meaning: 'LP reclassified since last certificate' },
+      { style: 'Light Turquoise Background', meaning: 'LP added via LP Transfer' },
+    ],
+    notes: [
+      'Wells Fargo is current administrative agent for Blue Owl GP Stakes V (replaced Goldman Sachs).',
+      'Multiple "Agent BB" tabs — one per tranche (A, B). Rows 3–17 are fund-level summary tables; header at row 18.',
+      '4 LP-category sections ("A. Rated Investors" … "D. Excluded Investors"), each followed by a subtotal.',
+    ],
+  },
+  {
     id: 'gs-blue-owl',
     fund: 'Goldman Sachs Bank USA',
     workbook: { tabs: 'single', tabLabel: 'Borrowing Base' },
@@ -157,10 +189,10 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
       'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Fitch', 'Advance Rate',
       'Borrowing Base Contribution', 'Concentration Limit', '% Called', '% of Borrowing Base',
     ],
-    detectKeys: ['blue owl gp stakes', 'goldman sachs', 'gp stakes v'],
+    detectKeys: ['goldman sachs'],
     legend: null,
     notes: [
-      'Pilot facility format (Blue Owl GP Stakes V, ~900 LPs). Flat LP list — no LP-category banner rows or per-section subtotals; a single "Total — 900 LPs" grand-total row closes the table.',
+      'Legacy format — Goldman Sachs was prior administrative agent for Blue Owl GP Stakes V. Flat LP list, ~900 LPs; single "Total – N LPs" grand-total row; no LP-category sections.',
     ],
   },
 ]
