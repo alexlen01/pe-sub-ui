@@ -184,9 +184,18 @@ export default function Dashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Card
             title="LP Classification"
-            subtitle={`${selectedFacility?.name ?? '—'} · ${donut ? donut.total.toLocaleString() : '—'} LPs`}
+            subtitle={
+              !selectedFacility
+                ? 'Select a facility to view LP breakdown'
+                : donut
+                  ? `${selectedFacility.name} · ${donut.total.toLocaleString()} LPs`
+                  : `${selectedFacility.name} · No LP data`
+            }
           >
-            {donut && <DonutChart segments={donut.segments} total={donut.total} />}
+            {donut
+              ? <DonutChart segments={donut.segments} total={donut.total} />
+              : <div style={{ minHeight: 168, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>Select a facility to view LP breakdown</div>
+            }
           </Card>
 
           <Card
@@ -234,14 +243,16 @@ export default function Dashboard() {
 
               return (
                 <>
-                  {(f?.status === 'Not Started' || f?.status === 'In Progress') ? (
-                    <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
+                  {(!f || f.status === 'Not Started' || f.status === 'In Progress') ? (
+                    <div style={{ minHeight: 160, padding: '20px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
                       <span style={{ fontSize: 22, opacity: .35 }}>&#x25AB;</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>No Shadow BB this cycle</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>{f ? 'No Shadow BB this cycle' : 'No facility selected'}</span>
                       <span>
-                        {f?.status === 'In Progress'
-                          ? 'Submission is being processed — Shadow BB not yet run for this cycle.'
-                          : 'Upload the agent borrowing base to begin this cycle\'s Shadow BB.'}
+                        {!f
+                          ? 'Select a facility from the table to view its Executive Summary.'
+                          : f.status === 'In Progress'
+                            ? 'Submission is being processed — Shadow BB not yet run for this cycle.'
+                            : 'Upload the agent borrowing base to begin this cycle\'s Shadow BB.'}
                       </span>
                     </div>
                   ) : (
