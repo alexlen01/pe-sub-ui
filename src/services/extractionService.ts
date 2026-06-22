@@ -19,10 +19,13 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
     // % Called is derived (Called ÷ Commitment) — always present it, even when the
     // API already supplied the BB columns.
     const c = parseMoney(r.commit as string)
-    const u = parseMoney(r.uncalled as string)
+    const uncalledStr = (r.uncalled as string) || ''
+    const u = parseMoney(uncalledStr)
+    // Only compute % Called when we actually have both commit and uncalled values.
+    // parseMoney('') returns 0, which would make (c-0)/c = 100% — a misleading result.
     const pctCalledFmt = r.pctCalledFmt !== undefined
       ? r.pctCalledFmt
-      : (c ? Math.max(0, (c - u) / c * 100).toFixed(1) + '%' : '')
+      : (c && uncalledStr.trim() ? Math.max(0, (c - u) / c * 100).toFixed(1) + '%' : '')
     if (r.agentBBFmt !== undefined) return { ...r, pctCalledFmt }
     const bb = (r.agentBBRaw as number) || 0
     return {
