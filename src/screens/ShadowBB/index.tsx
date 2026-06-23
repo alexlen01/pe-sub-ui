@@ -153,7 +153,7 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
   }
   pushBreak('BUSA', 'Rate', ext.busaBreakdown)
   pushBreak('Agent', 'Rate', ext.agentBreakdown)
-  pushBreak('LP Classification', 'Classification', ext.clsBreakdown)
+  pushBreak('LP Category', 'Classification', ext.clsBreakdown)
 
   const detailAoa: Cell[][] = [['Investor Name', 'Classification', 'Uncalled', 'UBS Eligible', 'Conc. Excess', 'Rate', 'UBS BB', 'Agent BB', 'Delta', 'Included']]
   for (const lp of rows) {
@@ -256,10 +256,11 @@ const YesNo = ({ val }: { val: boolean }) => (
 
 const SECTION_KEYS = ['Identity & Classification','Ratings','Financial Scale','Borrowing Base Inputs','Commitment Data','Uncalled / Eligible Capital','Concentration & BB','Notes']
 
-function LPDetailPanel({ lp, onClose, onSave }: {
+function LPDetailPanel({ lp, onClose, onSave, overlay }: {
   lp: ComputedLPRecord
   onClose: () => void
   onSave?: (lpName: string, changes: Partial<LPRecord>) => Promise<void>
+  overlay?: boolean
 }) {
   const [draft, setDraft] = useState<SBBDraft>(() => buildDraft(lp))
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -324,7 +325,10 @@ function LPDetailPanel({ lp, onClose, onSave }: {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--card)' }}>
+    <div
+      className={overlay ? 'lp-detail-overlay' : undefined}
+      style={overlay ? undefined : { display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--card)' }}
+    >
       <div style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{lp.name}</div>
@@ -349,11 +353,11 @@ function LPDetailPanel({ lp, onClose, onSave }: {
         {secHd('Identity & Classification')}
         <div style={{ padding: '4px 0 8px' }}>
           {roVal('Investor Name', lp.name ?? '—')}
-          {selF('UBS LP Classification', 'cls', UBS_CLS_OPTS)}
-          {roVal('Agent LP Classification', lp.agentCls ?? '—')}
+          {selF('UBS LP Category', 'cls', UBS_CLS_OPTS)}
+          {roVal('Agent LP Category', lp.agentCls ?? '—')}
           {txtF('Parent', 'parent')}
           {chkF('SPV?', 'spv')}
-          {selF('Institutional vs HNW', 'type', TYPE_OPTS)}
+          {selF('Investor Type', 'type', TYPE_OPTS)}
           {selF('Region / Location', 'region', ['', ...REGION_OPTS])}
           {chkF('Investment Grade?', 'ig')}
           {roVal('High Quality', <YesNo val={lp.hq ?? false} />)}
@@ -439,6 +443,16 @@ export default function ShadowBB() {
   // Per-LP save status for the "Saving… / ✓ Saved" indicator
   const [saveStatuses, setSaveStatuses] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const [containerWidth, setContainerWidth] = useState(window.innerWidth)
+  useEffect(() => {
+    const el = document.querySelector('.content')
+    if (!el) return
+    const ro = new ResizeObserver(entries => setContainerWidth(entries[0].contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const compact = containerWidth < 1500
 
   useEffect(() => {
     setLoadError(null)
@@ -638,10 +652,10 @@ export default function ShadowBB() {
             <div style={{ display: 'flex', gap: 12, padding: '12px 18px 16px', overflowX: 'auto', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="LP Portfolio" rows={[
-                  { k: 'Total Capital Commitments', v: fmtMoneyM(summaryExt.totalCapCommit), bold: true },
-                  { k: 'Total Called Capital',       v: fmtMoneyM(summaryExt.totalCalledCap) },
+                  { k: 'Total Capital Commitments', v: fmtMoneyM(summaryExt.totalCapCommit, !compact), bold: true },
+                  { k: 'Total Called Capital',       v: fmtMoneyM(summaryExt.totalCalledCap, !compact) },
                   { k: '% of Called Capital',        v: summaryExt.pctCalled ? p(summaryExt.pctCalled) : '—' },
-                  { k: 'Total Uncalled Capital',     v: fmtMoneyM(summaryExt.totalAllUncalled), bold: true },
+                  { k: 'Total Uncalled Capital',     v: fmtMoneyM(summaryExt.totalAllUncalled, !compact), bold: true },
                   { k: '# of Limited Partners',      v: summaryExt.totalLPs.toLocaleString(), bold: true },
                   { k: '% Institutional',            v: p(summaryExt.pctInstitutional) },
                   { k: '% HNW',                      v: p(summaryExt.pctHNW) },
@@ -653,108 +667,115 @@ export default function ShadowBB() {
               </div>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="Borrowing Base" rows={[
-                  { k: 'Total Facility Size',    v: fmtMoneyM(summaryExt.facilitySize),       bold: true },
-                  { k: 'UBS Participation',      v: fmtMoneyM(summaryExt.ubsParticipation),  bold: true },
+                  { k: 'Total Facility Size',    v: fmtMoneyM(summaryExt.facilitySize, !compact),       bold: true },
+                  { k: 'UBS Participation',      v: fmtMoneyM(summaryExt.ubsParticipation, !compact),  bold: true },
                   { k: 'UBS Participation Rate', v: summaryExt.ubsParticipationPct ? p(summaryExt.ubsParticipationPct) : '—' },
                   { k: 'Facility LTV',           v: summaryExt.facilityLTV ? p(summaryExt.facilityLTV) : '—' },
-                  { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit),   bold: true },
+                  { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit, !compact),   bold: true },
                   { k: 'Facility Adv. Rate',     v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
-                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw),         bold: true, hl: true },
-                  { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw),           bold: true },
+                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, !compact),         bold: true, hl: true },
+                  { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw, !compact),           bold: true },
                   { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate) },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} full={false}/>
+                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} full={!compact}/>
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={false}/>
+                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={!compact}/>
               </div>
               <div style={{ flex: '1 1 0', minWidth: 165, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="LP Classification" rows={summaryExt.clsBreakdown} full={false} labelHeader="Classification" />
+                <SummaryBreakTable title="LP Category" rows={summaryExt.clsBreakdown} full={!compact} labelHeader="Classification" />
               </div>
             </div>
           )}
         </Card>
       </div>
 
-      <div style={{ padding: '0 24px 24px', display: 'flex', gap: 12, alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
-            action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
-            <div className="data-table-wrap">
-              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 940 }}>
-                <colgroup>
-                  <col style={{ width: 220 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 85 }} />
-                  <col style={{ width: 85 }} />
-                  <col style={{ width: 85 }} />
-                  <col style={{ width: 60 }} />
-                  <col style={{ width: 80 }} />
-                  <col style={{ width: 80 }} />
-                  <col style={{ width: 80 }} />
-                  <col style={{ width: 55 }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Investor Name</th>
-                    <th>Classification</th>
-                    <th className="num">Uncalled</th>
-                    <th className="num">UBS Eligible</th>
-                    <th className="num">Conc. Excess</th>
-                    <th className="num">Rate</th>
-                    <th className="num">UBS BB</th>
-                    <th className="num">Agent BB</th>
-                    <th className="num">Delta</th>
-                    <th style={{ textAlign: 'center' }}>Incl.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(pageItems as ComputedLPRecord[]).map((lp, i) => {
-                    const included = lp.inc && lp.cls !== 'Excluded'
-                    const isSelected = lp.name === selectedName
-                    const st = saveStatuses[lp.name ?? '']
-                    return (
-                      <tr key={i} onClick={() => setSelectedName(lp.name ?? null)} style={{ cursor: 'pointer', background: isSelected ? 'var(--blue-lt)' : undefined }}>
-                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          <strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}
-                          {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 4 }}>Saving…</span>}
-                          {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', marginLeft: 4 }}>✓</span>}
-                          {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 4 }}>✕</span>}
-                        </td>
-                        <td><Tag>{lp.cls}</Tag></td>
-                        <td className="num">{lp.uc}</td>
-                        <td className="num">{lp.uec}</td>
-                        <td className={`num ${lp.concExcessM > 0 ? 'neg' : 'zero'}`}>{lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—'}</td>
-                        <td className="num">{lp.rate}</td>
-                        <td className={`num ${lp.ubbM === 0 ? 'zero' : ''}`}>{lp.ubb}</td>
-                        <td className={`num ${lp.abbM === 0 ? 'zero' : ''}`}>{lp.abb}</td>
-                        <td className={`num ${lp.deltaM < 0 ? 'neg' : lp.deltaM === 0 ? 'zero' : ''}`}>{lp.delta}</td>
-                        <td style={{ textAlign: 'center' }}><Tag variant={included ? 'active' : 'excl'}>{included ? 'Y' : 'N'}</Tag></td>
+      <div style={{ padding: '0 24px 24px' }}>
+        <div style={compact ? undefined : { display: 'flex', gap: 12, alignItems: 'stretch' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
+              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
+              <div style={{ position: 'relative' }}>
+                <div className="data-table-wrap">
+                  <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: compact ? 760 : 1060 }}>
+                    <colgroup>
+                      <col style={{ width: 220 }} />
+                      <col style={{ width: compact ? 110 : 130 }} />
+                      <col style={{ width: compact ? 78 : 110 }} />
+                      <col style={{ width: compact ? 78 : 110 }} />
+                      <col style={{ width: compact ? 78 : 110 }} />
+                      <col style={{ width: 60 }} />
+                      <col style={{ width: compact ? 70 : 100 }} />
+                      <col style={{ width: compact ? 70 : 100 }} />
+                      <col style={{ width: compact ? 70 : 100 }} />
+                      <col style={{ width: 55 }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>Investor Name</th>
+                        <th>Classification</th>
+                        <th className="num">Uncalled</th>
+                        <th className="num">UBS Eligible</th>
+                        <th className="num">Conc. Excess</th>
+                        <th className="num">Rate</th>
+                        <th className="num">UBS BB</th>
+                        <th className="num">Agent BB</th>
+                        <th className="num">Delta</th>
+                        <th style={{ textAlign: 'center' }}>Incl.</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="tbl-footer">
-              <span>Showing {from}–{to} of {filtered.length} LPs &nbsp;·&nbsp; {fmtM(summary.totalUBB)} UBS BB &nbsp;·&nbsp; {fmtM(summary.bbDelta)} delta</span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
-                {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                    </thead>
+                    <tbody>
+                      {(pageItems as ComputedLPRecord[]).map((lp, i) => {
+                        const included = lp.inc && lp.cls !== 'Excluded'
+                        const isSelected = lp.name === selectedName
+                        const st = saveStatuses[lp.name ?? '']
+                        return (
+                          <tr key={i} onClick={() => setSelectedName(lp.name ?? null)} style={{ cursor: 'pointer', background: isSelected ? 'var(--blue-lt)' : undefined }}>
+                            <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}
+                              {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 4 }}>Saving…</span>}
+                              {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', marginLeft: 4 }}>✓</span>}
+                              {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 4 }}>✕</span>}
+                            </td>
+                            <td><Tag>{lp.cls}</Tag></td>
+                            <td className="num">{compact ? lp.uc : fmtMoneyM(lp.ucM, true)}</td>
+                            <td className="num">{compact ? lp.uec : fmtMoneyM(lp.uecM, true)}</td>
+                            <td className={`num ${lp.concExcessM > 0 ? 'neg' : 'zero'}`}>{lp.concExcessM > 0 ? (compact ? fmtM(lp.concExcessM) : fmtMoneyM(lp.concExcessM, true)) : '—'}</td>
+                            <td className="num">{lp.rate}</td>
+                            <td className={`num ${lp.ubbM === 0 ? 'zero' : ''}`}>{compact ? lp.ubb : fmtMoneyM(lp.ubbM, true)}</td>
+                            <td className={`num ${lp.abbM === 0 ? 'zero' : ''}`}>{compact ? lp.abb : fmtMoneyM(lp.abbM, true)}</td>
+                            <td className={`num ${lp.deltaM < 0 ? 'neg' : lp.deltaM === 0 ? 'zero' : ''}`}>{compact ? lp.delta : fmtMoneyM(lp.deltaM, true)}</td>
+                            <td style={{ textAlign: 'center' }}><Tag variant={included ? 'active' : 'excl'}>{included ? 'Y' : 'N'}</Tag></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="tbl-footer">
+                  <span>Showing {from}–{to} of {filtered.length} LPs &nbsp;·&nbsp; {compact ? fmtM(summary.totalUBB) : fmtMoneyM(summary.totalUBB, true)} UBS BB &nbsp;·&nbsp; {compact ? fmtM(summary.bbDelta) : fmtMoneyM(summary.bbDelta, true)} delta</span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+                    {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                  </div>
+                </div>
+                {compact && selectedLP && <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} overlay />}
               </div>
-            </div>
-          </Card>
-        </div>
-        <div style={{ width: 300, flexShrink: 0, overflowY: 'auto' }}>
-          {selectedLP ? (
-            <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
-          ) : (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, color: 'var(--muted)', textAlign: 'center', minHeight: 200 }}>
-              <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>LP Detail</div>
-              <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to view and edit the full LP record. Changes are applied immediately and saved to LP Master.</div>
+            </Card>
+          </div>
+          {!compact && (
+            <div style={{ width: 380, flexShrink: 0, overflowY: 'auto' }}>
+              {selectedLP ? (
+                <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
+              ) : (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, color: 'var(--muted)', textAlign: 'center', minHeight: 200 }}>
+                  <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>LP Detail</div>
+                  <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to view and edit the full LP record. Changes are applied immediately and saved to LP Master.</div>
+                </div>
+              )}
             </div>
           )}
         </div>

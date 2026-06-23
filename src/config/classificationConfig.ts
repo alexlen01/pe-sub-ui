@@ -2,15 +2,15 @@
 // Single source of truth used by LPMaster, Configuration, Reports, and matching screens.
 //
 // Two distinct classification axes:
-//   • UBS LP Classification  (CLS_OPTS)        — UBS's internal advance-rate tier,
+//   • UBS LP Category  (CLS_OPTS)        — UBS's internal advance-rate tier,
 //     computed by the platform from ratings / AUM / eligibility.
-//   • Agent LP Classification (AGENT_CLS_OPTS) — the agent's own category label, taken
+//   • Agent LP Category (AGENT_CLS_OPTS) — the agent's own category label, taken
 //     verbatim from the Agent BB document (column or group-header section rows).
 
 export const CLS_OPTS = ['', 'Rated', 'Unrated >2bn', 'Unrated 1–2bn', 'Eligible', 'Excluded'] as const
 export type ClsOpt = typeof CLS_OPTS[number]
 
-// Agent LP Classification — standard agent taxonomy values. Extracted as-is; never
+// Agent LP Category — standard agent taxonomy values. Extracted as-is; never
 // normalised to the UBS tier. Agent BB templates may present these as a column or as
 // group-header rows separating sections of LPs. Values aligned to Shadow_BB.xlsx.
 export const AGENT_CLS_OPTS = [
@@ -24,7 +24,7 @@ export const AGENT_CLS_OPTS = [
 export type AgentClsOpt = typeof AGENT_CLS_OPTS[number]
 
 // ── Shadow BB (Agent BB upload, Step 5) taxonomies — aligned to Shadow_BB.xlsx ──
-// UBS LP Classification — the credit officer's eligibility bucket on the Shadow BB.
+// UBS LP Category — the credit officer's eligibility bucket on the Shadow BB.
 // Distinct from the legacy CLS_OPTS tiers; the UBS advance rate is captured as its own
 // manual-input column (UBS_CLS_DEFAULT_RATE only seeds a suggestion, never derives).
 export const UBS_CLS_OPTS = [
@@ -50,10 +50,10 @@ export const UBS_CLS_DEFAULT_RATE: Record<string, string> = {
   'Excluded':                   '0%',
 }
 
-// Agent Advance Rate → UBS LP Classification ladder (PE_SUB_SOLUTION rule).
+// Agent Advance Rate → UBS LP Category ladder (PE_SUB_SOLUTION rule).
 // The advance rate reflects each LP's credit quality — how confident the lender is that the LP
 // will honour its commitment if called. Higher quality, higher rate. The agent's own advance
-// rate therefore seeds a sensible default UBS LP Classification, from which the UBS Advance Rate
+// rate therefore seeds a sensible default UBS LP Category, from which the UBS Advance Rate
 // follows via UBS_CLS_DEFAULT_RATE. Both stay editable on the Shadow BB.
 //   Agent 95% → Rated Investor            (UBS 90%)
 //   Agent 75% → FoF & Other > $10Bn AUM   (UBS 75%)
@@ -69,7 +69,7 @@ const AGENT_RATE_UBS_TIERS: ReadonlyArray<{ min: number; cls: UbsClsOpt }> = [
   { min: 50, cls: 'Other Institutional' },
 ]
 
-// Resolve the suggested UBS LP Classification for an Agent Advance Rate (whole-number %).
+// Resolve the suggested UBS LP Category for an Agent Advance Rate (whole-number %).
 // A rate of 0 maps to Excluded; a missing/blank rate returns '' so the row stays unclassified
 // for the credit officer to assign manually.
 export function ubsClassFromAgentRate(agentRatePct: number | '' | undefined): UbsClsOpt {

@@ -3,7 +3,7 @@ import { advanceRateFraction, BUSA_RATES } from '../services/bbCalculationServic
 
 // The BB engine must honour an explicit per-LP advance rate (the UBS Advance Rate assigned on the
 // Run Shadow BB screen) rather than re-deriving it from the classification schedule. Once Step 5
-// seeds the UBS LP Classification taxonomy ('Rated Investor', …), the legacy BUSA_RATES schedule
+// seeds the UBS LP Category taxonomy ('Rated Investor', …), the legacy BUSA_RATES schedule
 // no longer has a matching key, so without this precedence the UBS BB would zero out.
 
 describe('advanceRateFraction', () => {

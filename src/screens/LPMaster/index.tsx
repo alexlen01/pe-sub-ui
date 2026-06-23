@@ -52,7 +52,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
   onSave: (lp: LPRecord) => void
   canEdit: boolean
 }) {
-  const [editMode, setEditMode] = useState(false)
   const [subview,  setSubview]  = useState<null | 'history' | 'reclassify'>(null)
   const [newCls,    setNewCls]    = useState('')
   const [rationale, setRationale] = useState('')
@@ -75,7 +74,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
 
   useEffect(() => {
     if (!lp) return
-    setEditMode(false)
     setSubview(null)
     setPos({ x: 0, y: 0 })
     setForm({
@@ -120,7 +118,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       ubb: c.ubb,
       uec: c.uec,
     } as LPRecord)
-    setEditMode(false)
   }
 
   const handleReclassify = () => {
@@ -151,18 +148,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     const caption = formula
       ? <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 8px 0' }}>{String(formula)}</div>
       : null
-
-    if (!editMode) {
-      return (
-        <div style={colSt} key={label || editKey || ''}>
-          {fieldLabel(label, !!ro)}
-          <div style={{ fontSize: 13, fontWeight: neg || posStyle ? 600 : 400, color: neg ? 'var(--red)' : posStyle ? 'var(--green)' : zero ? 'var(--muted)' : 'var(--navy)', minHeight: 28, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
-            {String(viewVal || '—')}
-          </div>
-          {caption}
-        </div>
-      )
-    }
 
     const roSt: React.CSSProperties = ro ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
     return (
@@ -219,14 +204,14 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {f('Region / Location', lp.region, 'region', { opts: REGION_OPTS })}
 
       {sec('Classification & Eligibility')}
-      {f('UBS LP Classification', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
-      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls')}
-      {Boolean(editMode ? form.cls : lp.cls) && (
+      {f('UBS LP Category', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
+      {f('Agent LP Category', lp.agentCls || '—', 'agentCls')}
+      {Boolean(form.cls) && (
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
-          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[(editMode ? form.cls : lp.cls) as string]}
+          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
         </div>
       )}
-      {f('Institutional vs HNW', lp.type, 'type', { opts: TYPE_OPTS })}
+      {f('Investor Type', lp.type, 'type', { opts: TYPE_OPTS })}
       {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
       {calc('HQ', highQuality ? 'Yes' : 'No', { formula: 'Mirrors the High Quality flag (UBS rate = 0.90)' })}
 
@@ -242,7 +227,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {f('Pension Funded %', lp.pensionFunded, 'pensionFunded')}
 
       {sec('Advance Rates')}
-      {calc('UBS Advance Rate', ubsRateStr, { formula: 'Derived from UBS LP Classification' })}
+      {calc('UBS Advance Rate', ubsRateStr, { formula: 'Derived from UBS LP Category' })}
       {calc('Agent Advance Rate', lp.agentRate || '—', { formula: 'Mirrored from Agent BB advance rate' })}
 
       {sec('Commitments & Capital')}
@@ -265,13 +250,10 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {calc('Included UnCalled Conc. Excess', concExcessStr, { formula: 'Excess uncalled above concentration limit (included LPs only)' })}
 
       {sec('Notes')}
-      {editMode
-        ? <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
-            <label className="form-label">Notes</label>
-            <textarea style={{ width: '100%', height: 72 }} value={form.notes as string ?? ''} onChange={set('notes')} />
-          </div>
-        : <div style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{lp.notes || '—'}</div>
-      }
+      <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
+        <label className="form-label">Notes</label>
+        <textarea style={{ width: '100%', height: 72 }} value={form.notes as string ?? ''} onChange={set('notes')} />
+      </div>
     </div>
     )
   }
@@ -354,7 +336,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
                 <span style={{ fontSize: 11, opacity: .7 }}>{BUSA_RATE_MAP[lp.cls] ?? lp.rate} BUSA · {lp.agentRate || '—'} Agent</span>
                 {lp.rcl && <span className="rcl-badge">Reclassified</span>}
                 {lp.tf  && <span className="tf-badge">Transferee</span>}
-                {!canEdit && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 8, background: 'rgba(255,255,255,.15)', color: 'rgba(255,255,255,.8)', fontWeight: 600 }}>View Only</span>}
               </div>
             </div>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, lineHeight: 1, opacity: .7, padding: 0, marginTop: -2 }}>×</button>
@@ -381,14 +362,6 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
                 <Button disabled={newCls === lp.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
               </div>
             </>
-          ) : editMode ? (
-            <>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Rates are derived from Classification and cannot be edited directly.</span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={() => setEditMode(false)}>Cancel</Button>
-                <Button onClick={handleSave}>Save Changes</Button>
-              </div>
-            </>
           ) : (
             <>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -397,7 +370,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Button variant="secondary" onClick={onClose}>Close</Button>
-                {canEdit && <Button onClick={() => setEditMode(true)}>Edit LP Record</Button>}
+                {canEdit && <Button onClick={handleSave}>Save Changes</Button>}
               </div>
             </>
           )}
@@ -790,7 +763,7 @@ export default function LPMaster() {
         <select style={{ width: 160 }} value={clsFilter} onChange={e => { setClsFilter(e.target.value); setPage(1) }}>
           {CLS_OPTS.map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
         </select>
-        <InfoTip title="LP Classification" items={CLS_LEGEND_ITEMS} align="left" width={330} />
+        <InfoTip title="LP Category" items={CLS_LEGEND_ITEMS} align="left" width={330} />
         <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
           <option value="">Included: All</option>
           <option value="Y">Included (Y)</option>
@@ -808,12 +781,9 @@ export default function LPMaster() {
             <tr>
               <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
               <th style={{ width: '20%', maxWidth: 200 }}>Parent</th>
-              <th style={{ width: 48, textAlign: 'center' }}>SPV</th>
-              <th style={{ width: 110 }}>Agent Classification</th>
+              <th style={{ width: 110 }}>Investor Type</th>
               <th style={{ width: 110 }}>UBS Classification</th>
-              <th style={{ width: 44, textAlign: 'center' }}>HQ</th>
               <th style={{ width: 100 }}>Inst/HNW</th>
-              <th style={{ width: 44, textAlign: 'center' }}>Inv. Grade</th>
               <th className="num" style={{ width: 75 }}>AUM</th>
               <th className="num" style={{ width: 100 }}>Uncalled Cap.</th>
               <th className="num" style={{ width: 110 }}>UBS Elig. Uncalled</th>
@@ -832,12 +802,9 @@ export default function LPMaster() {
                   {lp.tf  && <span className="tf-badge">T</span>}
                 </td>
                 <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }} title={lp.parent}>{lp.parent || '—'}</td>
-                <td style={{ textAlign: 'center' }}><YN val={lp.spv} /></td>
                 <td style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.agentCls || ''}>{lp.agentCls || '—'}</td>
                 <td><Tag>{lp.cls}</Tag></td>
-                <td style={{ textAlign: 'center' }}><YN val={lp.hq} /></td>
                 <td style={{ fontSize: 11 }}>{lp.type}</td>
-                <td style={{ textAlign: 'center' }}><YN val={lp.ig} /></td>
                 <td className="num">{lp.aum}</td>
                 <td className="num">{lp.uc}</td>
                 <td className="num">{lp.uec}</td>

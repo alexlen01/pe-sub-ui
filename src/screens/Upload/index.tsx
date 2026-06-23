@@ -34,8 +34,8 @@ const SUB_COLS = [
 // ── Status legend ─────────────────────────────────────────────────────────────
 
 const SUBMISSION_STATUS_ITEMS = [
-  { label: 'Review',     desc: 'Requires credit officer action. Open LP Classification & Shadow BB to continue.' },
-  { label: 'Processed',  desc: 'Shadow BB complete. Open LP Classification & Shadow BB to review or re-run.' },
+  { label: 'Review',     desc: 'Requires credit officer action. Open LP Category & Shadow BB to continue.' },
+  { label: 'Processed',  desc: 'Shadow BB complete. Open LP Category & Shadow BB to review or re-run.' },
   { label: 'Error',      desc: 'Extraction failed — pe-sub-extraction was unreachable. Re-upload to retry.' },
 ]
 

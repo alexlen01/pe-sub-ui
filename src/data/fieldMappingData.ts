@@ -18,8 +18,8 @@ export const ALIAS_GROUPS = [
       ],
     },
     {
-      id: 2, canonical: 'Investor Type',
-      lpMasterField: 'Identity & Classification - Investor Type',
+      id: 2, canonical: 'LP Category',
+      lpMasterField: 'Identity & Classification - LP Category',
       disambiguation: "The Agent's own classification label, taken verbatim from the Agent BB document. May be a column OR group-header rows that separate sections of LPs (e.g. \"Rated Included\", \"Designated PWM\"); section rows are filled down onto every LP beneath the header. Standard values: Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 Designated, Aggregate Designated PWM. Do not normalise to the UBS tier.",
       isDerived: false,
       aliases: [

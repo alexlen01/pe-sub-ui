@@ -5,7 +5,7 @@ export const WIZARD_STEPS = [
   'Upload Document',
   'Review Extraction',
   'Review Matches',
-  'LP Classification & Rate Assignment',
+  'LP Category & Rate Assignment',
 ] as const
 
 export type WizardStep = typeof WIZARD_STEPS[number]

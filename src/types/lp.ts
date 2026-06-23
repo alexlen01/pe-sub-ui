@@ -42,7 +42,7 @@ export interface LP {
   // Agent classification (may differ from UBS cls)
   agentCls?: string
   // ── Shadow BB alignment (Shadow_BB.xlsx, 28-column model) ──
-  // `cls` carries the UBS LP Classification; `agentCls` the Agent LP Classification.
+  // `cls` carries the UBS LP Category; `agentCls` the Agent LP Category.
   // `rate` carries the UBS Advance Rate; `agentRate` the Agent Advance Rate.
   agentExcessConc?: string   // Agent Excess Concentration Base (calculated)
   ubsExcessConc?: string     // UBS Excess Concentration Base (calculated)

@@ -133,6 +133,17 @@ export default function RunShadowBB() {
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [containerWidth, setContainerWidth] = useState(Infinity)
+
+  useEffect(() => {
+    const el = document.querySelector('.content') as HTMLElement | null
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const compact = containerWidth < 1500
 
   const handleAbort = async () => {
     if (activeSubmissionId != null) {
@@ -564,7 +575,7 @@ export default function RunShadowBB() {
         </Card>
 
         {!result && (
-          <Card title="LP Classification & Rate Assignment"
+          <Card title="LP Category & Rate Assignment"
             subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'} · select a row to edit the full LP record`}
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -575,9 +586,13 @@ export default function RunShadowBB() {
               </div>
             }
           >
-            {/* Compact table (left) + LP record card (right, sticky). Clicking a row selects it
-                and opens the card for inline editing — changes persist automatically. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 14, padding: '4px 18px 0', alignItems: 'start' }}>
+            {/* Table (left) + LP record card (right / overlay). Clicking a row opens the card.
+                Wide (>1500): 2-column grid with sticky card on the right; full dollar amounts.
+                Compact (≤1500): single column; card slides in as overlay; amounts in $M. */}
+            <div style={compact
+              ? { position: 'relative', padding: '4px 18px 0' }
+              : { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 14, padding: '4px 18px 0', alignItems: 'start' }
+            }>
 
               <div style={{ minWidth: 0 }}>
                 <div className="data-table-wrap">
@@ -585,12 +600,13 @@ export default function RunShadowBB() {
                     <thead>
                       <tr>
                         <th>Investor Name</th>
-                        <th style={{ width: 148 }}>UBS Classification</th>
+                        <th style={{ width: 96 }}>LP Category</th>
+                        <th style={{ width: 168 }}>UBS Classification</th>
                         <th className="num" style={{ width: 64 }}>UBS Rate</th>
                         <th className="num" style={{ width: 66 }}>Agent Rate</th>
-                        <th className="num" style={{ width: 92 }}>Uncalled</th>
-                        <th className="num" style={{ width: 78 }}>Agent BB</th>
-                        <th className="num" style={{ width: 78 }}>UBS BB</th>
+                        <th className="num" style={{ width: compact ? 92 : 130 }}>Uncalled</th>
+                        <th className="num" style={{ width: compact ? 78 : 116 }}>Agent BB</th>
+                        <th className="num" style={{ width: compact ? 78 : 116 }}>UBS BB</th>
                         <th style={{ width: 52, textAlign: 'center' }}>Incl.</th>
                       </tr>
                     </thead>
@@ -616,12 +632,13 @@ export default function RunShadowBB() {
                                 {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', flexShrink: 0 }}>✕</span>}
                               </div>
                             </td>
+                            <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{ov.type || '—'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
                             <td className="num">{typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : '—'}</td>
                             <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(0)}%` : '—'}</td>
-                            <td className="num">{ov.ucM || '—'}</td>
-                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{fmtM(c.agentBBCalc)}</td>
-                            <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{fmtM(c.ubsBBCalc)}</td>
+                            <td className="num">{compact ? (ov.ucM || '—') : (ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—')}</td>
+                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
+                            <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
                           </tr>
                         )
@@ -638,25 +655,42 @@ export default function RunShadowBB() {
                 </div>
               </div>
 
-              {/* Right-side LP record card — sticky so it stays in view while scrolling the table */}
-              <div style={{ position: 'sticky', top: 4 }}>
-                {selectedLp && selectedKey && overrides[selectedKey]
-                  ? <LPRecordCard
-                      lp={selectedLp}
-                      ov={overrides[selectedKey]}
-                      calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
-                      saveStatus={saveState[selectedKey]}
-                      running={running}
-                      onDeselect={() => setSelectedKey(null)}
-                      onChange={handleFieldChange}
-                    />
-                  : <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12, background: 'var(--tbl)' }}>
-                      <div style={{ fontSize: 22, opacity: 0.35, marginBottom: 8 }}>☰</div>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>LP Record</div>
-                      Select a row to view and edit the full LP record.
-                    </div>
-                }
-              </div>
+              {/* Compact overlay card — slides in over the table on row click */}
+              {compact && selectedLp && selectedKey && overrides[selectedKey] && (
+                <div className="lp-detail-overlay">
+                  <LPRecordCard
+                    lp={selectedLp}
+                    ov={overrides[selectedKey]}
+                    calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
+                    saveStatus={saveState[selectedKey]}
+                    running={running}
+                    onDeselect={() => setSelectedKey(null)}
+                    onChange={handleFieldChange}
+                  />
+                </div>
+              )}
+
+              {/* Wide right-side LP record card — sticky so it stays in view while scrolling */}
+              {!compact && (
+                <div style={{ position: 'sticky', top: 4 }}>
+                  {selectedLp && selectedKey && overrides[selectedKey]
+                    ? <LPRecordCard
+                        lp={selectedLp}
+                        ov={overrides[selectedKey]}
+                        calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
+                        saveStatus={saveState[selectedKey]}
+                        running={running}
+                        onDeselect={() => setSelectedKey(null)}
+                        onChange={handleFieldChange}
+                      />
+                    : <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12, background: 'var(--tbl)' }}>
+                        <div style={{ fontSize: 22, opacity: 0.35, marginBottom: 8 }}>☰</div>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>LP Record</div>
+                        Select a row to view and edit the full LP record.
+                      </div>
+                  }
+                </div>
+              )}
             </div>
           </Card>
         )}
@@ -778,7 +812,7 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
           {txt('Parent / Manager / Sponsor', 'parent', true)}
           {chk('SPV?', 'spv')}
           {sel('Region / Location', 'region', ['', ...REGION_OPTS])}
-          {sel('Institutional vs HNW', 'type', TYPE_OPTS)}
+          {sel('Investor Type', 'type', TYPE_OPTS)}
           {chk('Investment Grade?', 'ig')}
           {ro('High Quality', <YesNo val={calc.highQuality} />)}
 
@@ -787,7 +821,7 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
             <div />
             <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>Agent · from BB</div>
             <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--blue)' }}>UBS · editable</div>
-            {cmpRow('LP Classification', cmpAgent(ov.agentCls || '—'), cmpUbsSel('cls', UBS_CLS_OPTS))}
+            {cmpRow('LP Category', cmpAgent(ov.agentCls || '—'), cmpUbsSel('cls', UBS_CLS_OPTS))}
             {cmpRow('Advance Rate', cmpAgent(pctStr(ov.agentRatePct)), cmpUbsPct('ubsAdvRatePct', 5))}
             {cmpRow('Conc. Limit', cmpAgent(pctStr(ov.agentConcLimitPct)), cmpUbsPct('concLimitPct', 0.5))}
             {cmpRow('Elig. Uncalled', cmpAgent(fmtM(calc.agentEligUncl)), cmpUbsRo(fmtM(calc.ubsEligUncalled)))}

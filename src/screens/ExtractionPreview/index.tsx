@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, startTransition } from 'react'
+import { useState, useEffect, startTransition } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp } from '../../context/AppContext'
 import StepBar from '../../components/ui/StepBar'
@@ -46,7 +46,7 @@ type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: 
 const LP_FIELDS: { key: string; extracted: string; label?: string; canonical?: string }[] = [
   { key: 'name',       extracted: 'Investor Name (Agent Records)'                                    },
   { key: 'parent',     extracted: 'Parent / Sponsor'                                                 },
-  { key: 'agentClass', extracted: 'LP Classification', label: 'Agent LP Classification'                                                },
+  { key: 'agentClass', extracted: 'LP Classification', label: 'Agent LP Category'                                                    },
   { key: 'commit',     extracted: 'Commitment (USD)',       label: 'Original Commitment'             },
   { key: 'uncalled',   extracted: 'Uncalled Capital (USD)', label: 'Unfunded Capital Commitment'     },
   { key: 'pctCalledFmt', extracted: '% Called', label: '% Called (derived)', canonical: 'Uncalled Data - % of LP Called' },
@@ -79,9 +79,6 @@ const CHIP: Record<string, React.CSSProperties> = {
 // rule forces nowrap, so each th overrides it inline via HDR).
 const HDR: React.CSSProperties = { whiteSpace: 'normal', verticalAlign: 'middle', lineHeight: 1.25 }
 
-// Sum of explicit <th> widths (240+92+100+104+72+64+78+48+60+54+80+96+86+74=1248)
-// + 12px gap + 360px detail panel.
-const SIDE_BY_SIDE_MIN = 1620
 
 function LPDetailPanel({
   row, onClose, fieldMap, overlay = false,
@@ -95,17 +92,17 @@ function LPDetailPanel({
     <div
       className={overlay ? 'lp-detail-overlay' : undefined}
       style={overlay ? undefined : {
-        width: 360, flexShrink: 0,
+        flex: 3, minWidth: 0,
         border: '1px solid var(--border)', borderRadius: 'var(--radius)',
         display: 'flex', flexDirection: 'column', background: 'var(--card)',
       }}
     >
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Row #{row.id} — Field Detail</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{row.name}{row.transferee ? <TransfereeMark /> : null}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>Row #{row.id} — Field Detail</div>
+          <div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>{row.name}{row.transferee ? <TransfereeMark /> : null}</div>
         </div>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#fff', lineHeight: 1, padding: 0, opacity: 0.7, flexShrink: 0 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -137,6 +134,25 @@ const CollapseBtn = ({ collapsed, onToggle }: { collapsed: boolean; onToggle: ()
   </button>
 )
 
+// Converts a US-formatted dollar string (e.g. "$1,250,000") to a compact millions
+// label (e.g. "$1.25M") for narrow-viewport display. Non-dollar values are returned
+// unchanged; undefined/empty returns "—".
+function toMillions(val: string | undefined): string {
+  if (!val) return '—'
+  if (!val.startsWith('$')) return val
+  const stripped = val.replace(/[$,]/g, '')
+  let num = parseFloat(stripped.replace(/[BbMmKk]$/, ''))
+  if (isNaN(num)) return val
+  if (/[Bb]$/.test(stripped)) num *= 1e9
+  else if (/[Mm]$/.test(stripped)) num *= 1e6
+  else if (/[Kk]$/.test(stripped)) num *= 1e3
+  const m = num / 1e6
+  if (m >= 1000) return `$${parseFloat((m / 1000).toFixed(2))}B`
+  if (m >= 100)  return `$${Math.round(m)}M`
+  if (m >= 10)   return `$${parseFloat(m.toFixed(1))}M`
+  return `$${parseFloat(m.toFixed(2))}M`
+}
+
 export default function ExtractionPreview() {
   const { navigate, toast, activeSubmission, activeSubmissionId, abortSubmission } = useApp()
   const [extracted,      setExtracted]    = useState<ExtractedRow[]>([])
@@ -152,11 +168,7 @@ export default function ExtractionPreview() {
   const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
   const [containerWidth, setContainerWidth] = useState(Infinity)
   const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
-  const [profileId,      setProfileId]    = useState<string>(
-    () => detectTemplate({ facility: activeSubmission ?? undefined }).id
-  )
-
-  const layoutRef = useRef<HTMLDivElement>(null)
+  const profileId = detectTemplate({ facility: activeSubmission ?? undefined }).id
 
   const loadData = async (sid: number) => {
     try {
@@ -194,7 +206,7 @@ export default function ExtractionPreview() {
   }, [activeSubmissionId])
 
   useEffect(() => {
-    const el = layoutRef.current
+    const el = document.querySelector('.content') as HTMLElement | null
     if (!el) return
     const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
     ro.observe(el)
@@ -205,7 +217,7 @@ export default function ExtractionPreview() {
 
   const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
-  const useOverlay    = containerWidth < SIDE_BY_SIDE_MIN
+  const compact       = containerWidth < 1500
 
   const profile     = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
 
@@ -306,20 +318,7 @@ export default function ExtractionPreview() {
         <Card
           title="Document Recognition"
           subtitle={`Borrowing-base tables identified by the extraction engine · ${profile.fund}`}
-          action={
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Format</label>
-              <select
-                value={profileId}
-                onChange={e => setProfileId(e.target.value)}
-                title="Recognised Agent BB format"
-                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', background: 'var(--card)', color: 'var(--text)' }}
-              >
-                {getTemplateProfiles().map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
-              </select>
-              <CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />
-            </div>
-          }
+          action={<CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />}
         >
           {!docCollapsed && (
           <div style={{ padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -345,28 +344,6 @@ export default function ExtractionPreview() {
                   Flat list — this format does not group LPs into categories.
                 </div>
               )}
-            </div>
-
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                Column headers ({colsMatched}/{displayCols.length} mapped to canonical LP fields)
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {displayCols.map(({ header, mapping }) => (
-                  <span
-                    key={header}
-                    title={mapping ? `→ ${mapping.group} › ${mapping.canonical}` : 'No canonical mapping — routes to “Unmatched — action required”'}
-                    style={{
-                      fontSize: 11, padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace',
-                      border: `1px solid ${mapping ? 'var(--blue)' : 'var(--red)'}`,
-                      background: mapping ? '#e8f0fb' : '#fff5f5',
-                      color: mapping ? 'var(--blue)' : 'var(--red)',
-                    }}
-                  >
-                    {header}{mapping ? '' : ' ⚠'}
-                  </span>
-                ))}
-              </div>
             </div>
 
             {profile.legend && (
@@ -453,19 +430,18 @@ export default function ExtractionPreview() {
 
         {/* LP data table + detail panel — layout switches based on available width */}
         <div
-          ref={layoutRef}
-          style={useOverlay ? undefined : { display: 'flex', gap: 12, alignItems: 'flex-start' }}
+          style={compact ? undefined : { display: 'flex', gap: 12, alignItems: 'flex-start' }}
         >
           <Card
             title={`Extracted LP Data — ${extracted.length} Records`}
             subtitle={
               selectedLP
-                ? useOverlay
+                ? compact
                   ? `Row #${selectedLP.id} selected — click × to close detail`
                   : `Row #${selectedLP.id} selected`
                 : 'Click any row to review extracted fields'
             }
-            style={useOverlay ? undefined : { flex: 1, minWidth: 0 }}
+            style={compact ? undefined : { flex: 7, minWidth: 0 }}
             action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
           >
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
@@ -474,7 +450,7 @@ export default function ExtractionPreview() {
                 <thead>
                   <tr>
                     <th style={{ ...HDR, width: 240 }}>Investor Name</th>
-                    <th style={{ ...HDR, width: 142 }}>LP Classification</th>
+                    <th style={{ ...HDR, width: 142 }}>LP Category</th>
                     <th style={{ ...HDR, width: 100, textAlign: 'right' }}>Commitment (USD)</th>
                     <th style={{ ...HDR, width: 120, textAlign: 'right' }}>Uncalled Capital (USD)</th>
                     <th style={{ ...HDR, width: 72, textAlign: 'right' }}>% Called</th>
@@ -493,23 +469,23 @@ export default function ExtractionPreview() {
                     <tr key={r.id} onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)} style={{ cursor: 'pointer', background: selectedLPId === r.id ? 'var(--blue-lt)' : undefined }}>
                       <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>{r.name}{r.transferee ? <TransfereeMark /> : null}</div></td>
                       <td style={{ fontSize: 11, color: 'var(--muted)' }}>{r.agentClass}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.commit}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{r.uncalled}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{compact ? toMillions(r.commit) : r.commit}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{compact ? toMillions(r.uncalled) : r.uncalled}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, color: !r.pctCalledFmt ? 'var(--muted)' : undefined }}>{r.pctCalledFmt || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{r.aum || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{r.nav || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.aum ? 'var(--muted)' : undefined }}>{compact ? toMillions(r.aum) : (r.aum || '—')}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11, color: !r.nav ? 'var(--muted)' : undefined }}>{compact ? toMillions(r.nav) : (r.nav || '—')}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.sp ? 'var(--navy)' : 'var(--muted)' }}>{r.sp || '—'}</td>
                       <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 11, color: r.moodys ? 'var(--navy)' : 'var(--muted)' }}>{r.moodys || '—'}</td>
                       <td style={{ textAlign: 'right', fontWeight: 600, color: !r.agentRate ? 'var(--muted)' : r.agentRate === '0%' ? 'var(--red)' : 'var(--text)' }}>{r.agentRate || '—'}</td>
-                      <td style={{ textAlign: 'right', fontSize: 11 }}>{r.agentConc}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{r.agentBBFmt || '—'}</td>
+                      <td style={{ textAlign: 'right', fontSize: 11 }}>{compact ? toMillions(r.agentConc) : r.agentConc}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: !r.agentBBFmt ? 'var(--muted)' : undefined }}>{compact ? toMillions(r.agentBBFmt) : (r.agentBBFmt || '—')}</td>
                       <td style={{ textAlign: 'right', fontSize: 11, paddingRight: 20, color: !r.pctBBFmt ? 'var(--muted)' : undefined }}>{r.pctBBFmt || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
-              {useOverlay && selectedLP && (
+              {compact && selectedLP && (
                 <LPDetailPanel
                   row={selectedLP}
                   onClose={() => setSelectedLPId(null)}
@@ -531,11 +507,11 @@ export default function ExtractionPreview() {
             </div>
           </Card>
 
-          {!useOverlay && (
+          {!compact && (
             selectedLP ? (
               <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} fieldMap={fieldMap} />
             ) : (
-              <div style={{ width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
+              <div style={{ flex: 3, minWidth: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
                 <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
                 <div style={{ fontSize: 12, fontWeight: 600 }}>Row Detail</div>
                 <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to see extracted field values and their canonical mappings.</div>

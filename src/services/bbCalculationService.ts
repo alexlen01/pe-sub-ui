@@ -7,7 +7,7 @@ import type { LPRecord } from './lpService'
 // Advance rate by LP classification. Covers BOTH taxonomies the platform persists, mirroring
 // BbCalculationService.BUSA_RATES on the API:
 //   • legacy LP Master tiers ('Rated', 'Unrated >2bn', …)
-//   • UBS LP Classification  ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels the
+//   • UBS LP Category  ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels the
 //     Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
 // A blank/unrecognised classification falls back to 0%. Keeping this in sync with the API map is
 // what lets the LP-Level Shadow BB table resolve a non-zero Rate / UBS BB for UBS-taxonomy LPs
@@ -44,10 +44,10 @@ export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
 // Advance rate (as a fraction) for an LP. An explicit per-LP rate — e.g. the UBS Advance Rate
 // assigned on the Run Shadow BB screen, "90%" — takes precedence; otherwise fall back to the
 // BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LP
-// Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Classification taxonomy
+// Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Category taxonomy
 // ('Rated Investor', …) the Shadow BB now seeds from the Agent Advance Rate.
 // `cls` is typed as string (not the legacy LPClassification union): at runtime it carries either
-// taxonomy — the legacy LP Master tiers or the UBS LP Classification labels seeded at Step 5 —
+// taxonomy — the legacy LP Master tiers or the UBS LP Category labels seeded at Step 5 —
 // and BUSA_RATES is keyed for both. Mirrors the API's advanceRateFraction(Lp).
 export function advanceRateFraction(lp: { rate?: string | null; cls?: string | null }): number {
   const raw = (lp.rate ?? '').trim()

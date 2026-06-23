@@ -103,7 +103,7 @@ export default function Reports() {
               <hr className="sep" />
               <div className="form-group">
                 <label className="form-label">Additional Sections</label>
-                {['LP Classification Summary', 'Coverage Ratio Trend', 'Concentration Limit Analysis', 'Reclassified LP Detail', 'Collateral Quality Breakdown'].map((o, i) => (
+                {['LP Category Summary', 'Coverage Ratio Trend', 'Concentration Limit Analysis', 'Reclassified LP Detail', 'Collateral Quality Breakdown'].map((o, i) => (
                   <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6, cursor: 'pointer' }}>
                     <input type="checkbox" defaultChecked={i < 3} /> {o}
                   </label>

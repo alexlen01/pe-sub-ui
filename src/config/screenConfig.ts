@@ -18,5 +18,5 @@ export const SCREENS: Record<string, ScreenMeta> = {
   'field-mapping':     { title: 'Field Mapping Dictionary',      sub: 'Manage alias groups, qualifier blocklist, and pending suggestions for Agent BB column extraction' },
   'extraction-preview':{ title: 'Review Extraction',             sub: 'Review extracted LP records from the uploaded Agent BB'                                           },
   'match-queue':       { title: 'LP Match Queue',                sub: 'LP name matches requiring credit officer review'                                                  },
-  'run-shadow-bb':     { title: 'LP Classification & Shadow BB', sub: 'Classify LPs, assign rates, and run Shadow BB for the current submission'                        },
+  'run-shadow-bb':     { title: 'LP Category & Shadow BB', sub: 'Assign LP categories, advance rates, and run Shadow BB for the current submission'                   },
 }

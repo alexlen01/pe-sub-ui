@@ -46,7 +46,7 @@ describe('template registry', () => {
 
   it('captures the legacy Goldman Sachs Blue Owl as a flat list (no LP-category sections)', () => {
     const gs = getTemplateProfile('gs-blue-owl')!
-    expect(gs.fund).toBe('Goldman Sachs Bank USA')
+    expect(gs.fund).toBe('Blue Owl GP Stakes V (May 2026)')
     expect(gs.headerRow).toBe(7)
     expect(gs.groupHeaders).toHaveLength(0)
     expect(gs.columns[0]).toBe('Investor Name (Agent Records)')
@@ -71,7 +71,7 @@ describe('detectTemplate', () => {
     expect(detectTemplate({ fileName: 'Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx' }).id).toBe('wf-blue-owl')
   })
   it('recognises the legacy Goldman Sachs Blue Owl format when agent bank is in the metadata', () => {
-    expect(detectTemplate({ fund: 'Goldman Sachs Blue Owl GP Stakes V' }).id).toBe('gs-blue-owl')
+    expect(detectTemplate({ fileName: 'Goldman-Sachs-Agent-BB.xlsx' }).id).toBe('gs-blue-owl')
   })
   it('falls back to the first profile when nothing matches', () => {
     expect(detectTemplate({ fileName: 'unknown.xlsx' }).id).toBe('kkr-ascendant')

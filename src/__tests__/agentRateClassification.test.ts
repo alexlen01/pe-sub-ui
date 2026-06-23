@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { ubsClassFromAgentRate, UBS_CLS_DEFAULT_RATE } from '../config/classificationConfig'
 
 // PE_SUB_SOLUTION rule: the Agent Advance Rate reflects each LP's credit quality and seeds a
-// default UBS LP Classification; the UBS Advance Rate then follows that class. Both stay editable.
+// default UBS LP Category; the UBS Advance Rate then follows that category. Both stay editable.
 
 describe('ubsClassFromAgentRate — canonical agent tiers', () => {
   const cases: Array<[number, string, string]> = [

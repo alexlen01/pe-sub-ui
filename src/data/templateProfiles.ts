@@ -6,7 +6,7 @@
 // Reference metadata (same in live and prototype mode) — describes the layout of each
 // recognised format. The per-submission extraction results still flow through the normal
 // screenMode-aware services. The new group-header labels ("...Investors" suffixes, feeder
-// vehicles) extend the standard Agent LP Classification values in classificationConfig.
+// vehicles) extend the standard Agent LP Category values in classificationConfig.
 
 export interface TemplateLegendRule {
   style: string
@@ -178,7 +178,7 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
   },
   {
     id: 'gs-blue-owl',
-    fund: 'Goldman Sachs Bank USA',
+    fund: 'Blue Owl GP Stakes V (May 2026)',
     workbook: { tabs: 'single', tabLabel: 'Borrowing Base' },
     title: { row: 1, text: 'Blue Owl GP Stakes V — Agent Borrowing Base Certificate' },
     summaryRows: '1-6',

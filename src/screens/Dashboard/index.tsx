@@ -13,7 +13,7 @@ import { api } from '../../services/api'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
-import { UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
+import { UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
@@ -29,30 +29,29 @@ const FACILITY_COLS = [
   { key: 'agentBank',          label: 'Agent',                style: { width: 150 } },
   { key: 'name',               label: 'Borrower',             style: { width: 170 } },
   { key: 'lps',                label: '# LPs',                align: 'right', style: { width: 60  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
-  { key: 'accountNumber',      label: 'Account Number',       align: 'right', style: { width: 100 } },
+  { key: 'accountNumber',      label: 'Account Number',       align: 'right', style: { width: 105 } },
   { key: 'loanAmount',         label: 'Loan Amount',          align: 'right', style: { width: 100 } },
   { key: 'maturityDate',       label: 'Maturity Date',        align: 'right', style: { width: 105 } },
-  { key: 'status',             label: 'Facility Status',                      style: { width: 110 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
-  { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 115 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
+  { key: 'status',             label: 'Facility Status',                      style: { width: 90 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
+  { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 125 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
 ]
 
-// Colors for each UBS LP Classification tier (aligned to Shadow_BB.xlsx classification column)
-const UBS_CLS_COLORS: Record<string, string> = {
+// Colors for each LP category — covers both UBS taxonomy (Shadow BB) and legacy values
+const CLS_COLORS: Record<string, string> = {
+  // UBS LP Category (UBS_CLS_OPTS)
   'Rated Investor':             '#4F4F4F',
   'FoF & Other > $10Bn AUM':   '#E60000',
-  'Unrated NAV > $1Bn':         '#767676',
+  'Unrated NAV > $1Bn':        '#767676',
   'Corp Pension > $5Bn Assets': '#005BBB',
   'Other Institutional':        '#007A38',
   'Excluded':                   '#C8C8C8',
+  // Legacy LP classification (CLS_OPTS) — still present in LP Master records
+  // that haven't been run through the Shadow BB workflow
+  'Rated':          '#4F4F4F',
+  'Unrated >2bn':   '#E60000',
+  'Unrated 1–2bn':  '#767676',
+  'Eligible':       '#007A38',
 }
-
-const CLS_SEGMENTS = UBS_CLS_OPTS
-  .filter((cls): cls is Exclude<typeof UBS_CLS_OPTS[number], ''> => cls !== '')
-  .map(cls => ({
-    cls,
-    label: `${cls} (${UBS_CLS_DEFAULT_RATE[cls] ?? ''})`,
-    color: UBS_CLS_COLORS[cls] ?? '#999999',
-  }))
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, screen } = useApp()
@@ -106,10 +105,20 @@ export default function Dashboard() {
   const donut = useMemo(() => {
     if (facilityLPs.length === 0) return null
     const total = facilityLPs.length
-    const segments = CLS_SEGMENTS
-      .map(({ cls, label, color }) => {
-        const n = facilityLPs.filter(lp => lp.cls === cls).length
-        return { label, n, pct: `${((n / total) * 100).toFixed(1)}%`, color }
+    const counts = new Map<string, number>()
+    for (const lp of facilityLPs) {
+      const key = lp.cls || ''
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    const segments = Array.from(counts.entries())
+      .map(([cls, n]) => {
+        const rate = UBS_CLS_DEFAULT_RATE[cls]
+        return {
+          label: rate ? `${cls} (${rate})` : cls,
+          n,
+          pct: `${((n / total) * 100).toFixed(1)}%`,
+          color: CLS_COLORS[cls] ?? '#999999',
+        }
       })
       .filter(s => s.n > 0)
     return { total, segments }
@@ -149,7 +158,7 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 12, padding: '12px 24px 0' }}>
         <Card
           title="Agent Bank Summary"
-          subtitle={`${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })} · ${statusFilter === 'All' ? `All ${facilities.length}` : `${filteredFacilities.length}`} borrowers · Click a row to view LP Classification and Executive Summary`}
+          subtitle={`${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })} · ${statusFilter === 'All' ? `All ${facilities.length}` : `${filteredFacilities.length}`} borrowers · Click a row to view LP Category breakdown and Executive Summary`}
           action={
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <InfoTip title="Facility Status" items={FACILITY_STATUS_ITEMS} />
@@ -183,7 +192,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Card
-            title="LP Classification"
+            title="LP Category"
             subtitle={
               !selectedFacility
                 ? 'Select a facility to view LP breakdown'

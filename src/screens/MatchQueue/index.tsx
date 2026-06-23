@@ -48,7 +48,7 @@ const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--am
 const scoreBand = (s: number) => s >= 95 ? 'Auto-accept' : s >= 80 ? 'Review' : 'No Match'
 const bandVariant = (s: number) => s >= 95 ? 'active' : s >= 80 ? 'pending' : 'excl'
 
-function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS }) {
+function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
   const { steps, normalised: reconstructed } = buildNormSteps(row.agentName)
   const normalised = normalisedAgentName(row, reconstructed)
   const candidates = analysisCandidates(row), topCandidate = candidates[0]
@@ -64,10 +64,13 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds }: { row: QueueR
     return { text: 'Near match · no adjustment', color: 'var(--muted)' }
   }
   return (
-    <div style={{ width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}>
+    <div
+      className={overlay ? 'lp-detail-overlay' : undefined}
+      style={overlay ? undefined : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
+    >
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div><div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Match Analysis</div><div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>#{row.id} - {row.facility}</div></div>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
@@ -204,6 +207,17 @@ export default function MatchQueue() {
   const selectionIds = new Set([...checked].filter(id => filtered.some(r => r.id === id)))
 
   const [committing, setCommitting] = useState(false)
+  const [containerWidth, setContainerWidth] = useState(Infinity)
+
+  useEffect(() => {
+    const el = document.querySelector('.content') as HTMLElement | null
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const compact = containerWidth < 1500
 
   const handleCommit = async () => {
     if (pending > 0) {
@@ -256,8 +270,8 @@ export default function MatchQueue() {
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
         <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
       </div>
-      <div style={{ flex: 1, display: 'flex', gap: 12 }}>
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', gap: compact ? 0 : 12 }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0, position: 'relative' }}>
           <table className="data-table" style={{ tableLayout: 'fixed' }}>
             <thead>
               <tr>
@@ -292,10 +306,14 @@ export default function MatchQueue() {
               <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
             </div>
           </div>
+          {compact && selectedRow && (
+            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} overlay />
+          )}
         </div>
-        {selectedRow
+        {!compact && (selectedRow
           ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
-          : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>}
+          : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
+        )}
       </div>
     </div>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."

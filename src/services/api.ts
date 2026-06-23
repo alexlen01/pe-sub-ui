@@ -158,7 +158,7 @@ export interface DocRecognition {
   headerInfo: string
 }
 
-/** Batch classification & rate save from the LP Classification & Rate Assignment screen.
+/** Batch classification & rate save from the LP Category & Rate Assignment screen.
  * Every Manual-Input column on the Shadow BB (Shadow_BB.xlsx) is editable in the LP record
  * card, so the row mirrors that full manual-input set. Calculated columns are never sent —
  * the server/engine recomputes them. Any field left undefined is unchanged. */
@@ -171,10 +171,10 @@ export interface LpClassificationRequest {
     // Identity & classification (manual)
     parent?: string
     spv?: boolean
-    type?: string             // Institutional vs HNW
+    type?: string             // Investor Type
     ig?: boolean              // Investment Grade?
-    cls?: string              // UBS LP Classification
-    agentCls?: string         // Agent LP Classification
+    cls?: string              // UBS LP Category
+    agentCls?: string         // Agent LP Category
     sp?: string; mdy?: string; fitch?: string
     // Scale (manual)
     aum?: string              // Assets Under Management
