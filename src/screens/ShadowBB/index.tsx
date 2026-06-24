@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import Button from '../../components/ui/Button'
@@ -223,7 +223,7 @@ function buildDraft(lp: ComputedLPRecord): SBBDraft {
 
 function draftToLPRecord(d: SBBDraft): Partial<LPRecord> {
   return {
-    cls: d.cls || undefined,
+    cls: (d.cls as LPRecord['cls']) || undefined,
     agentCls: d.agentCls || undefined,
     rate: d.rate || undefined,
     agentRate: d.agentRate || undefined,
@@ -248,14 +248,6 @@ function draftToLPRecord(d: SBBDraft): Partial<LPRecord> {
   }
 }
 
-const YesNo = ({ val }: { val: boolean }) => (
-  <span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: val ? '#e6f4ea' : 'var(--tbl)', color: val ? 'var(--green)' : 'var(--muted)' }}>
-    {val ? 'Yes' : 'No'}
-  </span>
-)
-
-const SECTION_KEYS = ['Identity & Classification','Ratings','Financial Scale','Borrowing Base Inputs','Commitment Data','Uncalled / Eligible Capital','Concentration & BB','Notes']
-
 function LPDetailPanel({ lp, onClose, onSave, overlay }: {
   lp: ComputedLPRecord
   onClose: () => void
@@ -279,7 +271,6 @@ function LPDetailPanel({ lp, onClose, onSave, overlay }: {
   const set = (field: keyof SBBDraft, value: unknown) =>
     setDraft(prev => {
       const next = { ...prev, [field]: value } as SBBDraft
-      // Seeding the UBS rate when classification changes mirrors RunShadowBB behaviour
       if (field === 'cls') next.rate = UBS_CLS_DEFAULT_RATE[value as string] ?? prev.rate
       return next
     })
@@ -296,32 +287,53 @@ function LPDetailPanel({ lp, onClose, onSave, overlay }: {
     }
   }
 
+  // ── Layout helpers — mirror LP Master Database style exactly ─────────────────
   const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
-  const lbl = (t: string) => <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 3 }}>{t}</div>
+  const roSt:    React.CSSProperties = { ...inputSt, background: 'var(--tbl)', color: 'var(--muted)' }
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 20px', padding: '6px 18px 14px' }
 
-  const field = (label: string, node: React.ReactNode) => (
-    <div className="detail-row" key={label} style={{ display: 'flex', flexDirection: 'column', padding: '4px 18px' }}>
-      {lbl(label)}{node}
+  const sec = (t: string) => (
+    <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
+  )
+  const flbl = (label: string, calculated?: boolean) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
+      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
     </div>
   )
-  const roVal = (label: string, v: React.ReactNode) => (
-    <div className="detail-row" key={label}><span className="detail-key">{label}</span><span className="detail-val">{v}</span></div>
+  const fcaption = (formula: string) => (
+    <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 0 0' }}>{formula}</div>
   )
-  const txtF = (label: string, f: keyof SBBDraft) =>
-    field(label, <input type="text" value={String(draft[f] ?? '')} style={inputSt} onChange={e => set(f, e.target.value)} />)
-  const selF = (label: string, f: keyof SBBDraft, opts: readonly string[]) =>
-    field(label, <select value={String(draft[f] ?? '')} style={inputSt} onChange={e => set(f, e.target.value)}>
-      {opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}
-    </select>)
-  const chkF = (label: string, f: keyof SBBDraft) =>
-    field(label, <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}>
-      <input type="checkbox" checked={!!(draft[f])} onChange={e => set(f, e.target.checked)} /> Yes
-    </label>)
 
-  const secHd = (t: string) => (
-    <button style={{ width: '100%', background: 'var(--tbl)', border: 'none', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '7px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'default', textAlign: 'left' }}>
-      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)' }}>{t}</span>
-    </button>
+  const txt = (label: string, field: keyof SBBDraft, span2 = false) => (
+    <div style={span2 ? { gridColumn: '1 / -1' } : undefined} key={label}>
+      {flbl(label)}
+      <input type="text" value={String(draft[field] ?? '')} style={inputSt} onChange={e => set(field, e.target.value)} />
+    </div>
+  )
+  const sel = (label: string, field: keyof SBBDraft, opts: readonly string[], span2 = false) => (
+    <div style={span2 ? { gridColumn: '1 / -1' } : undefined} key={label}>
+      {flbl(label)}
+      <select value={String(draft[field] ?? '')} style={inputSt} onChange={e => set(field, e.target.value)}>
+        {opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}
+      </select>
+    </div>
+  )
+  const chk = (label: string, field: keyof SBBDraft) => (
+    <div key={label}>
+      {flbl(label)}
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}>
+        <input type="checkbox" checked={!!(draft[field])} onChange={e => set(field, e.target.checked)} /> Yes
+      </label>
+    </div>
+  )
+  // Read-only calculated field — badged ƒ, annotated with formula
+  const calc = (label: string, value: React.ReactNode, formula?: string, span2 = false) => (
+    <div style={span2 ? { gridColumn: '1 / -1' } : undefined} key={label}>
+      {flbl(label, true)}
+      <input type="text" value={String(value ?? '—')} style={roSt} readOnly />
+      {formula && fcaption(formula)}
+    </div>
   )
 
   return (
@@ -329,11 +341,13 @@ function LPDetailPanel({ lp, onClose, onSave, overlay }: {
       className={overlay ? 'lp-detail-overlay' : undefined}
       style={overlay ? undefined : { display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--card)' }}
     >
+      {/* ── Header ── */}
       <div style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{lp.name}</div>
           <div style={{ fontSize: 11, opacity: 0.7, marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Tag>{draft.cls || lp.cls}</Tag>{lp.rcl && <span className="rcl-badge">Reclassified</span>}
+            <Tag>{draft.cls || lp.cls}</Tag>
+            {lp.rcl && <span className="rcl-badge">Reclassified</span>}
             {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving…</span>}
             {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>✓ Saved</span>}
             {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>✕ Failed</span>}
@@ -348,73 +362,67 @@ function LPDetailPanel({ lp, onClose, onSave, overlay }: {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0, opacity: 0.75 }}>×</button>
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0 8px' }}>
 
-        {secHd('Identity & Classification')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {roVal('Investor Name', lp.name ?? '—')}
-          {selF('UBS LP Category', 'cls', UBS_CLS_OPTS)}
-          {roVal('Agent LP Category', lp.agentCls ?? '—')}
-          {txtF('Parent', 'parent')}
-          {chkF('SPV?', 'spv')}
-          {selF('Investor Type', 'type', TYPE_OPTS)}
-          {selF('Region / Location', 'region', ['', ...REGION_OPTS])}
-          {chkF('Investment Grade?', 'ig')}
-          {roVal('High Quality', <YesNo val={lp.hq ?? false} />)}
+      {/* ── Body — 2-column grid matching LP Master layout ── */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={COLS}>
+          {sec('Identity')}
+          <div style={{ gridColumn: '1 / -1' }}>
+            {flbl('Investor Name')}
+            <input type="text" value={lp.name ?? ''} style={roSt} readOnly />
+          </div>
+          {txt('Parent', 'parent')}
+          {chk('SPV?', 'spv')}
+          {sel('Region / Location', 'region', ['', ...REGION_OPTS])}
+
+          {sec('Classification & Eligibility')}
+          {sel('UBS LP Category', 'cls', UBS_CLS_OPTS)}
+          {txt('Agent LP Category', 'agentCls')}
+          {sel('Investor Type', 'type', TYPE_OPTS)}
+          {chk('Investment Grade?', 'ig')}
+          {calc('High Quality', lp.hq ? 'Yes' : 'No', 'Flagged when UBS Advance Rate = 90%')}
+
+          {sec('Credit Ratings')}
+          {sel('S&P', 'sp', SP_RATING_OPTS)}
+          {sel("Moody's", 'mdy', MDY_RATING_OPTS)}
+          {sel('Fitch', 'fitch', SP_RATING_OPTS)}
+
+          {sec('Financial Scale')}
+          {txt('AUM', 'aum')}
+          {txt('NAV', 'nav')}
+          {txt('Pension Assets', 'pension')}
+          {txt('Pension Funded %', 'pensionFunded')}
+
+          {sec('Advance Rates')}
+          {txt('UBS Advance Rate', 'rate')}
+          {txt('Agent Advance Rate', 'agentRate')}
+
+          {sec('Commitments & Capital')}
+          {txt('Capital Commitments', 'capCommit')}
+          {calc('% of Capital Commitments', lp.pctCapCommit, 'LP commitment ÷ total fund commitments')}
+          {calc('Called Capital', lp.calledCap, 'Capital Commitments − Uncalled Capital')}
+          {txt('Uncalled Capital', 'uc')}
+          {calc('% of Uncalled Capital', lp.pctUncalled, 'LP uncalled ÷ total fund uncalled')}
+          {calc('% of LP Called', lp.pctCalled, 'Called Capital ÷ Capital Commitments')}
+
+          {sec('Concentration Limits')}
+          {txt('Agent Concentration Limit', 'agentConc')}
+          {txt('UBS Concentration Limit', 'ubsConc')}
+
+          {sec('Borrowing Base')}
+          {calc('UBS Eligible Uncalled Cap', lp.uec, 'Lesser of Uncalled Capital or (Total Uncalled × UBS Conc. Limit)')}
+          {calc('Agent Borrowing Base', lp.abb, 'Uncalled Capital × Agent Advance Rate')}
+          {calc('UBS Borrowing Base', lp.ubb, 'UBS Advance Rate × UBS Eligible Uncalled Capital')}
+          {calc('UBS Included', lp.ubbM > 0 ? 'Included' : 'Excluded', 'Included when UBS Borrowing Base > 0')}
+          {calc('Incl. Uncalled Conc. Excess', lp.concExcessM > 0 && lp.inc ? fmtM(lp.concExcessM) : '—', 'Excess uncalled above conc. limit (included LPs only)')}
+          {chk('Included in BB?', 'inc')}
+
+          {sec('Notes')}
+          <div style={{ gridColumn: '1 / -1' }}>
+            {flbl('Notes')}
+            <textarea value={draft.notes} style={{ ...inputSt, height: 64, resize: 'vertical' }} onChange={e => set('notes', e.target.value)} />
+          </div>
         </div>
-
-        {secHd('Ratings')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {selF('S&P', 'sp', SP_RATING_OPTS)}
-          {selF("Moody's", 'mdy', MDY_RATING_OPTS)}
-          {selF('Fitch', 'fitch', SP_RATING_OPTS)}
-        </div>
-
-        {secHd('Financial Scale')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {txtF('AUM', 'aum')}
-          {txtF('NAV', 'nav')}
-          {txtF('Pension Assets', 'pension')}
-          {txtF('Pension Funded %', 'pensionFunded')}
-        </div>
-
-        {secHd('Borrowing Base Inputs')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {txtF('UBS Advance Rate', 'rate')}
-          {txtF('Agent Advance Rate', 'agentRate')}
-          {txtF('UBS Concentration Limit', 'ubsConc')}
-          {txtF('Agent Concentration Limit', 'agentConc')}
-        </div>
-
-        {secHd('Commitment Data')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {txtF('Capital Commitments', 'capCommit')}
-          {roVal('% of Capital Commitments', lp.pctCapCommit ?? '—')}
-          {roVal('Called Capital', lp.calledCap ?? '—')}
-        </div>
-
-        {secHd('Uncalled / Eligible Capital')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {txtF('Uncalled Capital', 'uc')}
-          {roVal('% of Uncalled', lp.pctUncalled ?? '—')}
-          {roVal('% of LP Called', lp.pctCalled ?? '—')}
-        </div>
-
-        {secHd('Concentration & BB')}
-        <div style={{ padding: '4px 0 8px' }}>
-          {roVal('Agent Excess Concentration', lp.agentExcess ?? '—')}
-          {roVal('UBS Excess Concentration', lp.concExcessM > 0 ? fmtM(lp.concExcessM) : '—')}
-          {roVal('Agent Borrowing Base', lp.abb ?? '$0')}
-          {roVal('UBS Borrowing Base', lp.ubb ?? '$0')}
-          {chkF('Included in BB?', 'inc')}
-        </div>
-
-        {secHd('Notes')}
-        <div style={{ padding: '8px 18px' }}>
-          <textarea value={draft.notes} style={{ ...inputSt, height: 64, resize: 'vertical' }}
-            onChange={e => set('notes', e.target.value)} />
-        </div>
-
       </div>
     </div>
   )
@@ -444,7 +452,7 @@ export default function ShadowBB() {
   const [saveStatuses, setSaveStatuses] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
-  const [containerWidth, setContainerWidth] = useState(window.innerWidth)
+  const [containerWidth, setContainerWidth] = useState(0)
   useEffect(() => {
     const el = document.querySelector('.content')
     if (!el) return
@@ -549,7 +557,6 @@ export default function ShadowBB() {
         type:              changes.type,
         parent:            changes.parent,
         spv:               changes.spv,
-        region:            changes.region,
         notes:             changes.notes,
       }
       await api.lps.saveClassification({ facilityId, rows: [row] })
@@ -569,6 +576,25 @@ export default function ShadowBB() {
 
   const filtered = useMemo(() => clsFilter ? (result.lps as ComputedLPRecord[]).filter(r => r.cls === clsFilter) : (result.lps as ComputedLPRecord[]), [result.lps, clsFilter])
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
+
+  useEffect(() => {
+    if (selectedName === null || filtered.length === 0) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
+      e.preventDefault()
+      const idx = filtered.findIndex(lp => lp.name === selectedName)
+      if (idx === -1) return
+      const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
+      if (nextIdx < 0 || nextIdx >= filtered.length) return
+      setSelectedName(filtered[nextIdx].name)
+      const nextPage = Math.floor(nextIdx / pageSize) + 1
+      if (nextPage !== page) setPage(nextPage)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [filtered, selectedName, page, pageSize, setPage])
+
   const { summary } = result
   const clsOptions = [...new Set((result.lps as ComputedLPRecord[]).map(r => r.cls))].sort()
 
@@ -684,9 +710,6 @@ export default function ShadowBB() {
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={!compact}/>
               </div>
-              <div style={{ flex: '1 1 0', minWidth: 165, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="LP Category" rows={summaryExt.clsBreakdown} full={!compact} labelHeader="Classification" />
-              </div>
             </div>
           )}
         </Card>
@@ -766,7 +789,7 @@ export default function ShadowBB() {
             </Card>
           </div>
           {!compact && (
-            <div style={{ width: 380, flexShrink: 0, overflowY: 'auto' }}>
+            <div style={{ width: 390, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0, maxHeight: 'calc(100vh - 130px)', overflowY: 'auto' }}>
               {selectedLP ? (
                 <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
               ) : (

@@ -5,7 +5,7 @@ import Button      from '../../components/ui/Button'
 import Modal       from '../../components/ui/Modal'
 import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
-import { CLS_OPTS, REGION_OPTS, TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS } from '../../config/classificationConfig'
+import { CLS_OPTS, REGION_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, INVESTOR_TYPE_OPTS, LP_CATEGORY_LABEL } from '../../config/classificationConfig'
 import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
 import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getFacilities, parseMoneyToNumber } from '../../services/facilityService'
@@ -37,12 +37,6 @@ const CLS_LEGEND_ITEMS = [
   { label: 'Eligible — 50%',        desc: 'Meets eligibility criteria but AUM is below $1bn.' },
   { label: 'Excluded — 0%',         desc: 'Does not meet credit agreement eligibility criteria. Not counted in the borrowing base.' },
 ]
-
-const YN = ({ val }: { val: boolean }) => (
-  <span style={{ fontWeight: 600, fontSize: 11, color: val ? 'var(--green)' : 'var(--muted)' }}>
-    {val ? 'Y' : 'N'}
-  </span>
-)
 
 // ── Full-screen LP detail overlay ─────────────────────────────────────────────
 function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
@@ -141,8 +135,8 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     </div>
   )
 
-  const f = (label: string, viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, neg, pos: posStyle, zero, formula } = cfg
+  const f = (label: string, _viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
+    const { wide, span2, opts, chk, ta, ro, neg: _neg, pos: _posStyle, zero: _zero, formula } = cfg
     const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
     const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : span2 ? { gridColumn: 'span 2' } : {}
     const caption = formula
@@ -205,15 +199,16 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
 
       {sec('Classification & Eligibility')}
       {f('UBS LP Category', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
+      {calc('LP Category', LP_CATEGORY_LABEL[String(form.cls || lp.cls)] ?? '—', { formula: 'Derived from UBS LP Category' })}
       {f('Agent LP Category', lp.agentCls || '—', 'agentCls')}
       {Boolean(form.cls) && (
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
           <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
         </div>
       )}
-      {f('Investor Type', lp.type, 'type', { opts: TYPE_OPTS })}
+      {f('Investor Type', lp.investorType ?? lp.type, 'type', { opts: INVESTOR_TYPE_OPTS as unknown as string[] })}
       {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-      {calc('HQ', highQuality ? 'Yes' : 'No', { formula: 'Mirrors the High Quality flag (UBS rate = 0.90)' })}
+      {calc('High Quality', highQuality ? 'Yes' : 'No', { formula: 'Flagged when UBS Advance Rate = 90%' })}
 
       {sec('Credit Ratings')}
       {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS })}
@@ -247,11 +242,11 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       {calc('Agent Borrowing Base', agentBBStr, { formula: 'Uncalled Capital × Agent Advance Rate' })}
       {calc('UBS Borrowing Base', c.ubb, { pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'UBS Advance Rate × UBS Eligible Uncalled Capital' })}
       {calc('UBS Included', c.ubbM > 0 ? 'Included' : 'Excluded', { formula: 'Included when UBS Borrowing Base > 0' })}
-      {calc('Included UnCalled Conc. Excess', concExcessStr, { formula: 'Excess uncalled above concentration limit (included LPs only)' })}
+      {calc('Incl. Uncalled Conc. Excess', concExcessStr, { formula: 'Excess uncalled above concentration limit (included LPs only)' })}
 
       {sec('Notes')}
-      <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
-        <label className="form-label">Notes</label>
+      <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
+        {fieldLabel('Notes', false)}
         <textarea style={{ width: '100%', height: 72 }} value={form.notes as string ?? ''} onChange={set('notes')} />
       </div>
     </div>
@@ -442,17 +437,15 @@ function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: Facili
 // ── Facility detail / edit overlay ────────────────────────────────────────────
 // Mirrors the Prototype's facility detail (shared Modal, Identity + Agent Bank
 // Summary sections), but the editable fields are always live — no view-only step.
-// Maturity is stored as a display string ("Mar 15, 2029"); convert to/from ISO so
-// the form can use a native date picker without changing the stored format.
+// form.maturityDate is kept in ISO (YYYY-MM-DD) so the native date input can bind
+// directly without intermediate display-string conversion resetting the year field.
 const toISODate = (display: string) => {
   const d = new Date(display)
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
-const fromISODate = (iso: string) =>
-  iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
-type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; maturityDate: string }
-type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount'
+type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string }
+type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation'
 
 function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
   facility: FacilityRow | null
@@ -463,7 +456,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
   onDelete: (f: FacilityRow) => void
 }) {
   const [form, setForm] = useState<FacilityForm>({
-    name: '', agentBank: '', accountNumber: '', loanAmount: '', maturityDate: '',
+    name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', maturityDate: '',
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -471,11 +464,12 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
     if (!facility) return
     const clean = (v?: string | null) => (!v || v === '—' ? '' : v)
     setForm({
-      name:          clean(facility.name),
-      agentBank:     clean(facility.agentBank),
-      accountNumber: clean(facility.accountNumber),
-      loanAmount:   clean(facility.loanAmount),
-      maturityDate: clean(facility.maturityDate),
+      name:             clean(facility.name),
+      agentBank:        clean(facility.agentBank),
+      accountNumber:    clean(facility.accountNumber),
+      loanAmount:       clean(facility.loanAmount),
+      ubsParticipation: clean(facility.ubsParticipation),
+      maturityDate:     toISODate(clean(facility.maturityDate)),
     })
     setConfirmDelete(false)
   }, [facility?.id])
@@ -553,9 +547,10 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
         {sec('Agent Bank Summary')}
         {ed('Account Number', 'accountNumber')}
         {ed('Loan Amount', 'loanAmount')}
+        {ed('UBS Participation', 'ubsParticipation')}
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label style={labelSt}>Maturity Date</label>
-          <input type="date" style={{ width: '100%' }} value={toISODate(form.maturityDate)} onChange={e => setForm(p => ({ ...p, maturityDate: fromISODate(e.target.value) }))} aria-label="Maturity Date" />
+          <input type="date" style={{ width: '100%' }} value={form.maturityDate} onChange={e => setForm(p => ({ ...p, maturityDate: e.target.value }))} aria-label="Maturity Date" />
         </div>
         {ro('Facility Status', <Tag>{facility.status}</Tag>)}
         {ro('Facility Status Date', facility.facilityStatusDate)}
@@ -576,13 +571,14 @@ export default function LPMaster() {
   }, [])
 
   // view: 'grid' = facility picker, 'list' = LP table
-  const [view,      setView]      = useState<'grid' | 'list'>('grid')
-  const [facFilter, setFacFilter] = useState<FacilityRow | null>(null)
-  const [facSearch, setFacSearch] = useState('')
-  const [search,    setSearch]    = useState('')
-  const [clsFilter, setClsFilter] = useState('')
-  const [incFilter, setIncFilter] = useState('')
-  const [selected,  setSelected]  = useState<LPRecord | null>(null)
+  const [view,       setView]       = useState<'grid' | 'list'>('grid')
+  const [facFilter,  setFacFilter]  = useState<FacilityRow | null>(null)
+  const [facSearch,  setFacSearch]  = useState('')
+  const [search,     setSearch]     = useState('')
+  const [clsFilter,  setClsFilter]  = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [incFilter,  setIncFilter]  = useState('')
+  const [selected,   setSelected]   = useState<LPRecord | null>(null)
   const [editingFacility, setEditingFacility] = useState<FacilityRow | null>(null)
 
   // Live: pull the facility's LP records fresh on open so newly-committed LPs always show,
@@ -591,6 +587,7 @@ export default function LPMaster() {
     setFacFilter(fac)
     setSearch('')
     setClsFilter('')
+    setTypeFilter('')
     setIncFilter('')
     setView('list')
     if (fac.id != null) {
@@ -603,6 +600,7 @@ export default function LPMaster() {
     setFacFilter(null)
     setSearch('')
     setClsFilter('')
+    setTypeFilter('')
     setIncFilter('')
     setView('list')
     getLPs().then(setLpData).catch(() => {})
@@ -621,13 +619,14 @@ export default function LPMaster() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return lpData.filter(lp => {
-      const matchQ   = !q || (lp.name ?? '').toLowerCase().includes(q) || (lp.parent ?? '').toLowerCase().includes(q)
-      const matchCls = !clsFilter || lp.cls === clsFilter
-      const matchInc = !incFilter || (incFilter === 'Y' ? lp.inc : !lp.inc)
-      const matchFac = !facFilter || lpBelongsToFacility(lp, facFilter.name)
-      return matchQ && matchCls && matchInc && matchFac
+      const matchQ    = !q || (lp.name ?? '').toLowerCase().includes(q) || (lp.parent ?? '').toLowerCase().includes(q)
+      const matchCls  = !clsFilter  || lp.cls === clsFilter
+      const matchType = !typeFilter || (lp.investorType ?? lp.type) === typeFilter
+      const matchInc  = !incFilter  || (incFilter === 'Y' ? lp.inc : !lp.inc)
+      const matchFac  = !facFilter  || lpBelongsToFacility(lp, facFilter.name)
+      return matchQ && matchCls && matchType && matchInc && matchFac
     })
-  }, [lpData, search, clsFilter, incFilter, facFilter])
+  }, [lpData, search, clsFilter, typeFilter, incFilter, facFilter])
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
 
@@ -643,11 +642,12 @@ export default function LPMaster() {
     if (updated.id != null) {
       try {
         await api.facilities.update(updated.id, {
-          name:          updated.name.trim(),
-          agentBank:     updated.agentBank.trim(),
-          accountNumber: updated.accountNumber === '—' ? null : updated.accountNumber,
-          loanAmount:    parseMoneyToNumber(updated.loanAmount),
-          maturityDate:  toISODate(updated.maturityDate) || null,
+          name:             updated.name.trim(),
+          agentBank:        updated.agentBank.trim(),
+          accountNumber:    updated.accountNumber === '—' ? null : updated.accountNumber,
+          loanAmount:       parseMoneyToNumber(updated.loanAmount),
+          ubsParticipation: parseMoneyToNumber(updated.ubsParticipation),
+          maturityDate:     toISODate(updated.maturityDate) || null,
         })
       } catch (e) {
         toast(e instanceof Error && e.message ? e.message : 'Could not save facility — API unavailable.')
@@ -764,6 +764,10 @@ export default function LPMaster() {
           {CLS_OPTS.map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
         </select>
         <InfoTip title="LP Category" items={CLS_LEGEND_ITEMS} align="left" width={330} />
+        <select style={{ width: 170 }} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
+          <option value="">Investor Type: All</option>
+          {INVESTOR_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
         <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
           <option value="">Included: All</option>
           <option value="Y">Included (Y)</option>
@@ -781,9 +785,9 @@ export default function LPMaster() {
             <tr>
               <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
               <th style={{ width: '20%', maxWidth: 200 }}>Parent</th>
-              <th style={{ width: 110 }}>Investor Type</th>
+              <th style={{ width: 115 }}>Investor Type</th>
               <th style={{ width: 110 }}>UBS Classification</th>
-              <th style={{ width: 100 }}>Inst/HNW</th>
+              <th style={{ width: 115 }}>LP Category</th>
               <th className="num" style={{ width: 75 }}>AUM</th>
               <th className="num" style={{ width: 100 }}>Uncalled Cap.</th>
               <th className="num" style={{ width: 110 }}>UBS Elig. Uncalled</th>
@@ -802,9 +806,9 @@ export default function LPMaster() {
                   {lp.tf  && <span className="tf-badge">T</span>}
                 </td>
                 <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }} title={lp.parent}>{lp.parent || '—'}</td>
-                <td style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.agentCls || ''}>{lp.agentCls || '—'}</td>
+                <td style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType ?? lp.type}</td>
                 <td><Tag>{lp.cls}</Tag></td>
-                <td style={{ fontSize: 11 }}>{lp.type}</td>
+                <td style={{ fontSize: 11, color: 'var(--muted)' }}>{LP_CATEGORY_LABEL[lp.cls] ?? '—'}</td>
                 <td className="num">{lp.aum}</td>
                 <td className="num">{lp.uc}</td>
                 <td className="num">{lp.uec}</td>

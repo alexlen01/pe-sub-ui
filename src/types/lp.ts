@@ -1,6 +1,11 @@
 export type LPClassification = 'Rated' | 'Unrated >2bn' | 'Unrated 1–2bn' | 'Eligible' | 'Excluded'
 export type Region = 'North America' | 'Europe' | 'Asia-Pacific' | 'Middle East' | 'Other'
-export type InvestorType = 'Institutional' | 'HNW'
+export type InvestorType =
+  | 'Institutional' | 'HNW'
+  | 'Pension Fund' | 'Public Pension' | 'Endowment' | 'Foundation'
+  | 'Family Office' | 'Fund of Funds' | 'Sovereign Wealth Fund'
+  | 'Insurance Company' | 'Insurance' | 'Healthcare' | 'Corporate'
+  | 'Other Institutional'
 
 export interface LP {
   name: string
@@ -8,6 +13,7 @@ export interface LP {
   spv: boolean
   hq: boolean
   type: InvestorType
+  investorType?: string
   region: Region
   ig: boolean
   cls: LPClassification

@@ -109,7 +109,7 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { ro
           {candidates.length === 0
             ? <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', padding: '6px 0' }}>No candidates found in LP Master</div>
             : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead><tr style={{ background: 'var(--tbl)' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: '#e5e7eb' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {candidates.map((c, i) => (
                     <tr key={i} style={{ background: i === 0 && hasProposedMatch ? 'var(--blue-lt)' : 'transparent' }}>
@@ -200,6 +200,25 @@ export default function MatchQueue() {
   }
 
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
+
+  useEffect(() => {
+    if (selectedId === null || filtered.length === 0) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
+      e.preventDefault()
+      const idx = filtered.findIndex(r => r.id === selectedId)
+      if (idx === -1) return
+      const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
+      if (nextIdx < 0 || nextIdx >= filtered.length) return
+      setSelectedId(filtered[nextIdx].id)
+      const nextPage = Math.floor(nextIdx / pageSize) + 1
+      if (nextPage !== page) setPage(nextPage)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [filtered, selectedId, page, pageSize, setPage])
+
   const pending = queue.filter(r => r.status === 'Pending').length
   const acceptedCount = queue.filter(r => r.status === 'Accepted').length
   const autoAccepted = queue.filter(r => r.status === 'Accepted' && r.score >= 95).length
@@ -207,17 +226,6 @@ export default function MatchQueue() {
   const selectionIds = new Set([...checked].filter(id => filtered.some(r => r.id === id)))
 
   const [committing, setCommitting] = useState(false)
-  const [containerWidth, setContainerWidth] = useState(Infinity)
-
-  useEffect(() => {
-    const el = document.querySelector('.content') as HTMLElement | null
-    if (!el) return
-    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const compact = containerWidth < 1500
 
   const handleCommit = async () => {
     if (pending > 0) {
@@ -270,7 +278,7 @@ export default function MatchQueue() {
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
         <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
       </div>
-      <div style={{ flex: 1, display: 'flex', gap: compact ? 0 : 12 }}>
+      <div style={{ flex: 1, display: 'flex', gap: 12 }}>
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0, position: 'relative' }}>
           <table className="data-table" style={{ tableLayout: 'fixed' }}>
             <thead>
@@ -306,14 +314,11 @@ export default function MatchQueue() {
               <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
             </div>
           </div>
-          {compact && selectedRow && (
-            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} overlay />
-          )}
         </div>
-        {!compact && (selectedRow
+        {selectedRow
           ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
           : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
-        )}
+        }
       </div>
     </div>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."

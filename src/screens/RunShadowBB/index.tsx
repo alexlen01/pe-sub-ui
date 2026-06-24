@@ -453,6 +453,24 @@ export default function RunShadowBB() {
     if (result || !pageItems.some(lp => lp._key === selectedKey)) setSelectedKey(null)
   }, [pageItems, selectedKey, result])
 
+  useEffect(() => {
+    if (selectedKey === null || displayLPs.length === 0) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
+      e.preventDefault()
+      const idx = displayLPs.findIndex(lp => lp._key === selectedKey)
+      if (idx === -1) return
+      const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
+      if (nextIdx < 0 || nextIdx >= displayLPs.length) return
+      setSelectedKey(displayLPs[nextIdx]._key)
+      const nextPage = Math.floor(nextIdx / pageSize) + 1
+      if (nextPage !== page) setPage(nextPage)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [displayLPs, selectedKey, page, pageSize, setPage])
+
   const run = async () => {
     setRunning(true)
     setLoadError(null)
@@ -719,6 +737,7 @@ export default function RunShadowBB() {
 
 // ── LP record card — sectioned editable form; used as the right-side panel in Step 5.
 // Manual-Input columns are editable; Calculated columns are derived live by calcRow and read-only.
+// Layout and section structure mirror LP Master Database (LPDetailOverlay) exactly.
 function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus }: {
   lp: SubmissionLP
   ov: Override
@@ -730,31 +749,45 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
 }) {
   const name = lp.name ?? lp._agentName ?? '—'
 
+  // ── Helpers matching LP Master Database style ────────────────────────────────
+  const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
+  const roSt:    React.CSSProperties = { ...inputSt, background: 'var(--tbl)', color: 'var(--muted)' }
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', padding: '12px 16px' }
+
   const sec = (t: string) => (
-    <div style={{ gridColumn: '1 / -1', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 8, padding: '4px 8px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
+    <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
   )
-  const lbl = (t: string) => (
-    <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: 3 }}>{t}</div>
+  const flbl = (label: string, calculated?: boolean) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
+      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
+    </div>
+  )
+  const fcaption = (formula: string) => (
+    <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 0 0' }}>{formula}</div>
   )
   const wrap = (span: boolean | number, children: React.ReactNode, key: string) => (
     <div key={key} style={typeof span === 'number' ? { gridColumn: `span ${span}` } : span ? { gridColumn: '1 / -1' } : undefined}>{children}</div>
   )
-  const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
 
-  const ro = (label: string, value: React.ReactNode, span2: boolean | number = false, tone?: 'neg' | 'pos' | 'zero') =>
-    wrap(span2, <>{lbl(label)}<div style={{ fontSize: 12.5, minHeight: 24, display: 'flex', alignItems: 'center', color: tone === 'neg' ? 'var(--red)' : tone === 'pos' ? 'var(--green)' : tone === 'zero' ? 'var(--muted)' : 'var(--navy)', fontWeight: tone ? 600 : 400 }}>{value}</div></>, label)
+  // Read-only calculated field with ƒ badge and optional formula caption
+  const ro = (label: string, value: React.ReactNode, span2: boolean | number = false, formula?: string) =>
+    wrap(span2, <>
+      {flbl(label, true)}
+      <input type="text" value={String(value ?? '—')} style={roSt} readOnly />
+      {formula && fcaption(formula)}
+    </>, label)
 
   const txt = (label: string, field: keyof Override, span2: boolean | number = false) =>
-    wrap(span2, <>{lbl(label)}<input type="text" value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)} /></>, label)
+    wrap(span2, <>{flbl(label)}<input type="text" value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)} /></>, label)
 
   const sel = (label: string, field: keyof Override, opts: readonly string[], span2: boolean | number = false) =>
-    wrap(span2, <>{lbl(label)}<select value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)}>{opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}</select></>, label)
+    wrap(span2, <>{flbl(label)}<select value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)}>{opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}</select></>, label)
 
   const chk = (label: string, field: keyof Override) =>
-    wrap(false, <>{lbl(label)}<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}><input type="checkbox" checked={!!ov[field]} disabled={running} onChange={e => onChange(field, e.target.checked)} /> Yes</label></>, label)
+    wrap(false, <>{flbl(label)}<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}><input type="checkbox" checked={!!ov[field]} disabled={running} onChange={e => onChange(field, e.target.checked)} /> Yes</label></>, label)
 
-  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', padding: '12px 16px' }
-
+  // ── UBS vs Agent comparison row ──────────────────────────────────────────────
   const cmpAgent = (node: React.ReactNode, tone?: 'neg' | 'zero') => (
     <div style={{ fontSize: 12.5, padding: '4px 8px', minHeight: 28, display: 'flex', alignItems: 'center',
       background: 'var(--tbl)', borderRadius: 3, color: tone === 'neg' ? 'var(--red)' : tone === 'zero' ? 'var(--muted)' : 'var(--text)' }}>{node}</div>
@@ -788,6 +821,7 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+      {/* ── Header ── */}
       <div style={{ background: 'var(--navy)', color: '#fff', padding: '12px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
@@ -805,32 +839,33 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
         </div>
       </div>
 
+      {/* ── Body — 2-column grid matching LP Master Database layout ── */}
       <div style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
         <div style={COLS}>
-          {sec('Identity & Classification')}
-          {ro('Investor Name', name, true)}
+          {sec('Identity')}
+          {wrap(true, <>{flbl('Investor Name')}<input type="text" value={name} style={roSt} readOnly /></>, 'inv-name')}
           {txt('Parent / Manager / Sponsor', 'parent', true)}
           {chk('SPV?', 'spv')}
           {sel('Region / Location', 'region', ['', ...REGION_OPTS])}
           {sel('Investor Type', 'type', TYPE_OPTS)}
           {chk('Investment Grade?', 'ig')}
-          {ro('High Quality', <YesNo val={calc.highQuality} />)}
+          {ro('High Quality', <YesNo val={calc.highQuality} />, false, 'Flagged when UBS Advance Rate = 90%')}
 
-          {sec('UBS vs Agent — Classification, Rates & BB')}
+          {sec('UBS vs Agent — Classification, Rates & Borrowing Base')}
           <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '7px 12px', alignItems: 'center' }}>
             <div />
             <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>Agent · from BB</div>
             <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--blue)' }}>UBS · editable</div>
-            {cmpRow('LP Category', cmpAgent(ov.agentCls || '—'), cmpUbsSel('cls', UBS_CLS_OPTS))}
-            {cmpRow('Advance Rate', cmpAgent(pctStr(ov.agentRatePct)), cmpUbsPct('ubsAdvRatePct', 5))}
-            {cmpRow('Conc. Limit', cmpAgent(pctStr(ov.agentConcLimitPct)), cmpUbsPct('concLimitPct', 0.5))}
-            {cmpRow('Elig. Uncalled', cmpAgent(fmtM(calc.agentEligUncl)), cmpUbsRo(fmtM(calc.ubsEligUncalled)))}
-            {cmpRow('Excess Conc.', cmpAgent(fmtM(calc.agentExcess), calc.agentExcess > 0 ? 'neg' : 'zero'), cmpUbsRo(fmtM(calc.ubsExcess), calc.ubsExcess > 0 ? 'neg' : 'zero'))}
-            {cmpRow('Borrowing Base', cmpAgent(fmtM(calc.agentBBCalc), calc.agentBBCalc === 0 ? 'zero' : undefined), cmpUbsRo(fmtM(calc.ubsBBCalc), calc.ubsBBCalc > 0 ? 'pos' : 'zero'))}
-            {cmpRow('Included', cmpAgent('—'), cmpUbsRo(<YesNo val={calc.ubsIncluded} />))}
+            {cmpRow('LP Category',   cmpAgent(ov.agentCls || '—'),                                               cmpUbsSel('cls', UBS_CLS_OPTS))}
+            {cmpRow('Advance Rate',  cmpAgent(pctStr(ov.agentRatePct)),                                           cmpUbsPct('ubsAdvRatePct', 5))}
+            {cmpRow('Conc. Limit',   cmpAgent(pctStr(ov.agentConcLimitPct)),                                      cmpUbsPct('concLimitPct', 0.5))}
+            {cmpRow('Elig. Uncalled',cmpAgent(fmtM(calc.agentEligUncl)),                                          cmpUbsRo(fmtM(calc.ubsEligUncalled)))}
+            {cmpRow('Excess Conc.',  cmpAgent(fmtM(calc.agentExcess), calc.agentExcess > 0 ? 'neg' : 'zero'),    cmpUbsRo(fmtM(calc.ubsExcess), calc.ubsExcess > 0 ? 'neg' : 'zero'))}
+            {cmpRow('Borrowing Base',cmpAgent(fmtM(calc.agentBBCalc), calc.agentBBCalc === 0 ? 'zero' : undefined), cmpUbsRo(fmtM(calc.ubsBBCalc), calc.ubsBBCalc > 0 ? 'pos' : 'zero'))}
+            {cmpRow('Included',      cmpAgent('—'),                                                               cmpUbsRo(<YesNo val={calc.ubsIncluded} />))}
           </div>
 
-          {sec('Ratings')}
+          {sec('Credit Ratings')}
           {sel('S&P', 'sp', SP_RATING_OPTS)}
           {sel("Moody's", 'mdy', MDY_RATING_OPTS)}
           {sel('Fitch', 'fitch', SP_RATING_OPTS)}
@@ -841,16 +876,16 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
           {txt('Pension Assets', 'pension')}
           {txt('Pension Funded %', 'pensionFunded')}
 
-          {sec('Commitment & Capital')}
+          {sec('Commitments & Capital')}
           {txt('Capital Commitments', 'capCommit')}
-          {ro('% of Capital Committed', fmtPct(calc.cmtPct))}
-          {ro('Called Capital', fmtM(calc.calledM))}
+          {ro('% of Capital Commitments', fmtPct(calc.cmtPct), false, 'LP commitment ÷ total fund commitments')}
+          {ro('Called Capital',           fmtM(calc.calledM),  false, 'Capital Commitments − Uncalled Capital')}
           {txt('Uncalled Capital', 'ucM')}
-          {ro('% of Uncalled Capital', fmtPct(calc.pctUncalled))}
-          {ro('% of LP Called', fmtPct(calc.pctCalled))}
+          {ro('% of Uncalled Capital', fmtPct(calc.pctUncalled), false, 'LP uncalled ÷ total fund uncalled')}
+          {ro('% of LP Called',        fmtPct(calc.pctCalled),   false, 'Called Capital ÷ Capital Commitments')}
 
           {sec('Notes')}
-          {wrap(true, <>{lbl('Notes')}<textarea value={ov.notes ?? ''} disabled={running} style={{ ...inputSt, height: 56, resize: 'vertical' }} onChange={e => onChange('notes', e.target.value)} /></>, 'notes')}
+          {wrap(true, <>{flbl('Notes')}<textarea value={ov.notes ?? ''} disabled={running} style={{ ...inputSt, height: 56, resize: 'vertical' }} onChange={e => onChange('notes', e.target.value)} /></>, 'notes')}
         </div>
       </div>
     </div>

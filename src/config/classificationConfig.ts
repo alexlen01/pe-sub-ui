@@ -140,3 +140,30 @@ export const CLS_CRITERIA: Record<string, string> = {
   'Excluded':
     'Fails eligibility (jurisdiction, ERISA, concentration limit, etc.)',
 }
+
+// Granular investor type taxonomy (replaces the coarse Institutional/HNW split for display)
+export const INVESTOR_TYPE_OPTS = [
+  'Pension Fund',
+  'Endowment',
+  'Foundation',
+  'Family Office',
+  'Fund of Funds',
+  'Sovereign Wealth Fund',
+  'Insurance Company',
+  'Healthcare',
+  'Corporate',
+  'Public Pension',
+  'Other Institutional',
+  'HNW',
+] as const
+
+export type InvestorTypeOpt = typeof INVESTOR_TYPE_OPTS[number]
+
+// Maps UBS LP Classification to the 4-bucket Agent BB group label
+export const LP_CATEGORY_LABEL: Record<string, string> = {
+  'Rated':          'Rated Investors',
+  'Unrated >2bn':   'Unrated Investors',
+  'Unrated 1–2bn':  'Unrated Investors',
+  'Eligible':       'Included Investors',
+  'Excluded':       'Excluded Investors',
+}

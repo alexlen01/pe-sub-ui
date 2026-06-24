@@ -92,7 +92,11 @@ function LPDetailPanel({
     <div
       className={overlay ? 'lp-detail-overlay' : undefined}
       style={overlay ? undefined : {
-        flex: 3, minWidth: 0,
+        width: 360, flexShrink: 0,
+        alignSelf: 'flex-start',
+        position: 'sticky', top: 0,
+        maxHeight: 'calc(100vh - 130px)',
+        overflow: 'hidden',
         border: '1px solid var(--border)', borderRadius: 'var(--radius)',
         display: 'flex', flexDirection: 'column', background: 'var(--card)',
       }}
@@ -166,7 +170,7 @@ export default function ExtractionPreview() {
   const [mapCollapsed,   setMapCollapsed] = useState(false)
   const [loadError,      setLoadError]    = useState<string | null>(null)
   const [remapping,      setRemapping]    = useState<Set<string>>(new Set())
-  const [containerWidth, setContainerWidth] = useState(Infinity)
+  const [containerWidth, setContainerWidth] = useState(0)
   const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
   const profileId = detectTemplate({ facility: activeSubmission ?? undefined }).id
 
@@ -237,6 +241,24 @@ export default function ExtractionPreview() {
   const docRows     = buildDocRecognition(profile, { fileName: docFileName, columnsMatched: colsMatched, columnsTotal: displayCols.length })
 
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
+
+  useEffect(() => {
+    if (selectedLPId === null || extracted.length === 0) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
+      e.preventDefault()
+      const idx = extracted.findIndex(r => r.id === selectedLPId)
+      if (idx === -1) return
+      const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
+      if (nextIdx < 0 || nextIdx >= extracted.length) return
+      setSelectedLPId(extracted[nextIdx].id)
+      const nextPage = Math.floor(nextIdx / pageSize) + 1
+      if (nextPage !== page) setPage(nextPage)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [extracted, selectedLPId, page, pageSize, setPage])
 
   const suggestMapping = async (extractedKey: string) => {
     const col = unrecog.find(c => c.extracted === extractedKey)
@@ -441,16 +463,17 @@ export default function ExtractionPreview() {
                   : `Row #${selectedLP.id} selected`
                 : 'Click any row to review extracted fields'
             }
-            style={compact ? undefined : { flex: 7, minWidth: 0 }}
+            style={compact ? undefined : { flex: 1, minWidth: 0 }}
             action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
           >
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
             <div style={{ position: 'relative' }}>
+              <div className="data-table-wrap">
               <table className="data-table" style={{ tableLayout: 'fixed' }}>
                 <thead>
                   <tr>
                     <th style={{ ...HDR, width: 240 }}>Investor Name</th>
-                    <th style={{ ...HDR, width: 142 }}>LP Category</th>
+                    <th style={{ ...HDR, width: 142 }}>Investor Type</th>
                     <th style={{ ...HDR, width: 100, textAlign: 'right' }}>Commitment (USD)</th>
                     <th style={{ ...HDR, width: 120, textAlign: 'right' }}>Uncalled Capital (USD)</th>
                     <th style={{ ...HDR, width: 72, textAlign: 'right' }}>% Called</th>
@@ -484,6 +507,7 @@ export default function ExtractionPreview() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
               {compact && selectedLP && (
                 <LPDetailPanel
@@ -511,7 +535,7 @@ export default function ExtractionPreview() {
             selectedLP ? (
               <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} fieldMap={fieldMap} />
             ) : (
-              <div style={{ flex: 3, minWidth: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
+              <div style={{ width: 360, flexShrink: 0, position: 'sticky', top: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
                 <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
                 <div style={{ fontSize: 12, fontWeight: 600 }}>Row Detail</div>
                 <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to see extracted field values and their canonical mappings.</div>
