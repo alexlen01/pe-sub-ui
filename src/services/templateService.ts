@@ -68,7 +68,7 @@ export function mapColumns(profile: TemplateProfile | null): MappedColumn[] {
 // content (title-anchor + tab pattern); here we match the fund label, title anchor, or any
 // extra recognition keys (agent bank / file-name fragments). Falls back to the first profile
 // so the preview always has a format to show.
-export function detectTemplate(meta: { fileName?: string; facility?: string; fund?: string }): TemplateProfile {
+export function findDetectedTemplate(meta: { fileName?: string; facility?: string; fund?: string }): TemplateProfile | null {
   const hay = normalize(`${meta.fileName ?? ''} ${meta.facility ?? ''} ${meta.fund ?? ''}`)
   return TEMPLATE_PROFILES.find(p => {
     const fund = normalize(p.fund)
@@ -77,7 +77,11 @@ export function detectTemplate(meta: { fileName?: string; facility?: string; fun
     return (fund.length > 0 && hay.includes(fund))
         || (title.length > 0 && hay.includes(title))
         || keys.some(k => k.length > 0 && hay.includes(k))
-  }) ?? TEMPLATE_PROFILES[0]
+  }) ?? null
+}
+
+export function detectTemplate(meta: { fileName?: string; facility?: string; fund?: string }): TemplateProfile {
+  return findDetectedTemplate(meta) ?? TEMPLATE_PROFILES[0]
 }
 
 // Build the structural recognition rows (label/value) for a detected profile. Row set and

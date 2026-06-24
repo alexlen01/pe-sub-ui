@@ -10,6 +10,7 @@ import DataTable          from '../../components/ui/DataTable'
 import InfoTip            from '../../components/ui/InfoTip'
 import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
 import { api } from '../../services/api'
+import { findDetectedTemplate } from '../../services/templateService'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import type { SubmissionRow } from '../../services/facilityService'
 
@@ -315,11 +316,13 @@ export default function Upload() {
       setError('Please select a facility.')
       return
     }
+    const detected = findDetectedTemplate({ fileName: file.name, facility })
+    const templateHint = detected?.fund ?? null
     setProcessing(true)
     setError('')
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
-      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
+      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes, templateHint ?? undefined)
       if (sub.status === 'Error') {
         setProcessing(false)
         setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
@@ -404,6 +407,7 @@ export default function Upload() {
                   onChange={e => setNotes(e.target.value)}
                 />
               </div>
+              {/* Template detection runs and is sent with the upload, but the inline notice was removed. */}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <Button onClick={handleUpload} disabled={processing || !facility}>
                   {processing ? 'Processing…' : '↑ Upload and Process'}

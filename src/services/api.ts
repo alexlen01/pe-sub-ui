@@ -330,13 +330,14 @@ export const api = {
       get<Submission[]>(`/api/submissions${qs(params)}`),
     get: (id: number) =>
       get<Submission>(`/api/submissions/${id}`),
-    create: (facilityId: number, agentBank: string, periodMonth: string, file: File, notes?: string) => {
+    create: (facilityId: number, agentBank: string, periodMonth: string, file: File, notes?: string, forceTemplate?: string) => {
       const form = new FormData()
       form.append('facilityId', String(facilityId))
       form.append('agentBank', agentBank)
       form.append('periodMonth', periodMonth)
       form.append('file', file)
       if (notes?.trim()) form.append('notes', notes.trim())
+      if (forceTemplate?.trim()) form.append('forceTemplate', forceTemplate.trim())
       return postForm<Submission>('/api/submissions', form)
     },
     abort: (id: number) =>
