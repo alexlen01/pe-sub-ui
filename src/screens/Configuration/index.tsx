@@ -79,7 +79,7 @@ const unit = (s: string) => (
 )
 
 export default function Configuration() {
-  const { toast } = useApp()
+  const { toast, navigate } = useApp()
 
   const [busa,           setBusa]           = useState<RateTier[]>(BUSA_TIERS)
   const [agentTiers,     setAgentTiers]     = useState<RateTier[]>(AGENT_TIERS)
@@ -340,7 +340,18 @@ export default function Configuration() {
 
       </div>
 
-      {/* 5 — Global Settings */}
+      {/* 5 — BB Template Registry */}
+      <Card
+        title="BB Template Registry"
+        subtitle="Agent BB workbook format definitions — tabs, header positions, LP category group sections"
+        action={<Button size="sm" onClick={() => navigate('bb-templates')}>Manage Templates</Button>}
+      >
+        <div style={{ padding: '10px 18px 14px', fontSize: 12, color: 'var(--muted)' }}>
+          Register and maintain the structural definitions that the extraction engine uses to parse each Agent BB workbook format. One entry per agent bank / template class variant.
+        </div>
+      </Card>
+
+      {/* 6 — Global Settings */}
       <Card
         title="Global Settings"
         subtitle="Platform-wide defaults applied to all facilities"

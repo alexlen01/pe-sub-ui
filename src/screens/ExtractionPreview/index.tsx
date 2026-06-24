@@ -81,10 +81,11 @@ const HDR: React.CSSProperties = { whiteSpace: 'normal', verticalAlign: 'middle'
 
 
 function LPDetailPanel({
-  row, onClose, fieldMap, overlay = false,
+  row, onClose, onDiscard, fieldMap, overlay = false,
 }: {
   row: ExtractedRow
   onClose: () => void
+  onDiscard: (id: number) => void
   fieldMap: FieldMapRow[]
   overlay?: boolean
 }) {
@@ -128,6 +129,9 @@ function LPDetailPanel({
           })}
         </div>
       </div>
+      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+        <Button variant="danger" size="sm" onClick={() => onDiscard(row.id)}>⊘ Discard Row</Button>
+      </div>
     </div>
   )
 }
@@ -165,6 +169,7 @@ export default function ExtractionPreview() {
   const [canonicals,     setCanonicals]   = useState<CanonicalField[]>([])
   const [confirmed,      setConfirmed]    = useState(false)
   const [abortOpen,      setAbortOpen]    = useState(false)
+  const [discardConfirmId, setDiscardConfirmId] = useState<number | null>(null)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
   const [docCollapsed,   setDocCollapsed] = useState(false)
   const [mapCollapsed,   setMapCollapsed] = useState(false)
@@ -293,6 +298,23 @@ export default function ExtractionPreview() {
         toast(`Re-extraction failed: ${String(e)}`)
       }
     }
+  }
+
+  const handleDiscard = async () => {
+    if (discardConfirmId == null) return
+    const id = discardConfirmId
+    setDiscardConfirmId(null)
+    setExtracted(prev => prev.filter(r => r.id !== id))
+    if (selectedLPId === id) setSelectedLPId(null)
+    if (activeSubmissionId != null) {
+      try {
+        await api.extraction.discardRow(activeSubmissionId, id)
+      } catch (e) {
+        toast(`Discard failed: ${String(e)}`)
+        await loadData(activeSubmissionId)
+      }
+    }
+    toast('Row discarded.')
   }
 
   const handleAbort = async () => {
@@ -513,6 +535,7 @@ export default function ExtractionPreview() {
                 <LPDetailPanel
                   row={selectedLP}
                   onClose={() => setSelectedLPId(null)}
+                  onDiscard={id => setDiscardConfirmId(id)}
                   fieldMap={fieldMap}
                   overlay
                 />
@@ -533,7 +556,7 @@ export default function ExtractionPreview() {
 
           {!compact && (
             selectedLP ? (
-              <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} fieldMap={fieldMap} />
+              <LPDetailPanel row={selectedLP} onClose={() => setSelectedLPId(null)} onDiscard={id => setDiscardConfirmId(id)} fieldMap={fieldMap} />
             ) : (
               <div style={{ width: 360, flexShrink: 0, position: 'sticky', top: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center' }}>
                 <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
@@ -547,6 +570,10 @@ export default function ExtractionPreview() {
       </div>
     </div>
 
+    <Modal open={discardConfirmId != null} onClose={() => setDiscardConfirmId(null)} title="Discard Row?" subtitle="This extracted LP row will be permanently removed."
+      footer={<><Button variant="secondary" onClick={() => setDiscardConfirmId(null)}>Cancel</Button><Button variant="danger" onClick={handleDiscard}>Discard</Button></>}>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row will be deleted before LP matching runs. It will not appear in the Match Queue. To restore it, re-upload the Agent BB.</div>
+    </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>

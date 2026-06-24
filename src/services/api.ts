@@ -67,7 +67,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`)
+  if (!res.ok) throw new Error(await extractApiError(res, `PUT ${path} failed: ${res.status}`))
   return res.json() as Promise<T>
 }
 
@@ -204,6 +204,36 @@ export interface LpRate {
   effectiveDate: string    // ISO date YYYY-MM-DD
 }
 
+// ── BB Template Registry ──────────────────────────────────────────────────────
+export interface BbTemplateGroup {
+  id: number; groupSort: number; headerText: string; classification: string
+}
+export interface BbTemplateTab {
+  id: number; tabRole: string; tabSort: number; sheetName: string | null
+  headerRowIndex: number | null; headerRowSpan: number
+  skipRowKeywords: string[]; groups: BbTemplateGroup[]
+}
+export interface BbTemplate {
+  id: number; agentBank: string; templateClass: string
+  sheetName: string | null; headerRowIndex: number | null
+  autoLearned: boolean; trancheCount: number
+  hasGroupingRows: boolean; hasColorFlags: boolean
+  summaryRowsAboveHeader: number; createdAt: string; updatedAt: string
+  tabs: BbTemplateTab[]
+}
+export interface BbTemplateGroupInput { groupSort: number; headerText: string; classification: string }
+export interface BbTemplateTabInput {
+  tabRole: string; tabSort: number; sheetName: string | null
+  headerRowIndex: number | null; headerRowSpan: number
+  skipRowKeywords: string[]; groups: BbTemplateGroupInput[]
+}
+export interface BbTemplateInput {
+  agentBank: string; templateClass: string; sheetName: string | null
+  headerRowIndex: number | null; autoLearned: boolean; trancheCount: number
+  hasGroupingRows: boolean; hasColorFlags: boolean; summaryRowsAboveHeader: number
+  tabs: BbTemplateTabInput[]
+}
+
 export interface AliasEntry { id: number; text: string; tier: string; bank: string | null }
 
 export interface AliasGroup {
@@ -331,6 +361,8 @@ export const api = {
       get<DocRecognition>(`/api/submissions/${submissionId}/doc-recognition`),
     unrecognizedColumns: (submissionId: number) =>
       get<string[]>(`/api/submissions/${submissionId}/unrecognized-columns`),
+    discardRow: (submissionId: number, rowId: number) =>
+      del(`/api/submissions/${submissionId}/extracted-lps/${rowId}`),
     remap: (submissionId: number, extractedHeader: string, canonical: string) =>
       post<void>(`/api/submissions/${submissionId}/remap`, { extractedHeader, canonical }),
     reextract: (submissionId: number) =>
@@ -367,6 +399,8 @@ export const api = {
       get<MatchQueueItem[]>(`/api/matching/queue${qs({ submissionId })}`),
     decide: (id: number, decision: MatchQueueItem['decision'], masterName?: string) =>
       patch<MatchQueueItem>(`/api/matching/queue/${id}`, { decision, masterName }),
+    discard: (id: number) =>
+      del(`/api/matching/queue/${id}`),
     getThresholds: () =>
       get<MatchingConfig>('/api/matching/thresholds'),
     setThresholds: (t: MatchingConfig) =>
@@ -384,6 +418,25 @@ export const api = {
       get<Array<{ ts: string; event: string; detail: string; facility: string; user: string; ip: string }>>('/api/audit'),
     login: () =>
       post<void>('/api/audit/login'),
+  },
+
+  // ── BB Template Registry ──────────────────────────────────────────────────────
+  bbTemplates: {
+    list: () =>
+      get<BbTemplate[]>('/api/bb-templates'),
+    get: (id: number) =>
+      get<BbTemplate>(`/api/bb-templates/${id}`),
+    create: (body: BbTemplateInput) =>
+      post<BbTemplate>('/api/bb-templates', body),
+    update: (id: number, body: BbTemplateInput) =>
+      put<BbTemplate>(`/api/bb-templates/${id}`, body),
+    remove: (id: number) =>
+      del(`/api/bb-templates/${id}`),
+    import: (file: File) => {
+      const form = new FormData()
+      form.append('file', file)
+      return postForm<BbTemplate>('/api/bb-templates/import', form)
+    },
   },
 
   // ── Config ────────────────────────────────────────────────────────────────────

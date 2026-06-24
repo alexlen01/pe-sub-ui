@@ -445,6 +445,7 @@ export default function Upload() {
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <Button variant="secondary" size="sm" onClick={() => navigate('match-thresholds')}>Configure Thresholds</Button>
                 <Button variant="secondary" size="sm" onClick={() => navigate('field-mapping')}>Field Mapping Dictionary</Button>
+                <Button variant="secondary" size="sm" onClick={() => navigate('bb-templates')}>BB Templates</Button>
               </div>
             </Card>
           )}

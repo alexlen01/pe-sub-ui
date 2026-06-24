@@ -19,4 +19,5 @@ export const SCREENS: Record<string, ScreenMeta> = {
   'extraction-preview':{ title: 'Review Extraction',             sub: 'Review extracted LP records from the uploaded Agent BB'                                           },
   'match-queue':       { title: 'LP Match Queue',                sub: 'LP name matches requiring credit officer review'                                                  },
   'run-shadow-bb':     { title: 'LP Category & Shadow BB', sub: 'Assign LP categories, advance rates, and run Shadow BB for the current submission'                   },
+  'bb-templates':      { title: 'BB Template Registry',   sub: 'Manage Agent BB workbook format definitions — tabs, header positions, LP category group sections'      },
 }

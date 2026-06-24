@@ -48,7 +48,7 @@ const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--am
 const scoreBand = (s: number) => s >= 95 ? 'Auto-accept' : s >= 80 ? 'Review' : 'No Match'
 const bandVariant = (s: number) => s >= 95 ? 'active' : s >= 80 ? 'pending' : 'excl'
 
-function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
+function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; onDiscard: ((id: number) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
   const { steps, normalised: reconstructed } = buildNormSteps(row.agentName)
   const normalised = normalisedAgentName(row, reconstructed)
   const candidates = analysisCandidates(row), topCandidate = candidates[0]
@@ -131,10 +131,11 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { ro
             : <div style={{ fontSize: 12 }}>No confident match{topCandidate ? <span> (closest <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong>)</span> : ' in LP Master'} — a <strong>new LP record</strong> will be created.</div>}
         </div>
       </div>
-      {onResolve && row.status !== 'Auto-accept' && (
+      {(onResolve || onDiscard) && row.status !== 'Auto-accept' && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-          {row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
-          {row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
+          {onResolve && row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
+          {onResolve && row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
+          {onDiscard && <Button variant="danger" size="sm" style={{ marginLeft: 'auto' }} onClick={() => onDiscard(row.id)}>⊘ Discard</Button>}
         </div>
       )}
     </div>
@@ -150,6 +151,7 @@ export default function MatchQueue() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
   const [allRejectedOpen, setAllRejectedOpen] = useState(false)
+  const [discardConfirmId, setDiscardConfirmId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleAbort = async (msg = 'Submission aborted.') => {
@@ -193,6 +195,20 @@ export default function MatchQueue() {
     toast(`${ids.size} match${ids.size > 1 ? 'es' : ''} ${action === 'Accepted' ? 'accepted' : 'rejected'}.`)
     ids.forEach(id => pendingDecides.current.push(api.matching.decide(id, action).catch(() => {})))
   }
+  const handleDiscard = async () => {
+    if (discardConfirmId == null) return
+    const id = discardConfirmId
+    setDiscardConfirmId(null)
+    try {
+      await api.matching.discard(id)
+      setQueue(prev => prev.filter(r => r.id !== id))
+      if (selectedId === id) setSelectedId(null)
+      toast('Row discarded.')
+    } catch (e) {
+      toast(`Discard failed: ${String(e)}`)
+    }
+  }
+
   const resolveOne = (id: number, action: string) => {
     setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r))
     toast(`Match ${action.toLowerCase()}.`)
@@ -316,11 +332,15 @@ export default function MatchQueue() {
           </div>
         </div>
         {selectedRow
-          ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
+          ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} onDiscard={id => setDiscardConfirmId(id)} thresholds={DEFAULT_THRESHOLDS} />
           : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
         }
       </div>
     </div>
+    <Modal open={discardConfirmId != null} onClose={() => setDiscardConfirmId(null)} title="Discard Row?" subtitle="This extracted LP row will be permanently deleted from the queue."
+      footer={<><Button variant="secondary" onClick={() => setDiscardConfirmId(null)}>Cancel</Button><Button variant="danger" onClick={handleDiscard}>Discard</Button></>}>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row will be removed and will not be committed to LP Master. To restore it, re-upload the Agent BB.</div>
+    </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => handleAbort()}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>

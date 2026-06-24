@@ -27,6 +27,7 @@ export const SCREEN_NAV_PARENT: Record<string, string> = {
   'match-thresholds':   'upload',
   'run-shadow-bb':      'upload',
   'field-mapping':      'upload',
+  'bb-templates':       'upload',
 }
 
 export type NavSection = { section: string }
@@ -44,5 +45,5 @@ export const NAV: NavEntry[] = [
   { id: 'reports',       icon: '◫', label: 'Reports'         },
   { section: 'Admin' },
   { id: 'configuration', icon: '⚙', label: 'Configuration'   },
-  { id: 'audit',         icon: '!',      label: 'Audit Trail'     },
+  { id: 'audit',         icon: '!', label: 'Audit Trail'      },
 ]

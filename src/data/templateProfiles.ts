@@ -145,6 +145,36 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     ],
   },
   {
+    id: 'petershill-iv',
+    fund: 'Petershill IV',
+    workbook: { tabs: 'single', tabLabel: 'Borrowing Base' },
+    title: { row: 1, text: 'Petershill Partners IV – Borrowing Base' },
+    summaryRows: '1-9',
+    headerRow: 11,
+    groupHeaders: [
+      'Included Investors (Rated)',
+      'Inlcuded Investors (Non-Rated)',
+      'Institutional Designated Investors',
+      'PWM Designated Investors',
+      'Excluded Investors',
+    ],
+    columns: [
+      'Investor Name (Agent Records)', 'LP Classification', 'Commitment (USD)',
+      'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Fitch', 'Advance Rate',
+      'Borrowing Base Contribution', 'Concentration Limit', '% Called', '% of Borrowing Base',
+    ],
+    detectKeys: ['petershill'],
+    legend: [
+      { style: 'Green shading',  meaning: 'LP new to the BB, NOT via LP Transfer' },
+      { style: 'Yellow shading', meaning: 'LP new to the BB via LP Transfer' },
+      { style: 'Blue text',      meaning: 'LP with a change in Commitment Amount' },
+    ],
+    notes: [
+      'Goldman Sachs Bank USA administered. Class A borrowing base — 5 LP-category group sections.',
+      'Group header 2 contains agent-generated typo "Inlcuded" — stored verbatim.',
+    ],
+  },
+  {
     id: 'wf-blue-owl',
     fund: 'Blue Owl GP Stakes V',
     workbook: { tabs: 'multiple', tabLabel: 'Agent BB' },

@@ -16,6 +16,7 @@ const ExtractionPreview  = lazy(() => import('./screens/ExtractionPreview'))
 const MatchQueue         = lazy(() => import('./screens/MatchQueue'))
 const RunShadowBB        = lazy(() => import('./screens/RunShadowBB'))
 const FieldMapping       = lazy(() => import('./screens/FieldMapping'))
+const BBTemplates        = lazy(() => import('./screens/BBTemplates'))
 
 const SCREEN_MAP: Record<string, JSX.Element> = {
   dashboard:            <Dashboard />,
@@ -30,6 +31,7 @@ const SCREEN_MAP: Record<string, JSX.Element> = {
   'match-queue':        <MatchQueue />,
   'run-shadow-bb':      <RunShadowBB />,
   'field-mapping':      <FieldMapping />,
+  'bb-templates':       <BBTemplates />,
 }
 
 function ScreenRouter() {
