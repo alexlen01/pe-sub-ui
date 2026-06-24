@@ -488,14 +488,14 @@ export default function BBTemplates() {
             <thead>
               <tr style={{ background: 'var(--tbl)' }}>
                 <th style={{ ...TH, textAlign: 'left' }}>Agent Template</th>
-                <th style={{ ...TH, textAlign: 'center', width: 80 }}>Class</th>
+                <th style={{ ...TH, textAlign: 'center', width: 100 }}>Class</th>
                 <th style={{ ...TH, textAlign: 'left', width: 180 }}>Sheet Name</th>
-                <th style={{ ...TH, textAlign: 'right', width: 90 }}>Header Row</th>
-                <th style={{ ...TH, textAlign: 'right', width: 70 }}>Tranches</th>
-                <th style={{ ...TH, textAlign: 'center', width: 60 }}>Groups</th>
-                <th style={{ ...TH, textAlign: 'center', width: 70 }}>Colours</th>
-                <th style={{ ...TH, textAlign: 'left', width: 100 }}>Created</th>
-                <th style={{ ...TH, textAlign: 'left', width: 100 }}>Updated</th>
+                <th style={{ ...TH, textAlign: 'right', width: 100 }}>Header Row</th>
+                <th style={{ ...TH, textAlign: 'right', width: 95 }}>Tranches</th>
+                <th style={{ ...TH, textAlign: 'center', width: 85 }}>Groups</th>
+                <th style={{ ...TH, textAlign: 'center', width: 95 }}>Colours</th>
+                <th style={{ ...TH, textAlign: 'left', width: 120 }}>Created</th>
+                <th style={{ ...TH, textAlign: 'left', width: 120 }}>Updated</th>
                 <th style={{ ...TH, width: 110 }} />
               </tr>
             </thead>
