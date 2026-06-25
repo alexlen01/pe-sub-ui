@@ -18,6 +18,7 @@ export interface Facility {
   facilitySize: number | null
   ubsParticipation: number | null
   maturityDate: string | null
+  collateralDate: string | null
   bankStatus: string | null
   bankStatusDate: string | null
   // Latest Shadow BB figures from the most recent snapshot ($millions); null until a BB is run.

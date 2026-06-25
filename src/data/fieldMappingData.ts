@@ -84,7 +84,7 @@ export const ALIAS_GROUPS = [
         { id:33, text:'Original Commitment',            tier:'Core', bank:null },
         { id:34, text:'Individual Original Commitment', tier:'Core', bank:null },
         { id:35, text:'Total Commitment',               tier:'Core', bank:null },
-        { id:36, text:'Commitment (USD)',                tier:'Bank', bank:'BNY' },
+        { id:36, text:'Commitment (USD)',                tier:'Core', bank:null },
         { id:131, text:'Total Capital Commitments ($)',  tier:'Core', bank:null },
       ],
     },
@@ -170,6 +170,35 @@ export const ALIAS_GROUPS = [
 
   { group: 'Financial Scale', fields: [
     {
+      id: 33, canonical: 'Size Metric Type',
+      lpMasterField: 'Financial Scale - Size Metric Type',
+      disambiguation: 'The metric used by the agent to classify LP size, such as AUM, NAV, net worth, commitments, or a named size category', isDerived: false,
+      aliases: [
+        { id:150, text:'Size Metric Type',      tier:'Core', bank:null },
+        { id:151, text:'LP Size Metric',        tier:'Core', bank:null },
+        { id:152, text:'Size Metric',           tier:'Core', bank:null },
+        { id:153, text:'Scale Metric',          tier:'Core', bank:null },
+        { id:154, text:'Financial Size Metric', tier:'Core', bank:null },
+        { id:155, text:'Metric Type',           tier:'Core', bank:null },
+        { id:163, text:'LP Size Criteria',      tier:'Core', bank:null },
+      ],
+    },
+    {
+      id: 34, canonical: 'Size Value / Tier',
+      lpMasterField: 'Financial Scale - Size Value / Tier',
+      disambiguation: 'The reported LP size value, bucket, or tier corresponding to the selected size metric type', isDerived: false,
+      aliases: [
+        { id:156, text:'Size Value / Tier',  tier:'Core', bank:null },
+        { id:157, text:'Size Tier',          tier:'Core', bank:null },
+        { id:158, text:'LP Size Tier',       tier:'Core', bank:null },
+        { id:159, text:'Size Value',         tier:'Core', bank:null },
+        { id:160, text:'Financial Size Tier',tier:'Core', bank:null },
+        { id:161, text:'Investor Size Tier', tier:'Core', bank:null },
+        { id:162, text:'Size Bucket',        tier:'Core', bank:null },
+        { id:164, text:'LP Size ($ Bil)',    tier:'Core', bank:null },
+      ],
+    },
+    {
       id: 13, canonical: 'AUM',
       lpMasterField: 'Financial Scale - AUM',
       disambiguation: null, isDerived: false,
@@ -190,6 +219,21 @@ export const ALIAS_GROUPS = [
         { id:73, text:'Net Asset Value',tier:'Core', bank:null },
         { id:74, text:'Fund NAV',       tier:'Core', bank:null },
         { id:75, text:'Total NAV',      tier:'Core', bank:null },
+        { id:149, text:'NAV Range (USD)',tier:'Core', bank:null },
+      ],
+    },
+    {
+      id: 30, canonical: 'Net Worth',
+      lpMasterField: 'Financial Scale - Net Worth',
+      disambiguation: "Total net worth of the LP or investor entity, as reported by the agent", isDerived: false,
+      aliases: [
+        { id:142, text:'Net Worth',          tier:'Core', bank:null },
+        { id:143, text:'Total Net Worth',    tier:'Core', bank:null },
+        { id:144, text:'Investor Net Worth', tier:'Core', bank:null },
+        { id:145, text:'Networth',           tier:'Core', bank:null },
+        { id:146, text:'Net Worth (USD)',    tier:'Core', bank:null },
+        { id:147, text:'Net Worth Range',    tier:'Core', bank:null },
+        { id:148, text:'NW',                 tier:'Core', bank:null },
       ],
     },
     {
@@ -362,33 +406,6 @@ export const ALIAS_GROUPS = [
         { id:122, text:'Fitch',              tier:'Core', bank:null },
         { id:123, text:'Fitch Rating',       tier:'Core', bank:null },
         { id:124, text:'Fitch Credit Rating',tier:'Core', bank:null },
-      ],
-    },
-    {
-      id: 27, canonical: 'S&P Numeric Score',
-      lpMasterField: 'Ratings - S&P Numeric Score',
-      disambiguation: 'Goldman Sachs 0–9 numeric conversion of S&P letter rating used in advance rate tier lookup; GS-specific derived column; do not confuse with raw S&P letter rating',
-      isDerived: true,
-      aliases: [
-        { id:125, text:'S&P (numerical ratings scale, 0-9)', tier:'Bank', bank:'GS' },
-      ],
-    },
-    {
-      id: 28, canonical: "Moody's Numeric Score",
-      lpMasterField: "Ratings - Moody's Numeric Score",
-      disambiguation: "Goldman Sachs 0–9 numeric conversion of Moody's letter rating; GS-specific derived column",
-      isDerived: true,
-      aliases: [
-        { id:126, text:"Moody's (numerical ratings scale, 0-9)", tier:'Bank', bank:'GS' },
-      ],
-    },
-    {
-      id: 29, canonical: 'Numeric Rating',
-      lpMasterField: 'Ratings - Numeric Rating',
-      disambiguation: "Goldman Sachs composite 0–9 score (higher of S&P / Moody's numeric) that drives the advance rate tier; GS-specific; bank-scoped alias — distinct from BNY's letter-rating alias 'Applicable Rating' → Moody's Rating",
-      isDerived: true,
-      aliases: [
-        { id:127, text:'Applicable Rating (numerical ratings scale, 0-9)', tier:'Bank', bank:'GS' },
       ],
     },
   ]},

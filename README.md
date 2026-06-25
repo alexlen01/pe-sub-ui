@@ -51,8 +51,8 @@ The main workflow is a five-step wizard:
 ## Dashboard
 
 The Dashboard's main table is the **Agent Bank Summary** (Agent, Borrower, # LPs, Account Number,
-Loan Amount, Maturity Date, Facility Status, Facility Status Date). Account Number / Loan Amount /
-Maturity Date are facility inputs sourced from the facility record and edited on the **Facility
+Loan Amount, Maturity Date, Collateral Date, Facility Status, Facility Status Date). Account Number / Loan Amount /
+Maturity Date / Collateral Date are facility inputs sourced from the facility record and edited on the **Facility
 Edit** overlay in LP Master (persisted via `PATCH /api/facilities/{id}`). The overlay makes **all**
 facility fields editable, including the Identity fields **Borrower (name)** and **Agent Bank** (# LPs
 and Facility Status Date stay read-only — they are derived). It also lets a facility with **no LP

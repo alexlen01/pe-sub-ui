@@ -23,7 +23,7 @@ const FACILITY_STATUS_ITEMS = [
 ]
 
 // Agent Bank Summary layout (mirrors the prototype's Agent Bank Summary report) with "# LPs"
-// added after Borrower. Account Number / Loan Amount / Maturity Date are facility-edit inputs;
+// added after Borrower. Account Number / Loan Amount / Maturity Date / Collateral Date are facility-edit inputs;
 // Facility Status / Status Date reflect the internal workflow status.
 const FACILITY_COLS = [
   { key: 'agentBank',          label: 'Agent',                style: { width: 150 } },
@@ -32,6 +32,7 @@ const FACILITY_COLS = [
   { key: 'accountNumber',      label: 'Account Number',       align: 'right', style: { width: 105 } },
   { key: 'loanAmount',         label: 'Loan Amount',          align: 'right', style: { width: 100 } },
   { key: 'maturityDate',       label: 'Maturity Date',        align: 'right', style: { width: 105 } },
+  { key: 'collateralDate',     label: 'Collateral Date',       align: 'right', style: { width: 110 } },
   { key: 'status',             label: 'Facility Status',                      style: { width: 90 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
   { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 125 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
 ]
@@ -137,7 +138,7 @@ export default function Dashboard() {
         {' · '}
         <span style={{ color: 'var(--amber)' }}>{needsReviewCount} needs review</span>
         {' · '}
-        <span style={{ color: 'var(--blue)' }}>{inProgressCount} in progress</span>
+        <span style={{ color: 'var(--red)' }}>{inProgressCount} in progress</span>
       </>,
       color: 'black',
     },
@@ -148,7 +149,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      {error && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {error}</div>}
+      {error && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {error}</div>}
       <div className="kpi-grid">
         {kpis.map(k => (
           <KpiCard key={k.label} label={k.label} value={k.value} sub={k.sub} color={k.color} />
@@ -281,9 +282,9 @@ export default function Dashboard() {
                         </thead>
                         <tbody>
                           {buildExecRowsFromSummary(execSummary).map((row, i) => (
-                            <tr key={i} style={{ background: row.delta ? 'var(--red-lt)' : 'inherit' }}>
+                            <tr key={i} style={{ background: row.delta ? 'var(--danger-lt)' : 'inherit' }}>
                               <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: row.bold || row.delta ? 700 : 400, color: row.delta ? 'var(--red)' : 'var(--navy)', borderBottom: '1px solid var(--border)' }}>{row.ubs}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: row.bold || row.delta ? 700 : 400, color: row.delta ? 'var(--danger)' : 'var(--navy)', borderBottom: '1px solid var(--border)' }}>{row.ubs}</td>
                               <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>{row.agent}</td>
                             </tr>
                           ))}

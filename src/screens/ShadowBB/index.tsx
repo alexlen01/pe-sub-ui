@@ -298,7 +298,7 @@ function LPDetailPanel({ lp, onClose, onSave, overlay }: {
   const flbl = (label: string, calculated?: boolean) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
       <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
-      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
+      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--red)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
     </div>
   )
   const fcaption = (formula: string) => (
@@ -650,7 +650,7 @@ export default function ShadowBB() {
 
   return (
     <div>
-      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
       <div className="subbar">
         <span className="subbar-label">Facility</span>
         <select style={{ width: 240 }} value={facility} onChange={e => {
@@ -716,7 +716,7 @@ export default function ShadowBB() {
       </div>
 
       <div style={{ padding: '0 24px 24px' }}>
-        <div style={compact ? undefined : { display: 'flex', gap: 12, alignItems: 'stretch' }}>
+        <div style={compact ? undefined : selectedLP ? { display: 'flex', gap: 12, alignItems: 'stretch' } : undefined}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
               action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, filtered as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
@@ -755,12 +755,12 @@ export default function ShadowBB() {
                         const isSelected = lp.name === selectedName
                         const st = saveStatuses[lp.name ?? '']
                         return (
-                          <tr key={i} onClick={() => setSelectedName(lp.name ?? null)} style={{ cursor: 'pointer', background: isSelected ? 'var(--blue-lt)' : undefined }}>
+                          <tr key={i} className={isSelected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedName(lp.name ?? null)} style={{ cursor: 'pointer' }}>
                             <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               <strong>{lp.name}</strong>{lp.rcl && <span className="rcl-badge">R</span>}
                               {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 4 }}>Saving…</span>}
                               {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', marginLeft: 4 }}>✓</span>}
-                              {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', marginLeft: 4 }}>✕</span>}
+                              {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', marginLeft: 4 }}>✕</span>}
                             </td>
                             <td><Tag>{lp.cls}</Tag></td>
                             <td className="num">{compact ? lp.uc : fmtMoneyM(lp.ucM, true)}</td>
@@ -788,17 +788,9 @@ export default function ShadowBB() {
               </div>
             </Card>
           </div>
-          {!compact && (
-            <div style={{ width: 390, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0, maxHeight: 'calc(100vh - 130px)', overflowY: 'auto' }}>
-              {selectedLP ? (
-                <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
-              ) : (
-                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--tbl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, color: 'var(--muted)', textAlign: 'center', minHeight: 200 }}>
-                  <div style={{ fontSize: 22, opacity: 0.35 }}>☰</div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>LP Detail</div>
-                  <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to view and edit the full LP record. Changes are applied immediately and saved to LP Master.</div>
-                </div>
-              )}
+          {!compact && selectedLP && (
+            <div style={{ width: 520, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0, maxHeight: 'calc(100vh - 130px)', overflowY: 'auto' }}>
+              <LPDetailPanel lp={selectedLP} onClose={() => setSelectedName(null)} onSave={handleSave} />
             </div>
           )}
         </div>

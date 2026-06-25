@@ -8,7 +8,7 @@ type AliasGroup = Awaited<ReturnType<typeof getAliasGroups>>
 
 const CHIP: Record<string, React.CSSProperties> = {
   Core: { background: 'var(--tbl)',      color: 'var(--muted)', fontStyle: 'italic' },
-  Bank: { background: '#e8f0fb',         color: 'var(--blue)',  fontWeight: 600      },
+  Bank: { background: '#e8f0fb',         color: 'var(--red)',  fontWeight: 600      },
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
@@ -85,7 +85,7 @@ export default function FieldMapping() {
 
   return (
     <div style={{ padding: '20px 24px 40px' }}>
-      {loadError && <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <div style={{ marginBottom: 16 }}>
         <Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button>
       </div>
@@ -210,7 +210,7 @@ export default function FieldMapping() {
                         ) : (
                           <button
                             onClick={() => { setAddingTo({ groupName: group.group, fieldIdx: fi }); setNewAlias(''); setNewBank(''); setEditingId(null) }}
-                            style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--blue)', cursor: 'pointer', fontSize: 11, padding: '2px 8px' }}
+                            style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--red)', cursor: 'pointer', fontSize: 11, padding: '2px 8px' }}
                           >+ alias</button>
                         )}
 

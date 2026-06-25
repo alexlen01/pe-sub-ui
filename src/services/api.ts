@@ -156,6 +156,7 @@ export interface DocRecognition {
   headerRow: number; totalRows: number
   mappedColumns: number; unmatchedColumns: number
   headerInfo: string
+  forcedTemplate?: string
 }
 
 /** Batch classification & rate save from the LP Category & Rate Assignment screen.
@@ -276,7 +277,7 @@ export const api = {
       post<Facility>('/api/facilities', { name, agentBank }),
     setStatus: (id: number, status: string) =>
       patch<Facility>(`/api/facilities/${id}/status`, { status }),
-    update: (id: number, body: { name?: string; agentBank?: string; accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
+    update: (id: number, body: { name?: string; agentBank?: string; accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; collateralDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
       patch<Facility>(`/api/facilities/${id}`, body),
     remove: (id: number) =>
       del(`/api/facilities/${id}`),
@@ -366,8 +367,11 @@ export const api = {
       del(`/api/submissions/${submissionId}/extracted-lps/${rowId}`),
     remap: (submissionId: number, extractedHeader: string, canonical: string) =>
       post<void>(`/api/submissions/${submissionId}/remap`, { extractedHeader, canonical }),
-    reextract: (submissionId: number) =>
-      post<void>(`/api/submissions/${submissionId}/reextract`, {}),
+    reextract: (submissionId: number, templateName?: string) =>
+      post<void>(
+        `/api/submissions/${submissionId}/reextract`,
+        templateName?.trim() ? { templateName: templateName.trim() } : {},
+      ),
   },
 
   // ── Field Mapping ─────────────────────────────────────────────────────────────

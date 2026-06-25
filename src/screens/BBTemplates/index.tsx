@@ -322,7 +322,7 @@ function TemplateFormModal({
         </div>
 
         {error && (
-          <div style={{ padding: '8px 12px', background: 'var(--red-lt)', color: 'var(--red)', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
+          <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
             {error}
           </div>
         )}
@@ -361,7 +361,7 @@ function DeleteModal({ template, onClose, onConfirm }: {
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
         This will permanently delete the template definition for <strong>{template?.agentBank}</strong> (Class {template?.templateClass}), including all tab and group section definitions. Existing submissions that matched against this template are not affected.
       </div>
-      {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>{err}</div>}
+      {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
     </Modal>
   )
 }
@@ -461,7 +461,7 @@ export default function BBTemplates() {
         <Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button>
       </div>
       {loadError && (
-        <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>
+        <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>
           API error — {loadError}
         </div>
       )}
@@ -508,7 +508,8 @@ export default function BBTemplates() {
                 return (
                   <React.Fragment key={t.id}>
                     <tr
-                      style={{ cursor: 'pointer', background: isOpen ? 'var(--hover)' : undefined }}
+                      className={isOpen ? 'data-table-row-selected' : undefined}
+                      style={{ cursor: 'pointer' }}
                       onClick={() => setExpanded(prev => prev === t.id ? null : t.id)}
                     >
                       <td style={{ ...TD, fontWeight: 600 }}>
@@ -637,7 +638,7 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
                 <div key={g.id} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
                   <span style={{ color: 'var(--muted)', minWidth: 16, textAlign: 'right' }}>{g.groupSort}.</span>
                   <span style={{ flex: 1 }}>{g.headerText}</span>
-                  <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{g.classification}</span>
+                  <span style={{ color: 'var(--red)', fontWeight: 600 }}>{g.classification}</span>
                 </div>
               ))}
             </div>

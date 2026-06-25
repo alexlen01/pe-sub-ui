@@ -38,7 +38,7 @@ export default function AuditTrail() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
-      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
       <div className="filter-bar">
         <input type="text" placeholder="Search event detail, facility..." style={{ width: 280 }} value={search} onChange={e => setSearch(e.target.value)} />
         <select style={{ width: 180 }} value={evtFilter} onChange={e => setEvtFilter(e.target.value)}>

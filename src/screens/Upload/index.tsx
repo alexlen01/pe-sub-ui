@@ -10,7 +10,6 @@ import DataTable          from '../../components/ui/DataTable'
 import InfoTip            from '../../components/ui/InfoTip'
 import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
 import { api } from '../../services/api'
-import { findDetectedTemplate } from '../../services/templateService'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import type { SubmissionRow } from '../../services/facilityService'
 
@@ -19,14 +18,14 @@ const SUB_COLS = [
     <span>
       {r.facility}
       {r.notes && (
-        <span title={r.notes} style={{ marginLeft: 6, display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)', verticalAlign: 'middle' }} />
+        <span title={r.notes} style={{ marginLeft: 6, display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--red)', verticalAlign: 'middle' }} />
       )}
     </span>
   )},
   { key: 'date',     label: 'Date' },
   { key: 'status',   label: 'Status', render: (r: SubmissionRow) => <Tag>{r.status}</Tag> },
   { key: 'action',   label: 'Action', render: (r: SubmissionRow) => (
-    <span style={{ color: r.action === 'Resolve' ? 'var(--red)' : r.action === 'Pending' ? 'var(--muted)' : 'var(--blue)', fontWeight: 600, fontSize: 12 }}>
+    <span style={{ color: r.action === 'Resolve' ? 'var(--danger)' : r.action === 'Pending' ? 'var(--muted)' : 'var(--red)', fontWeight: 600, fontSize: 12 }}>
       {r.action}
     </span>
   )},
@@ -89,7 +88,7 @@ function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: Submi
             <span style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>Processing in progress…</span>
           )}
           {sub.status === 'Error' && (
-            <span style={{ fontSize: 12, color: 'var(--red)', fontStyle: 'italic', alignSelf: 'center' }}>Extraction failed — pe-sub-extraction was unreachable during processing.</span>
+            <span style={{ fontSize: 12, color: 'var(--danger)', fontStyle: 'italic', alignSelf: 'center' }}>Extraction failed — pe-sub-extraction was unreachable during processing.</span>
           )}
           {sub.status === 'Review' && (
             <Button size="sm" onClick={() => resumeSubmission(sub.step === 4 ? 'match-queue' : sub.step === 5 ? 'run-shadow-bb' : 'extraction-preview')}>View Submission</Button>
@@ -176,7 +175,7 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
             autoFocus
           />
           {duplicate && (
-            <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
               A facility with this name already exists.
             </div>
           )}
@@ -205,7 +204,7 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
         </div>
 
         {error && (
-          <div style={{ padding: '6px 10px', background: 'var(--red-lt)', borderRadius: 4, color: 'var(--red)', fontSize: 12, fontWeight: 600 }}>
+          <div style={{ padding: '6px 10px', background: 'var(--danger-lt)', borderRadius: 4, color: 'var(--danger)', fontSize: 12, fontWeight: 600 }}>
             {error}
           </div>
         )}
@@ -316,13 +315,11 @@ export default function Upload() {
       setError('Please select a facility.')
       return
     }
-    const detected = findDetectedTemplate({ fileName: file.name, facility })
-    const templateHint = detected?.fund ?? null
     setProcessing(true)
     setError('')
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
-      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes, templateHint ?? undefined)
+      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
       if (sub.status === 'Error') {
         setProcessing(false)
         setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
@@ -343,7 +340,7 @@ export default function Upload() {
 
   return (
     <div>
-      {loadError && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={1} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: 12, padding: '12px 24px 24px' }}>
@@ -365,7 +362,7 @@ export default function Upload() {
                 <strong style={{ color: '#E65100' }}>New facility — credit agreement rules not yet configured.</strong>
                 {' '}Shadow BB advance rates and concentration limits will use system defaults until rules are set in{' '}
                 <span
-                  style={{ color: 'var(--blue)', cursor: 'pointer', textDecoration: 'underline' }}
+                  style={{ color: 'var(--red)', cursor: 'pointer', textDecoration: 'underline' }}
                   onClick={() => navigate('configuration')}
                 >
                   Configuration
@@ -394,7 +391,7 @@ export default function Upload() {
             <div style={{ opacity: facility ? 1 : 0.4, pointerEvents: facility ? undefined : 'none', transition: 'opacity 0.15s' }}>
               <DropZone onFile={handleFileSelected} />
               {error && (
-                <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--red-lt)', borderRadius: 4, color: 'var(--red)', fontSize: 12, fontWeight: 600 }}>
+                <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--danger-lt)', borderRadius: 4, color: 'var(--danger)', fontSize: 12, fontWeight: 600 }}>
                   {error}
                 </div>
               )}

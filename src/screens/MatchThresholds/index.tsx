@@ -74,7 +74,7 @@ export default function MatchThresholds() {
         <span>{label}</span>
         <strong style={{ color: 'var(--navy)' }}>{fmt(thresholds[field] as number)}</strong>
       </label>
-      <input type="range" min={min} max={max} step={step} value={thresholds[field] as number} onChange={set(field)} style={{ width: '100%', accentColor: 'var(--blue)' }} />
+      <input type="range" min={min} max={max} step={step} value={thresholds[field] as number} onChange={set(field)} style={{ width: '100%', accentColor: 'var(--red)' }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}><span>{fmt(min)}</span><span>{fmt(max)}</span></div>
     </div>
   )
@@ -89,7 +89,7 @@ export default function MatchThresholds() {
 
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {loadError && <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--red)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
       <div><Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button></div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -240,7 +240,7 @@ export default function MatchThresholds() {
                 </thead>
                 <tbody>
                   {testResult.matches.map((m, i) => {
-                    const color = m.score >= thresholds.autoAccept ? 'var(--green)' : m.score >= thresholds.reviewQueue ? 'var(--amber)' : 'var(--red)'
+                    const color = m.score >= thresholds.autoAccept ? 'var(--green)' : m.score >= thresholds.reviewQueue ? 'var(--amber)' : 'var(--danger)'
                     return (
                       <tr key={i}>
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>{m.name}</td>

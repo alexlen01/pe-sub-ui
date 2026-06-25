@@ -49,8 +49,9 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
           {pageRows.map((row, i) => (
             <tr
               key={((row as { id?: string | number }).id) ?? i}
+              className={selectedRow === row ? 'data-table-row-selected' : undefined}
               onClick={() => onRowClick?.(row)}
-              style={{ ...(onRowClick ? { cursor: 'pointer' } : {}), ...(selectedRow === row ? { background: 'var(--blue-lt)' } : {}) }}
+              style={onRowClick ? { cursor: 'pointer' } : undefined}
             >
               {columns.map(col => {
                 const val = col.render ? col.render(row) : (row as Record<string, unknown>)[col.key] as ReactNode

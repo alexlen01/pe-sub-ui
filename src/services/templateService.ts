@@ -18,6 +18,7 @@ export interface ColumnMapping {
   canonical: string
   group: string
   tier: string
+  confidence?: number
 }
 
 export interface MappedColumn {
@@ -37,24 +38,79 @@ function normalize(s: string): string {
   return (s ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+function jaroWinkler(a: string, b: string): number {
+  if (a === b) return 1
+  if (!a || !b) return 0
+  const matchWindow = Math.max(Math.floor(Math.max(a.length, b.length) / 2) - 1, 0)
+  const matchedA = new Array<boolean>(a.length).fill(false)
+  const matchedB = new Array<boolean>(b.length).fill(false)
+  let matches = 0
+  for (let i = 0; i < a.length; i++) {
+    const lo = Math.max(0, i - matchWindow)
+    const hi = Math.min(i + matchWindow, b.length - 1)
+    for (let j = lo; j <= hi; j++) {
+      if (!matchedB[j] && a[i] === b[j]) {
+        matchedA[i] = true
+        matchedB[j] = true
+        matches++
+        break
+      }
+    }
+  }
+  if (matches === 0) return 0
+  let transpositions = 0
+  let k = 0
+  for (let i = 0; i < a.length; i++) {
+    if (!matchedA[i]) continue
+    while (!matchedB[k]) k++
+    if (a[i] !== b[k]) transpositions++
+    k++
+  }
+  const jaro = ((matches / a.length) + (matches / b.length) + ((matches - Math.floor(transpositions / 2)) / matches)) / 3
+  let prefix = 0
+  for (let i = 0; i < Math.min(4, a.length, b.length); i++) {
+    if (a[i] === b[i]) prefix++
+    else break
+  }
+  return jaro + prefix * 0.1 * (1 - jaro)
+}
+
 // Resolve a raw column header to its canonical LP Master field via the alias dictionary.
 // Mirrors the prototype templateService + backend HeaderMatcher. Returns null when unmatched.
 export function resolveColumn(header: string): ColumnMapping | null {
   const target = normalize(header)
   if (!target) return null
+  const headerHasPercentSignal = hasPercentSignal(header)
+  let best: ColumnMapping | null = null
+  let bestScore = 0
   for (const grp of ALIAS_GROUPS) {
     for (const field of grp.fields) {
+      if (!headerHasPercentSignal && isPercentField(field.canonical, field.aliases.map(a => a.text))) continue
       for (const alias of field.aliases) {
         const a = normalize(alias.text)
         const exact = target === a
         const contains = a.includes(' ') && target.includes(a)
         if (exact || contains) {
-          return { canonical: field.canonical, group: grp.group, tier: alias.tier ?? 'Core' }
+          return { canonical: field.canonical, group: grp.group, tier: alias.tier ?? 'Core', confidence: 1 }
+        }
+        const score = jaroWinkler(target, a)
+        if (score > bestScore) {
+          bestScore = score
+          best = { canonical: field.canonical, group: grp.group, tier: alias.tier ?? 'Core', confidence: score }
         }
       }
     }
   }
-  return null
+  return bestScore >= 0.900 ? best : null
+}
+
+function hasPercentSignal(value: string): boolean {
+  const normalized = normalize(value)
+  return value.includes('%') || /\b(percent|percentage|pct)\b/.test(normalized)
+}
+
+function isPercentField(canonical: string, aliases: string[]): boolean {
+  return hasPercentSignal(canonical) || aliases.some(hasPercentSignal)
 }
 
 // Annotate a profile's columns with their canonical mapping (or null when unmatched), so

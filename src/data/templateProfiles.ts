@@ -159,9 +159,11 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
       'Excluded Investors',
     ],
     columns: [
-      'Investor Name (Agent Records)', 'LP Classification', 'Commitment (USD)',
-      'Uncalled Capital (USD)', 'AUM', 'S&P', "Moody's", 'Fitch', 'Advance Rate',
-      'Borrowing Base Contribution', 'Concentration Limit', '% Called', '% of Borrowing Base',
+      'Deal Investor Name', 'Investor S&P', 'Investor Moody', 'NAV Range (USD)',
+      'Original Commitment', 'Unfunded Capital Commitment', '% Called',
+      '% of Unfunded Commitment', '% of Eligible Unfunded Commitment',
+      'Concentration Limit', 'Excess Concentration', 'Eligible Commitment',
+      'Advance Rate', 'Borrowing Base Contribution', '% of Borrowing Base',
     ],
     detectKeys: ['petershill'],
     legend: [

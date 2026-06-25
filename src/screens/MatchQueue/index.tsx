@@ -44,23 +44,23 @@ function buildParentSignal(r: QueueRow) {
   return { agentParent: r.agentParent, masterParent, score, adjustment, effect }
 }
 
-const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--red)'
+const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--danger)'
 const scoreBand = (s: number) => s >= 95 ? 'Auto-accept' : s >= 80 ? 'Review' : 'No Match'
 const bandVariant = (s: number) => s >= 95 ? 'active' : s >= 80 ? 'pending' : 'excl'
 
-function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; onDiscard: ((id: number) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
+function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
   const { steps, normalised: reconstructed } = buildNormSteps(row.agentName)
   const normalised = normalisedAgentName(row, reconstructed)
   const candidates = analysisCandidates(row), topCandidate = candidates[0]
   const hasProposedMatch = !!row.masterName
   const parentSignal = buildParentSignal(row)
-  const verdictColor = (v: string) => v === 'Auto-accept' ? 'var(--green)' : v.startsWith('Review') ? 'var(--amber)' : 'var(--red)'
+  const verdictColor = (v: string) => v === 'Auto-accept' ? 'var(--green)' : v.startsWith('Review') ? 'var(--amber)' : 'var(--danger)'
   const parentEffectLabel = (sig: ReturnType<typeof buildParentSignal>) => {
     if (!sig) return null
     if (sig.score === null) return { text: 'No LP Master parent to compare', color: 'var(--muted)' }
     if (sig.effect === 'boost')   return { text: `Strong match · score +${sig.adjustment} pts`, color: 'var(--green)' }
     if (sig.effect === 'partial') return { text: `Partial match · score +${sig.adjustment} pt`,  color: 'var(--amber)' }
-    if (sig.effect === 'penalty') return { text: `Mismatch · score ${sig.adjustment} pts`,        color: 'var(--red)'   }
+    if (sig.effect === 'penalty') return { text: `Mismatch · score ${sig.adjustment} pts`,        color: 'var(--danger)'   }
     return { text: 'Near match · no adjustment', color: 'var(--muted)' }
   }
   return (
@@ -68,9 +68,9 @@ function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, over
       className={overlay ? 'lp-detail-overlay' : undefined}
       style={overlay ? undefined : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
     >
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div><div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>Match Analysis</div><div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>#{row.id} - {row.facility}</div></div>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--muted)', lineHeight: 1, padding: 2 }}>×</button>
+      <div style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div><div style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#fff', lineHeight: 1, padding: 2, opacity: 0.7 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
@@ -83,7 +83,7 @@ function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, over
           {steps.map((step, i) => (
             <div key={i} style={{ display: 'flex', gap: 10, paddingBottom: i < steps.length - 1 ? 12 : 0, position: 'relative' }}>
               {i < steps.length - 1 && <div style={{ position: 'absolute', left: 11, top: 24, bottom: 0, width: 1, background: 'var(--border)' }} />}
-              <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--blue)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--red)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', marginBottom: 2 }}>{step.label}</div>
                 <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4 }}>{step.rule}</div>
@@ -112,7 +112,7 @@ function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, over
                 <thead><tr style={{ background: '#e5e7eb' }}>{['LP Master Candidate','JW','Lev','Score','Verdict'].map(h => <th key={h} style={{ padding: '5px 6px', textAlign: h === 'LP Master Candidate' ? 'left' : 'center', color: 'var(--navy)', fontWeight: 700, borderBottom: '1px solid var(--border)', fontSize: 10 }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {candidates.map((c, i) => (
-                    <tr key={i} style={{ background: i === 0 && hasProposedMatch ? 'var(--blue-lt)' : 'transparent' }}>
+                    <tr key={i} style={{ background: i === 0 && hasProposedMatch ? 'var(--red-lt)' : 'transparent' }}>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', fontWeight: i === 0 ? 600 : 400 }}>{c.name}</td>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? `${c.jw}%` : c.jw}</td>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? `${c.lev}%` : c.lev}</td>
@@ -131,11 +131,10 @@ function MatchDetailPanel({ row, onClose, onResolve, onDiscard, thresholds, over
             : <div style={{ fontSize: 12 }}>No confident match{topCandidate ? <span> (closest <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong>)</span> : ' in LP Master'} — a <strong>new LP record</strong> will be created.</div>}
         </div>
       </div>
-      {(onResolve || onDiscard) && row.status !== 'Auto-accept' && (
+      {onResolve && row.status !== 'Auto-accept' && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-          {onResolve && row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
-          {onResolve && row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
-          {onDiscard && <Button variant="danger" size="sm" style={{ marginLeft: 'auto' }} onClick={() => onDiscard(row.id)}>⊘ Discard</Button>}
+          {row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
+          {row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
         </div>
       )}
     </div>
@@ -151,7 +150,6 @@ export default function MatchQueue() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
   const [allRejectedOpen, setAllRejectedOpen] = useState(false)
-  const [discardConfirmId, setDiscardConfirmId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleAbort = async (msg = 'Submission aborted.') => {
@@ -195,20 +193,6 @@ export default function MatchQueue() {
     toast(`${ids.size} match${ids.size > 1 ? 'es' : ''} ${action === 'Accepted' ? 'accepted' : 'rejected'}.`)
     ids.forEach(id => pendingDecides.current.push(api.matching.decide(id, action).catch(() => {})))
   }
-  const handleDiscard = async () => {
-    if (discardConfirmId == null) return
-    const id = discardConfirmId
-    setDiscardConfirmId(null)
-    try {
-      await api.matching.discard(id)
-      setQueue(prev => prev.filter(r => r.id !== id))
-      if (selectedId === id) setSelectedId(null)
-      toast('Row discarded.')
-    } catch (e) {
-      toast(`Discard failed: ${String(e)}`)
-    }
-  }
-
   const resolveOne = (id: number, action: string) => {
     setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r))
     toast(`Match ${action.toLowerCase()}.`)
@@ -276,13 +260,13 @@ export default function MatchQueue() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
-      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={3} />
       {autoAccepted > 0 && (
-        <div style={{ padding: '7px 20px', background: 'var(--blue-lt)', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '7px 20px', background: 'var(--red-lt)', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontWeight: 700 }}>✓ {autoAccepted} records auto-matched</span>
           <span style={{ color: 'var(--muted)' }}>— extraction confidence ≥ 95% · committed to LP Master without review</span>
-          <button onClick={() => setStatusFilter('Accepted')} style={{ marginLeft: 8, background: 'none', border: '1px solid var(--blue)', borderRadius: 4, padding: '1px 8px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer' }}>View</button>
+          <button onClick={() => setStatusFilter('Accepted')} style={{ marginLeft: 8, background: 'none', border: '1px solid var(--red)', borderRadius: 4, padding: '1px 8px', fontSize: 11, color: 'var(--red)', cursor: 'pointer' }}>View</button>
         </div>
       )}
       <div className="filter-bar">
@@ -308,7 +292,7 @@ export default function MatchQueue() {
             </thead>
             <tbody>
               {pageItems.map(r => (
-                <tr key={r.id} onClick={() => setSelectedId(prev => prev === r.id ? null : r.id)} style={{ opacity: r.status !== 'Pending' ? 0.55 : 1, cursor: 'pointer', background: selectedId === r.id ? 'var(--blue-lt)' : undefined }}>
+                <tr key={r.id} className={selectedId === r.id ? 'data-table-row-selected' : undefined} onClick={() => setSelectedId(prev => prev === r.id ? null : r.id)} style={{ opacity: r.status !== 'Pending' ? 0.55 : 1, cursor: 'pointer' }}>
                   <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggleRow(r.id)} /></td>
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.agentName}>{r.agentName}</div></td>
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.masterName ? 'var(--text)' : 'var(--muted)', fontStyle: r.masterName ? 'normal' : 'italic' }} title={r.masterName ?? ''}>{r.masterName ?? 'No match found — new LP record will be created'}</div></td>
@@ -316,7 +300,7 @@ export default function MatchQueue() {
                   <td><Tag variant={bandVariant(r.score)}>{scoreBand(r.score)}</Tag></td>
                   <td><Tag variant={r.status === 'Accepted' ? 'active' : r.status === 'Rejected' ? 'excl' : 'pending'}>{r.status}</Tag></td>
                   <td style={{ padding: '7px 6px' }} onClick={e => e.stopPropagation()}>
-                    {r.status === 'Pending' ? (<div style={{ display: 'flex', gap: 6 }}><Button size="sm" onClick={() => resolveOne(r.id, 'Accepted')}>✓ Accept</Button><Button variant="ghost" size="sm" onClick={() => resolveOne(r.id, 'Rejected')}>✕ Reject</Button></div>) : (<span style={{ fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 600 }} onClick={() => resolveOne(r.id, 'Pending')}>Undo</span>)}
+                    {r.status === 'Pending' ? (<div style={{ display: 'flex', gap: 6 }}><Button size="sm" onClick={() => resolveOne(r.id, 'Accepted')}>✓ Accept</Button><Button variant="ghost" size="sm" onClick={() => resolveOne(r.id, 'Rejected')}>✕ Reject</Button></div>) : (<span style={{ fontSize: 11, color: 'var(--red)', cursor: 'pointer', fontWeight: 600 }} onClick={() => resolveOne(r.id, 'Pending')}>Undo</span>)}
                   </td>
                 </tr>
               ))}
@@ -332,15 +316,11 @@ export default function MatchQueue() {
           </div>
         </div>
         {selectedRow
-          ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} onDiscard={id => setDiscardConfirmId(id)} thresholds={DEFAULT_THRESHOLDS} />
+          ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
           : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
         }
       </div>
     </div>
-    <Modal open={discardConfirmId != null} onClose={() => setDiscardConfirmId(null)} title="Discard Row?" subtitle="This extracted LP row will be permanently deleted from the queue."
-      footer={<><Button variant="secondary" onClick={() => setDiscardConfirmId(null)}>Cancel</Button><Button variant="danger" onClick={handleDiscard}>Discard</Button></>}>
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row will be removed and will not be committed to LP Master. To restore it, re-upload the Agent BB.</div>
-    </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => handleAbort()}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>

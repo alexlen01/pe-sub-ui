@@ -39,7 +39,8 @@ describe('getFacilities — live', () => {
   it('maps API facilities to display rows, including Agent Bank Summary fields', async () => {
     stubFetch({
       '/api/facilities':  [{ id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
-                             accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', lastRunAt: null }],
+                             accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15',
+                             collateralDate: '2026-06-01', lastRunAt: null }],
       '/api/submissions': [],
     })
     const rows = await getFacilities()
@@ -51,6 +52,7 @@ describe('getFacilities — live', () => {
     expect(rows[0].accountNumber).toBe('5VX1796')
     expect(rows[0].loanAmount).toBe('$2.5B')
     expect(rows[0].maturityDate).toBe('Mar 15, 2029')
+    expect(rows[0].collateralDate).toBe('Jun 1, 2026')
   })
 
   it('maps facility size / UBS participation and derives the participation rate', async () => {
@@ -80,13 +82,14 @@ describe('getFacilities — live', () => {
   it('shows — for unset Agent Bank Summary fields', async () => {
     stubFetch({
       '/api/facilities':  [{ id: 2, name: 'New Fund', agentBank: 'Citi', status: 'Not Started', lpCount: 0,
-                             accountNumber: null, loanAmount: null, maturityDate: null, lastRunAt: null }],
+                             accountNumber: null, loanAmount: null, maturityDate: null, collateralDate: null, lastRunAt: null }],
       '/api/submissions': [],
     })
     const rows = await getFacilities()
     expect(rows[0].accountNumber).toBe('—')
     expect(rows[0].loanAmount).toBe('—')
     expect(rows[0].maturityDate).toBe('—')
+    expect(rows[0].collateralDate).toBe('—')
   })
 
   it('maps the latest Shadow BB figures (Agent BB / UBS BB / delta / EAR) from the API', async () => {
@@ -154,18 +157,20 @@ describe('api.facilities.update', () => {
       calls.push({ url: String(url), init })
       return Promise.resolve(new Response(JSON.stringify({
         id: 1, name: 'Test Fund', agentBank: 'Bank NA', status: 'Active', lpCount: 100,
-        accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', lastRunAt: null,
+        accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15',
+        collateralDate: '2026-06-01', lastRunAt: null,
       }), { status: 200 }))
     }))
 
-    const saved = await api.facilities.update(1, { accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15' })
+    const saved = await api.facilities.update(1, { accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', collateralDate: '2026-06-01' })
 
     expect(calls[0].url).toContain('/api/facilities/1')
     expect(calls[0].init?.method).toBe('PATCH')
-    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15' })
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ accountNumber: '5VX1796', loanAmount: 2_500_000_000, maturityDate: '2029-03-15', collateralDate: '2026-06-01' })
     expect(saved.accountNumber).toBe('5VX1796')
     expect(saved.loanAmount).toBe(2_500_000_000)
     expect(saved.maturityDate).toBe('2029-03-15')
+    expect(saved.collateralDate).toBe('2026-06-01')
   })
 
   it('PATCHes the editable Identity fields (name + agentBank)', async () => {

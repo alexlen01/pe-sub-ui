@@ -577,7 +577,7 @@ export default function RunShadowBB() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
-      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--red)', fontSize: 12 }}>API error — {loadError}</div>}
+      {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
       <StepBar steps={WIZARD_STEPS} current={4} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -597,7 +597,7 @@ export default function RunShadowBB() {
             subtitle={`Step 5 · ${submissionLPs.length} LPs · ${newLPs.length > 0 ? `${newLPs.length} new` : 'all matched to LP Master'} · select a row to edit the full LP record`}
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--red) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
+                {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
                 <Button size="sm" onClick={run} disabled={running}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
@@ -605,11 +605,11 @@ export default function RunShadowBB() {
             }
           >
             {/* Table (left) + LP record card (right / overlay). Clicking a row opens the card.
-                Wide (>1500): 2-column grid with sticky card on the right; full dollar amounts.
+                Wide (>1500): 2-column grid with wider sticky card on the right; full dollar amounts.
                 Compact (≤1500): single column; card slides in as overlay; amounts in $M. */}
             <div style={compact
               ? { position: 'relative', padding: '4px 18px 0' }
-              : { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 14, padding: '4px 18px 0', alignItems: 'start' }
+              : { display: 'grid', gridTemplateColumns: selectedLp && selectedKey && overrides[selectedKey] ? 'minmax(0, 1fr) 520px' : 'minmax(0, 1fr)', gap: 14, padding: '4px 18px 0', alignItems: 'start' }
             }>
 
               <div style={{ minWidth: 0 }}>
@@ -637,21 +637,20 @@ export default function RunShadowBB() {
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
                         const n = lp.name ?? lp._agentName ?? '—'
                         return (
-                          <tr key={key} onClick={() => setSelectedKey(key)}
+                          <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)}
                             style={{ cursor: 'pointer',
-                              background: selected ? 'var(--blue-lt)' : missing ? 'color-mix(in srgb, var(--red) 6%, transparent)' : undefined,
-                              boxShadow: selected ? 'inset 3px 0 0 var(--blue)' : undefined }}>
+                              background: !selected && missing ? 'color-mix(in srgb, var(--danger) 6%, transparent)' : undefined }}>
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
-                                {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--blue)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
+                                {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>✓</span>}
-                                {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--red)', flexShrink: 0 }}>✕</span>}
+                                {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>✕</span>}
                               </div>
                             </td>
                             <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{ov.type || '—'}</td>
-                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
                             <td className="num">{typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : '—'}</td>
                             <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(0)}%` : '—'}</td>
                             <td className="num">{compact ? (ov.ucM || '—') : (ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—')}</td>
@@ -665,7 +664,7 @@ export default function RunShadowBB() {
                   </table>
                 </div>
                 <div className="tbl-footer">
-                  <span>Showing {from}–{to} of {displayLPs.length} LPs{unclassifiedOnly && unclassified > 0 && <span style={{ color: 'var(--muted)' }}> (filtered)</span>}{unclassified > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--blue)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
+                  <span>Showing {from}–{to} of {displayLPs.length} LPs{unclassifiedOnly && unclassified > 0 && <span style={{ color: 'var(--muted)' }}> (filtered)</span>}{unclassified > 0 && <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
                     {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
@@ -689,24 +688,17 @@ export default function RunShadowBB() {
               )}
 
               {/* Wide right-side LP record card — sticky so it stays in view while scrolling */}
-              {!compact && (
+              {!compact && selectedLp && selectedKey && overrides[selectedKey] && (
                 <div style={{ position: 'sticky', top: 4 }}>
-                  {selectedLp && selectedKey && overrides[selectedKey]
-                    ? <LPRecordCard
-                        lp={selectedLp}
-                        ov={overrides[selectedKey]}
-                        calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
-                        saveStatus={saveState[selectedKey]}
-                        running={running}
-                        onDeselect={() => setSelectedKey(null)}
-                        onChange={handleFieldChange}
-                      />
-                    : <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12, background: 'var(--tbl)' }}>
-                        <div style={{ fontSize: 22, opacity: 0.35, marginBottom: 8 }}>☰</div>
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>LP Record</div>
-                        Select a row to view and edit the full LP record.
-                      </div>
-                  }
+                  <LPRecordCard
+                    lp={selectedLp}
+                    ov={overrides[selectedKey]}
+                    calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
+                    saveStatus={saveState[selectedKey]}
+                    running={running}
+                    onDeselect={() => setSelectedKey(null)}
+                    onChange={handleFieldChange}
+                  />
                 </div>
               )}
             </div>
@@ -719,7 +711,7 @@ export default function RunShadowBB() {
           <Card title="Calculation Results" subtitle={`${submissionLPs.length} LP records processed`}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px 24px', padding: '4px 18px 18px' }}>
               {resultRows.map(r => (
-                <div key={r.label}><div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{r.label}</div><div style={{ fontSize: 13, fontWeight: (r as { hi?: boolean }).hi ? 700 : 600, color: (r as { neg?: boolean }).neg ? 'var(--red)' : (r as { hi?: boolean }).hi ? 'var(--navy)' : 'var(--text)' }}>{String(r.value)}</div></div>
+                <div key={r.label}><div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{r.label}</div><div style={{ fontSize: 13, fontWeight: (r as { hi?: boolean }).hi ? 700 : 600, color: (r as { neg?: boolean }).neg ? 'var(--danger)' : (r as { hi?: boolean }).hi ? 'var(--navy)' : 'var(--text)' }}>{String(r.value)}</div></div>
               ))}
             </div>
           </Card>
@@ -760,7 +752,7 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
   const flbl = (label: string, calculated?: boolean) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
       <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
-      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
+      {calculated && <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--red)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>}
     </div>
   )
   const fcaption = (formula: string) => (
@@ -790,12 +782,12 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
   // ── UBS vs Agent comparison row ──────────────────────────────────────────────
   const cmpAgent = (node: React.ReactNode, tone?: 'neg' | 'zero') => (
     <div style={{ fontSize: 12.5, padding: '4px 8px', minHeight: 28, display: 'flex', alignItems: 'center',
-      background: 'var(--tbl)', borderRadius: 3, color: tone === 'neg' ? 'var(--red)' : tone === 'zero' ? 'var(--muted)' : 'var(--text)' }}>{node}</div>
+      background: 'var(--tbl)', borderRadius: 3, color: tone === 'neg' ? 'var(--danger)' : tone === 'zero' ? 'var(--muted)' : 'var(--text)' }}>{node}</div>
   )
   const cmpUbsRo = (node: React.ReactNode, tone?: 'neg' | 'pos' | 'zero') => (
     <div style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 8px', minHeight: 28, display: 'flex', alignItems: 'center',
-      background: 'color-mix(in srgb, var(--blue) 7%, transparent)', borderRadius: 3,
-      color: tone === 'neg' ? 'var(--red)' : tone === 'pos' ? 'var(--green)' : tone === 'zero' ? 'var(--muted)' : 'var(--navy)' }}>{node}</div>
+      background: 'color-mix(in srgb, var(--red) 7%, transparent)', borderRadius: 3,
+      color: tone === 'neg' ? 'var(--danger)' : tone === 'pos' ? 'var(--green)' : tone === 'zero' ? 'var(--muted)' : 'var(--navy)' }}>{node}</div>
   )
   const cmpUbsSel = (field: keyof Override, opts: readonly string[]) => (
     <select value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)}>
@@ -855,7 +847,7 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
           <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '7px 12px', alignItems: 'center' }}>
             <div />
             <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>Agent · from BB</div>
-            <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--blue)' }}>UBS · editable</div>
+            <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--red)' }}>UBS · editable</div>
             {cmpRow('LP Category',   cmpAgent(ov.agentCls || '—'),                                               cmpUbsSel('cls', UBS_CLS_OPTS))}
             {cmpRow('Advance Rate',  cmpAgent(pctStr(ov.agentRatePct)),                                           cmpUbsPct('ubsAdvRatePct', 5))}
             {cmpRow('Conc. Limit',   cmpAgent(pctStr(ov.agentConcLimitPct)),                                      cmpUbsPct('concLimitPct', 0.5))}

@@ -1,12 +1,15 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { useApp }  from '../../context/AppContext'
 import Button      from '../../components/ui/Button'
 import Modal       from '../../components/ui/Modal'
 import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
-import { CLS_OPTS, REGION_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, INVESTOR_TYPE_OPTS, LP_CATEGORY_LABEL } from '../../config/classificationConfig'
-import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA } from '../../config/classificationConfig'
+import {
+  CLS_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, FITCH_RATING_OPTS, INVESTOR_TYPE_OPTS, LP_CATEGORY_LABEL,
+  AGENT_CLS_OPTS, UBS_CLS_OPTS, LP_SIZE_CRITERIA_OPTS, TYPE_OPTS,
+} from '../../config/classificationConfig'
+import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA, UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
 import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getFacilities, parseMoneyToNumber } from '../../services/facilityService'
 import { api } from '../../services/api'
@@ -24,6 +27,54 @@ function parseRatePct(s: string | undefined | null): number {
   const m = String(s ?? '').match(/([\d.]+)\s*%?/)
   return m && m[1] ? parseFloat(m[1]) / 100 : NaN
 }
+type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
+
+function moneyToBillion(s: string | undefined | null): number | null {
+  const m = String(s ?? '').match(/\$?\s*([\d,.]+)\s*([KMBT]?)/i)
+  if (!m) return null
+  const val = parseFloat(m[1].replace(/,/g, ''))
+  if (!Number.isFinite(val)) return null
+  const unit = m[2].toUpperCase()
+  if (unit === 'T') return val * 1000
+  if (unit === 'M') return val / 1000
+  if (unit === 'K') return val / 1_000_000
+  return val
+}
+
+function billionToMoney(b: string | number | undefined | null): string {
+  const n = typeof b === 'number' ? b : parseFloat(String(b ?? '').replace(/,/g, ''))
+  return Number.isFinite(n) ? `$${n}B` : ''
+}
+
+function inferLpSizeCriteria(lp: LPRecord): LpSizeCriteria {
+  if (moneyToBillion(lp.aum) != null) return 'AUM'
+  if (moneyToBillion(lp.nav) != null) return 'NAV'
+  if (moneyToBillion(lp.pension) != null) return 'Assets'
+  return ''
+}
+
+function lpSizeValue(lp: LPRecord, criteria: string): string {
+  const source = criteria === 'NAV' ? lp.nav : criteria === 'Assets' ? lp.pension : criteria === 'AUM' ? lp.aum : ''
+  const b = moneyToBillion(source)
+  return b == null ? '' : String(Number(b.toFixed(3)))
+}
+
+function applyLpSizeToRecord(lp: LPRecord, form: Record<string, unknown>): LPRecord {
+  const next = { ...lp, ...form as Partial<LPRecord> } as LPRecord
+  const size = billionToMoney(form.lpSize as string | number | undefined)
+  switch (form.lpSizeCriteria) {
+    case 'AUM':
+      next.aum = size
+      break
+    case 'NAV':
+      next.nav = size
+      break
+    case 'Assets':
+      next.pension = size
+      break
+  }
+  return next
+}
 function lpBelongsToFacility(lp: { name: string }, facilityName: string) {
   if (facilityName === 'Blue Owl GP Stakes V') return true
   const h = hash(facilityName)
@@ -38,8 +89,8 @@ const CLS_LEGEND_ITEMS = [
   { label: 'Excluded — 0%',         desc: 'Does not meet credit agreement eligibility criteria. Not counted in the borrowing base.' },
 ]
 
-// ── Full-screen LP detail overlay ─────────────────────────────────────────────
-function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
+// ── Right-side LP detail panel ────────────────────────────────────────────────
+function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
   lp: LPRecord | null
   open: boolean
   onClose: () => void
@@ -50,34 +101,21 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
   const [newCls,    setNewCls]    = useState('')
   const [rationale, setRationale] = useState('')
   const [form, setForm] = useState<Record<string, unknown>>({})
-  const [pos,      setPos]      = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState(false)
-  const dragStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null)
-
-  useEffect(() => {
-    if (!dragging) return
-    const onMove = (e: MouseEvent) => {
-      if (!dragStart.current) return
-      setPos({ x: dragStart.current.px + e.clientX - dragStart.current.mx, y: dragStart.current.py + e.clientY - dragStart.current.my })
-    }
-    const onUp = () => setDragging(false)
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [dragging])
 
   useEffect(() => {
     if (!lp) return
+    const lpSizeCriteria = inferLpSizeCriteria(lp)
     setSubview(null)
-    setPos({ x: 0, y: 0 })
     setForm({
       name: lp.name, parent: lp.parent, spv: lp.spv, agentCls: lp.agentCls ?? '',
       type: lp.type, cls: lp.cls, ig: lp.ig,
       region: lp.region, hq: lp.hq,
       sp: lp.sp, mdy: lp.mdy, fitch: lp.fitch,
       aum: lp.aum, nav: lp.nav, pension: lp.pension || 'N/A', pensionFunded: lp.pensionFunded || 'N/A',
+      lpSizeCriteria, lpSize: lpSizeValue(lp, lpSizeCriteria),
       capCommit: lp.capCommit, pctCapCommit: lp.pctCapCommit, calledCap: lp.calledCap,
       uc: lp.uc, pctUncalled: lp.pctUncalled, pctCalled: lp.pctCalled,
+      rate: lp.rate, agentRate: lp.agentRate,
       agentConc: lp.agentConc, ubsConc: lp.ubsConc, abb: lp.abb, ubb: lp.ubb,
       inc: lp.inc, notes: lp.notes ?? '',
     })
@@ -92,17 +130,23 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
   if (!open || !lp) return null
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(p => ({ ...p, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }))
+    setForm(p => {
+      const value = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
+      const next = { ...p, [k]: value }
+      if (k === 'cls' && !p.rate) next.rate = UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
+      if (k === 'lpSizeCriteria' && lp) next.lpSize = lpSizeValue(applyLpSizeToRecord(lp, p), String(value))
+      return next
+    })
 
   const handleSave = () => {
-    const eff = { ...lp, ...form as Partial<LPRecord> } as LPRecord
+    const eff = applyLpSizeToRecord(lp, form)
     const c = computeLPRecord(eff)
     const capCommitM = parseM(eff.capCommit)
     const calledCapM = capCommitM - parseM(eff.uc)
     const agentRateDec = parseRatePct(eff.agentRate)
     onSave({
       ...eff,
-      rate: BUSA_RATE_MAP[form.cls as string] ?? lp.rate,
+      rate: eff.rate || UBS_CLS_DEFAULT_RATE[form.cls as string] || BUSA_RATE_MAP[form.cls as string] || lp.rate,
       clsTag: CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
       // Calculated columns — kept in sync with the formulas in SHADOW_BB_ANALYSIS.md
       hq: c.busaRate === 0.90,
@@ -111,11 +155,12 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
       ubb: c.ubb,
       uec: c.uec,
+      ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
     } as LPRecord)
   }
 
   const handleReclassify = () => {
-    onSave({ ...lp, cls: newCls, rcl: true, clsTag: CLS_TAG_MAP[newCls] ?? lp.clsTag, rate: BUSA_RATE_MAP[newCls] ?? lp.rate, notes: (lp.notes ? lp.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}` } as LPRecord)
+    onSave({ ...lp, cls: newCls, rcl: true, clsTag: CLS_TAG_MAP[newCls] ?? lp.clsTag, rate: UBS_CLS_DEFAULT_RATE[newCls] ?? BUSA_RATE_MAP[newCls] ?? lp.rate, notes: (lp.notes ? lp.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}` } as LPRecord)
     setSubview(null)
   }
 
@@ -130,7 +175,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
       <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
       {calculated && (
-        <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--blue)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>
+        <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--red)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>
       )}
     </div>
   )
@@ -143,44 +188,44 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       ? <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 8px 0' }}>{String(formula)}</div>
       : null
 
-    const roSt: React.CSSProperties = ro ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
+    const disabled = !ro && !canEdit
+    const roSt: React.CSSProperties = ro || disabled ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
     return (
       <div className="form-group" style={{ ...colSt, marginBottom: 0 }} key={label || editKey || ''}>
         <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
         {chk
           ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
-              <input type="checkbox" checked={!!form[editKey!]} onChange={set(editKey!)} /> Yes
+              <input type="checkbox" checked={!!form[editKey!]} onChange={set(editKey!)} disabled={disabled} /> Yes
             </label>
           : ta
-          ? <textarea style={{ width: '100%', height: 72 }} value={String(editVal)} onChange={set(editKey!)} />
+          ? <textarea style={{ width: '100%', height: 72, ...roSt }} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled} />
           : opts
-          ? <select style={{ width: '100%' }} value={String(editVal)} onChange={set(editKey!)}>
-              {(opts as string[]).map(o => <option key={o || '__empty'} value={o}>{o || 'Not Rated'}</option>)}
+          ? <select style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled}>
+              {(opts as readonly string[]).map(o => <option key={o || '__empty'} value={o}>{o || 'Not Rated'}</option>)}
             </select>
-          : <input type="text" style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={ro ? undefined : set(editKey!)} readOnly={!!ro} />
+          : <input type="text" style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={ro || disabled ? undefined : set(editKey!)} readOnly={!!ro} disabled={disabled} />
         }
         {caption}
       </div>
     )
   }
 
-  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px 28px' }
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px 20px' }
 
   const renderDetail = () => {
     // Effective record reflects live edits so calculated columns update as the user types.
-    const eff = { ...lp, ...form } as LPRecord
+    const eff = applyLpSizeToRecord(lp, form)
     const c = computeLPRecord(eff)
     const capCommitM = parseM(eff.capCommit)
     const ucM = parseM(eff.uc)
     const calledCapM = capCommitM - ucM
     const agentRateDec = parseRatePct(eff.agentRate)
     // Formulas per pe-sub-docs/SHADOW_BB_ANALYSIS.md › "LP Record Columns".
-    const calledCapStr  = fmtM(calledCapM)                                               // Capital Commitments − Uncalled Capital
+    const calledCapStr  = fmtM(calledCapM)                                               // Capital Commitment - Uncalled Capital
     const pctCalledStr  = fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0)            // Called Capital ÷ Capital Commitments
     const agentBBStr    = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'  // Uncalled Capital × Agent Advance Rate
-    const ubsRateStr    = BUSA_RATE_MAP[eff.cls] ?? lp.rate
-    const highQuality   = c.busaRate === 0.90                                             // flagged when UBS Advance Rate = 0.90
-    const concExcessStr = eff.inc && eff.cls !== 'Excluded' ? fmtM(c.concExcessM) : '—'    // included LPs only
+    const ubsExcessStr  = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
+    const agentExcessStr = eff.agentExcessConc || '—'
 
     // Read-only display of a value derived by formula (never hand-editable).
     const calc = (label: string, val: unknown, cfg: Record<string, unknown> = {}) =>
@@ -193,61 +238,51 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
           read-only, badged ƒ, and annotated with their formula. */}
       {sec('Identity')}
       {f('Investor Name', lp.name, 'name', { span2: true })}
-      {f('Parent', lp.parent, 'parent', { span2: true })}
-      {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
-      {f('Region / Location', lp.region, 'region', { opts: REGION_OPTS })}
+      {f('Parent', lp.parent, 'parent')}
+      {f('SPV', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
 
       {sec('Classification & Eligibility')}
-      {f('UBS LP Category', lp.cls, 'cls', { opts: CLS_OPTS.filter(Boolean) })}
-      {calc('LP Category', LP_CATEGORY_LABEL[String(form.cls || lp.cls)] ?? '—', { formula: 'Derived from UBS LP Category' })}
-      {f('Agent LP Category', lp.agentCls || '—', 'agentCls')}
-      {Boolean(form.cls) && (
+      {f('UBS LP Classification', lp.cls, 'cls', { opts: UBS_CLS_OPTS.filter(Boolean) })}
+      {f('Institutional vs HNW', lp.investorType ?? lp.type, 'type', { opts: TYPE_OPTS })}
+      {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
+      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: AGENT_CLS_OPTS })}
+      {Boolean(form.cls && CLS_CRITERIA[form.cls as string]) && (
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
           <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
         </div>
       )}
-      {f('Investor Type', lp.investorType ?? lp.type, 'type', { opts: INVESTOR_TYPE_OPTS as unknown as string[] })}
-      {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-      {calc('High Quality', highQuality ? 'Yes' : 'No', { formula: 'Flagged when UBS Advance Rate = 90%' })}
 
       {sec('Credit Ratings')}
       {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS })}
       {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS })}
-      {f('Fitch', lp.fitch, 'fitch', { opts: SP_RATING_OPTS })}
+      {f('Fitch', lp.fitch, 'fitch', { opts: FITCH_RATING_OPTS })}
 
       {sec('Financial Scale')}
-      {f('AUM', lp.aum, 'aum')}
-      {f('NAV', lp.nav, 'nav')}
-      {f('Pension Assets', lp.pension, 'pension')}
-      {f('Pension Funded %', lp.pensionFunded, 'pensionFunded')}
-
-      {sec('Advance Rates')}
-      {calc('UBS Advance Rate', ubsRateStr, { formula: 'Derived from UBS LP Category' })}
-      {calc('Agent Advance Rate', lp.agentRate || '—', { formula: 'Mirrored from Agent BB advance rate' })}
+      {f('LP Size', form.lpSize, 'lpSize')}
+      {f('LP Size Criteria', form.lpSizeCriteria, 'lpSizeCriteria', { opts: LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
 
       {sec('Commitments & Capital')}
-      {f('Capital Commitments', lp.capCommit, 'capCommit')}
-      {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
-      {calc('Called Capital', calledCapStr, { formula: 'Capital Commitments − Uncalled Capital' })}
+      {f('Capital Commitment', lp.capCommit, 'capCommit')}
       {f('Uncalled Capital', lp.uc, 'uc')}
+      {f('UBS Advance Rate', lp.rate, 'rate')}
+      {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
+      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
+      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
+      {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
+      {calc('Called Capital', calledCapStr, { formula: 'Capital Commitment - Uncalled Capital' })}
       {calc('% of Uncalled Capital', lp.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
       {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
-      {sec('Concentration Limits')}
-      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
-      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
-
       {sec('Borrowing Base')}
-      {calc('UBS Eligible Uncalled Cap', c.uec, { formula: 'Lesser of Uncalled Capital or (Total Uncalled × UBS Conc. Limit)' })}
-      {calc('Agent Borrowing Base', agentBBStr, { formula: 'Uncalled Capital × Agent Advance Rate' })}
-      {calc('UBS Borrowing Base', c.ubb, { pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'UBS Advance Rate × UBS Eligible Uncalled Capital' })}
-      {calc('UBS Included', c.ubbM > 0 ? 'Included' : 'Excluded', { formula: 'Included when UBS Borrowing Base > 0' })}
-      {calc('Incl. Uncalled Conc. Excess', concExcessStr, { formula: 'Excess uncalled above concentration limit (included LPs only)' })}
+      {calc('Agent Excess Concentration', agentExcessStr, { formula: 'Excess uncalled above Agent concentration limit' })}
+      {calc('UBS Excess Concentration', ubsExcessStr, { formula: 'Excess uncalled above UBS concentration limit' })}
+      {calc('Agent Borrowing Base', agentBBStr, { formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
+      {calc('UBS Borrowing Base', c.ubb, { pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
 
       {sec('Notes')}
       <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
         {fieldLabel('Notes', false)}
-        <textarea style={{ width: '100%', height: 72 }} value={form.notes as string ?? ''} onChange={set('notes')} />
+        <textarea style={{ width: '100%', height: 72, background: canEdit ? undefined : 'var(--tbl)', color: canEdit ? undefined : 'var(--muted)' }} value={form.notes as string ?? ''} onChange={canEdit ? set('notes') : undefined} disabled={!canEdit} />
       </div>
     </div>
     )
@@ -282,7 +317,7 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
       <div className="form-group">
         <label className="form-label">New Classification *</label>
         <select style={{ width: '100%' }} value={newCls} onChange={e => setNewCls(e.target.value)}>
-          {CLS_OPTS.filter(Boolean).map(o => <option key={o} value={o}>{o} — {BUSA_RATE_MAP[o] ?? '?'} (BUSA)</option>)}
+          {UBS_CLS_OPTS.filter(Boolean).map(o => <option key={o} value={o}>{o} — {UBS_CLS_DEFAULT_RATE[o] ?? '?'} UBS</option>)}
         </select>
       </div>
       {newCls && (
@@ -300,8 +335,8 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
         />
       </div>
       {newCls !== lp.cls && (
-        <div style={{ padding: '8px 12px', background: 'var(--red-lt)', borderRadius: 4, fontSize: 12 }}>
-          <strong style={{ color: 'var(--red)' }}>Impact:</strong> Advance rate changes from <strong>{BUSA_RATE_MAP[lp.cls] ?? lp.rate}</strong> to <strong>{BUSA_RATE_MAP[newCls]}</strong>. Shadow BB will need to be recalculated.
+        <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', borderRadius: 4, fontSize: 12 }}>
+          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls]}</strong> to <strong>{UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
         </div>
       )}
     </div>
@@ -310,25 +345,18 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
   const subviewTitle = subview === 'history' ? 'Version History' : subview === 'reclassify' ? 'Reclassify' : null
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.48)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      onClick={ev => { if (ev.target === ev.currentTarget) onClose() }}
-    >
-      <div style={{ width: '66vw', maxWidth: 940, height: '88vh', background: '#fff', borderRadius: 10, boxShadow: '0 28px 90px rgba(0,0,0,.28)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+    <div style={{ height: '100%', maxHeight: 'calc(100vh - 150px)', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        <div
-          style={{ background: 'var(--navy)', color: '#fff', padding: '16px 28px', flexShrink: 0, cursor: 'move', userSelect: 'none' }}
-          onMouseDown={e => { dragStart.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y }; setDragging(true) }}
-        >
+        <div style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.name}>
                 {lp.name}
-                {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 14 }}> / {subviewTitle}</span>}
+                {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.65, fontSize: 12 }}> / {subviewTitle}</span>}
               </div>
               <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
                 <Tag>{lp.cls}</Tag>
-                <span style={{ fontSize: 11, opacity: .7 }}>{BUSA_RATE_MAP[lp.cls] ?? lp.rate} BUSA · {lp.agentRate || '—'} Agent</span>
+                <span style={{ fontSize: 11, opacity: .7 }}>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls] || '—'} UBS · {lp.agentRate || '—'} Agent</span>
                 {lp.rcl && <span className="rcl-badge">Reclassified</span>}
                 {lp.tf  && <span className="tf-badge">Transferee</span>}
               </div>
@@ -337,23 +365,23 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 28px' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '12px 18px' }}>
           {subview === 'history'    ? renderHistory()    :
            subview === 'reclassify' ? renderReclassify() :
            renderDetail()}
         </div>
 
-        <div style={{ borderTop: '1px solid var(--border)', padding: '14px 28px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
           {subview === 'history' ? (
             <>
               <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
-              <Button variant="secondary" onClick={onClose}>Close</Button>
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
             </>
           ) : subview === 'reclassify' ? (
             <>
               <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={onClose}>Close</Button>
+                <Button variant="secondary" onClick={onClose}>Cancel</Button>
                 <Button disabled={newCls === lp.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
               </div>
             </>
@@ -364,14 +392,13 @@ function LPDetailOverlay({ lp, open, onClose, onSave, canEdit }: {
                 {canEdit && <Button variant="secondary" onClick={() => { setNewCls(lp.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={onClose}>Close</Button>
-                {canEdit && <Button onClick={handleSave}>Save Changes</Button>}
+                <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} disabled={!canEdit}>Save</Button>
               </div>
             </>
           )}
         </div>
       </div>
-    </div>
   )
 }
 
@@ -387,7 +414,7 @@ const VERSION_HISTORY = [
 // Status colour mapping for facility cards
 const STATUS_COLOR: Record<string, string> = {
   'Active':        'var(--green)',
-  'In Progress':   'var(--blue)',
+  'In Progress':   'var(--red)',
   'Needs Review':  'var(--amber)',
   'Not Started':   'var(--muted)',
   'Pending':       '#e65100',
@@ -437,14 +464,14 @@ function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: Facili
 // ── Facility detail / edit overlay ────────────────────────────────────────────
 // Mirrors the Prototype's facility detail (shared Modal, Identity + Agent Bank
 // Summary sections), but the editable fields are always live — no view-only step.
-// form.maturityDate is kept in ISO (YYYY-MM-DD) so the native date input can bind
+// Date fields are kept in ISO (YYYY-MM-DD) so the native date inputs can bind
 // directly without intermediate display-string conversion resetting the year field.
 const toISODate = (display: string) => {
   const d = new Date(display)
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
-type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string }
+type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string; collateralDate: string }
 type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation'
 
 function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
@@ -456,7 +483,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
   onDelete: (f: FacilityRow) => void
 }) {
   const [form, setForm] = useState<FacilityForm>({
-    name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', maturityDate: '',
+    name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', maturityDate: '', collateralDate: '',
   })
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -470,6 +497,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
       loanAmount:       clean(facility.loanAmount),
       ubsParticipation: clean(facility.ubsParticipation),
       maturityDate:     toISODate(clean(facility.maturityDate)),
+      collateralDate:   toISODate(clean(facility.collateralDate)),
     })
     setConfirmDelete(false)
   }, [facility?.id])
@@ -507,7 +535,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
 
   const footer = confirmDelete ? (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
-      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>Delete "{facility.name}" permanently? This cannot be undone.</span>
+      <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>Delete "{facility.name}" permanently? This cannot be undone.</span>
       <div style={{ display: 'flex', gap: 8 }}>
         <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>
         <Button variant="danger" onClick={() => onDelete(facility)}>Confirm Delete</Button>
@@ -551,6 +579,10 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label style={labelSt}>Maturity Date</label>
           <input type="date" style={{ width: '100%' }} value={form.maturityDate} onChange={e => setForm(p => ({ ...p, maturityDate: e.target.value }))} aria-label="Maturity Date" />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={labelSt}>Collateral Date</label>
+          <input type="date" style={{ width: '100%' }} value={form.collateralDate} onChange={e => setForm(p => ({ ...p, collateralDate: e.target.value }))} aria-label="Collateral Date" />
         </div>
         {ro('Facility Status', <Tag>{facility.status}</Tag>)}
         {ro('Facility Status Date', facility.facilityStatusDate)}
@@ -648,6 +680,7 @@ export default function LPMaster() {
           loanAmount:       parseMoneyToNumber(updated.loanAmount),
           ubsParticipation: parseMoneyToNumber(updated.ubsParticipation),
           maturityDate:     toISODate(updated.maturityDate) || null,
+          collateralDate:   toISODate(updated.collateralDate) || null,
         })
       } catch (e) {
         toast(e instanceof Error && e.message ? e.message : 'Could not save facility — API unavailable.')
@@ -741,7 +774,7 @@ export default function LPMaster() {
       <div className="filter-bar">
         <button
           onClick={backToGrid}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', fontSize: 12, fontWeight: 600, padding: '0 4px', display: 'flex', alignItems: 'center', gap: 4 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, fontWeight: 600, padding: '0 4px', display: 'flex', alignItems: 'center', gap: 4 }}
         >
           &#x2190; Facilities
         </button>
@@ -779,8 +812,11 @@ export default function LPMaster() {
         </span>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', paddingRight: 24 }}>
-        <table className="data-table">
+      <div style={{ flex: 1, overflow: 'hidden', padding: '0 24px 24px 0' }}>
+        <div style={selected ? { display: 'flex', gap: 12, alignItems: 'stretch', height: '100%' } : { height: '100%' }}>
+          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+            <div className="data-table-wrap">
+        <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1080 }}>
           <thead>
             <tr>
               <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
@@ -799,7 +835,7 @@ export default function LPMaster() {
           </thead>
           <tbody>
             {pageItems.map((lp, i) => (
-              <tr key={lp.name ?? `lp-${i}`} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
+              <tr key={lp.name ?? `lp-${i}`} className={selected?.name === lp.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
                 <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong title={lp.name}>{lp.name}</strong>
                   {lp.rcl && <span className="rcl-badge">R</span>}
@@ -820,6 +856,7 @@ export default function LPMaster() {
             ))}
           </tbody>
         </table>
+            </div>
         <div className="tbl-footer">
           <span>Showing {from}–{to} of {filtered.length}</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -841,13 +878,19 @@ export default function LPMaster() {
         </div>
       </div>
 
-      <LPDetailOverlay
-        lp={selected}
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        onSave={handleSave}
-        canEdit={canEdit}
-      />
+          {selected && (
+            <div style={{ width: 520, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0, maxHeight: 'calc(100vh - 150px)' }}>
+              <LPDetailPanel
+                lp={selected}
+                open={!!selected}
+                onClose={() => setSelected(null)}
+                onSave={handleSave}
+                canEdit={canEdit}
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   )
