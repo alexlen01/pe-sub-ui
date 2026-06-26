@@ -1,5 +1,6 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import Button from './Button'
+import { SortableHeader, useSortableRows, type SortValue } from '../../hooks/useTableSort'
 
 const PAGE_SIZE_OPTS = [15, 20, 25]
 
@@ -9,6 +10,7 @@ export interface Column<T> {
   align?: string
   style?: React.CSSProperties
   render?: (row: T) => ReactNode
+  sortValue?: (row: T) => SortValue
   neg?: (row: T) => boolean
   zero?: (row: T) => boolean
   bold?: (row: T) => boolean
@@ -25,15 +27,21 @@ interface DataTableProps<T> {
 export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
-  useEffect(() => { setPage(1) }, [rows])
+  const sortColumns = useMemo(() => columns.map(col => ({
+    key: col.key,
+    getValue: (row: T) => col.sortValue ? col.sortValue(row) : (row as Record<string, SortValue>)[col.key],
+  })), [columns])
+  const { sort, sortedRows, requestSort } = useSortableRows(rows, sortColumns)
+
+  useEffect(() => { setPage(1) }, [sortedRows])
   useEffect(() => { setPage(1) }, [pageSize])
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
   const p     = Math.min(page, totalPages)
   const start = (p - 1) * pageSize
-  const pageRows = rows.slice(start, start + pageSize)
-  const from = rows.length === 0 ? 0 : start + 1
-  const to   = Math.min(start + pageSize, rows.length)
+  const pageRows = sortedRows.slice(start, start + pageSize)
+  const from = sortedRows.length === 0 ? 0 : start + 1
+  const to   = Math.min(start + pageSize, sortedRows.length)
 
   return (
     <div className="data-table-wrap">
@@ -41,7 +49,16 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
         <thead>
           <tr>
             {columns.map(col => (
-              <th key={col.key} className={col.align === 'right' ? 'num' : ''} style={col.style}>{col.label}</th>
+              <SortableHeader
+                key={col.key}
+                sortKey={col.key}
+                sort={sort}
+                onSort={requestSort}
+                className={col.align === 'right' ? 'num' : ''}
+                style={col.style}
+              >
+                {col.label}
+              </SortableHeader>
             ))}
           </tr>
         </thead>
@@ -66,8 +83,8 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
         </tbody>
       </table>
       <div className="tbl-footer">
-        {footer ?? <span>{rows.length === 0 ? 'No results' : `Showing ${from}–${to} of ${rows.length}`}</span>}
-        {rows.length > 15 && (
+        {footer ?? <span>{sortedRows.length === 0 ? 'No results' : `Showing ${from}–${to} of ${sortedRows.length}`}</span>}
+        {sortedRows.length > 15 && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
               {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}

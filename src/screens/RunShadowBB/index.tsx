@@ -1,16 +1,19 @@
-import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useApp } from '../../context/AppContext'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
+import DraggablePanel from '../../components/ui/DraggablePanel'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import {
   UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE, ubsClassFromAgentRate,
-  TYPE_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, REGION_OPTS,
+  SP_RATING_OPTS, MDY_RATING_OPTS,
 } from '../../config/classificationConfig'
+import { AGENT_TIERS } from '../../config/eligibilityConfig'
 import { computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
@@ -19,28 +22,53 @@ import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificati
 
 const DEFAULT_CL_M   = 25
 const DEFAULT_CL_PCT = 7.5
+const TYPE_OPTS = ['', 'Institutional', 'HNW'] as const
+const LP_SIZE_CRITERIA_OPTS = ['', 'AUM', 'NAV', 'Assets'] as const
+const AGENT_RATE_SCHEDULE_VALUES = AGENT_TIERS.map(({ cls }) => cls)
+export const SHADOW_BB_TABLE_WIDTH = 3335
 
-function parsePct(str: string | undefined | null): number | '' {
+export function parsePct(str: string | undefined | null): number | '' {
   if (!str || str === '—') return ''
   return parseFloat(String(str).replace('%', '')) || ''
 }
-function parseMoneyM(str: string | undefined | null): number {
+export function parseMoneyM(str: string | undefined | null): number {
   if (!str) return 0
   const m = String(str).match(/\$?\s*([\d,.]+)\s*([MB])?/i)
   if (!m) return 0
   let v = parseFloat(m[1].replace(/,/g, '')) || 0
   if ((m[2] || '').toUpperCase() === 'B') v *= 1000
+  if (!m[2] && (String(str).includes('$') || v >= 100_000)) v /= 1_000_000
   return v
 }
 const num = (v: number | '' | undefined): number => (typeof v === 'number' ? v : 0)
 
-function fmtFull(n: number): string {
+export function fmtFull(n: number): string {
   if (n === 0) return '$0'
   const abs = Math.abs(n)
   return `${n < 0 ? '–' : ''}$${Math.round(abs * 1_000_000).toLocaleString()}`
 }
 
-const YesNo = ({ val }: { val: boolean }) => (
+function fmtMoneyInput(value: string | undefined): string {
+  const s = String(value ?? '').trim()
+  if (!s) return ''
+  const m = parseMoneyM(s)
+  return m === 0 ? '$0' : fmtFull(m)
+}
+
+function fmtBillionDisplay(value: string | undefined): string {
+  const s = String(value ?? '').trim()
+  if (!s) return '—'
+  if (/[$MB]/i.test(s)) {
+    const parsed = parseMoneyM(s)
+    if (parsed > 0) return `$${parsed.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
+  }
+  const n = Number(s.replace(/[$,]/g, ''))
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}B`
+    : s
+}
+
+export const YesNo = ({ val }: { val: boolean }) => (
   <span style={{
     fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10,
     background: val ? '#e6f4ea' : 'var(--tbl)',
@@ -50,7 +78,9 @@ const YesNo = ({ val }: { val: boolean }) => (
   </span>
 )
 
-function calcRow(ov: Override, totalCommitM: number, totalUncalledM: number) {
+export const pctStr = (v: number | '' | undefined) => (typeof v === 'number' ? `${v}%` : '—')
+
+export function calcRow(ov: Override, totalCommitM: number, totalUncalledM: number) {
   const advRate  = num(ov.ubsAdvRatePct) / 100
   const agRate   = num(ov.agentRatePct) / 100
   const ubsClPct = num(ov.concLimitPct) / 100
@@ -85,12 +115,13 @@ function deriveInc(cls: string, isNew: boolean, masterInc: boolean | undefined):
   return isNew ? true : !!(masterInc)
 }
 
-type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
-type Override = {
-  parent: string; spv: boolean; region: string; type: string; ig: boolean
+export type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
+export type Override = {
+  name: string
+  parent: string; spv: boolean; type: string; ig: boolean
   cls: string; agentCls: string
   sp: string; mdy: string; fitch: string
-  aum: string; nav: string; pension: string; pensionFunded: string
+  lpSizeBil: string; lpSizeCriteria: string
   capCommit: string; ucM: string
   ubsAdvRatePct: number | ''; agentRatePct: number | ''
   concLimitPct: number | ''; agentConcLimitPct: number | ''
@@ -213,22 +244,20 @@ export default function RunShadowBB() {
     const isUbsCls = (UBS_CLS_OPTS as readonly string[]).includes(lp.cls ?? '')
     const cls = isUbsCls ? (lp.cls as string) : ubsClassFromAgentRate(agentRatePct)
     return {
+      name:              lp.name ?? lp._agentName ?? '',
       parent:            lp.parent ?? '',
       spv:               !!lp.spv,
-      region:            lp.region ?? '',
       type:              lp.type ?? 'Institutional',
       ig:                !!lp.ig,
       cls,
-      agentCls:          lp.agentCls ?? '',
+      agentCls:          ext?.agentClass || lp.agentCls || '',
       sp:                toRating(ext?.sp,     lp.sp),
       mdy:               toRating(ext?.moodys, lp.mdy),
       fitch:             toRating(ext?.fitch,  lp.fitch),
-      aum:               lp.aum || ext?.aum || '',
-      nav:               lp.nav || ext?.nav || '',
-      pension:           lp.pension ?? '',
-      pensionFunded:     lp.pensionFunded ?? '',
-      capCommit:         lp.capCommit ?? '',
-      ucM:               lp.uc ?? '',
+      lpSizeBil:         ext?.lpSizeBil || lp.aum || lp.nav || lp.pension || ext?.aum || ext?.nav || '',
+      lpSizeCriteria:    ext?.lpSizeCriteria || (lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : ''),
+      capCommit:         ext?.commit || lp.capCommit || '',
+      ucM:               ext?.uncalled || lp.uc || '',
       ubsAdvRatePct:     rate ? rate.ubsAdvRatePct * 100
                               : (cls ? parsePct(UBS_CLS_DEFAULT_RATE[cls]) : '') || parsePct(lp.rate),
       agentRatePct,
@@ -251,19 +280,15 @@ export default function RunShadowBB() {
   type SaveStatus = 'saving' | 'saved' | 'error'
   const [saveState, setSaveState] = useState<Record<string, SaveStatus>>({})
   const savedTimers   = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  const persistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  const overridesRef  = useRef<Record<string, Override>>(overrides)
-  const editedKeys    = useRef<Set<string>>(new Set())
-
-  useEffect(() => { overridesRef.current = overrides }, [overrides])
 
   type ClassificationRow = LpClassificationRequest['rows'][number]
   const toRow = (key: string, ov: Override): ClassificationRow | null => {
     const lp   = submissionLPs.find(l => l._key === key)
-    const name = lp?.name ?? lp?._agentName ?? ''
+    const name = ov.name || lp?.name || lp?._agentName || ''
     if (!name) return null
     return {
       name,
+      originalName:      lp?.name || lp?._agentName || undefined,
       parent:            ov.parent || undefined,
       spv:               ov.spv,
       type:              ov.type || undefined,
@@ -271,10 +296,9 @@ export default function RunShadowBB() {
       cls:               ov.cls || undefined,
       agentCls:          ov.agentCls || undefined,
       sp:                ov.sp, mdy: ov.mdy, fitch: ov.fitch,
-      aum:               ov.aum || undefined,
-      nav:               ov.nav || undefined,
-      pension:           ov.pension || undefined,
-      pensionFunded:     ov.pensionFunded || undefined,
+      aum:               ov.lpSizeCriteria === 'AUM' ? ov.lpSizeBil || undefined : undefined,
+      nav:               ov.lpSizeCriteria === 'NAV' ? ov.lpSizeBil || undefined : undefined,
+      pension:           ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil || undefined : undefined,
       capCommit:         ov.capCommit || undefined,
       uc:                ov.ucM || undefined,
       ubsAdvRatePct:     typeof ov.ubsAdvRatePct     === 'number' ? ov.ubsAdvRatePct     : undefined,
@@ -286,66 +310,42 @@ export default function RunShadowBB() {
     }
   }
 
-  const persistRow = (key: string, ov: Override) => {
+  const saveRow = async (key: string, ov: Override, nextOverrides: Record<string, Override>) => {
     const facilityId = submissionDetails?.facilityId
-    if (facilityId == null) return
     const row = toRow(key, ov)
-    if (!row) return
+    if (facilityId == null || !row) return
     setSaveState(s => ({ ...s, [key]: 'saving' }))
-    api.lps.saveClassification({
-      facilityId,
-      effectiveDate: submissionDetails?.periodMonth ?? undefined,
-      rows: [row],
-    })
-      .then(() => {
-        setSaveState(s => ({ ...s, [key]: 'saved' }))
-        clearTimeout(savedTimers.current[key])
-        savedTimers.current[key] = setTimeout(() => {
-          setSaveState(s => { const next = { ...s }; delete next[key]; return next })
-        }, 2000)
+    try {
+      await api.lps.saveClassification({
+        facilityId,
+        effectiveDate: submissionDetails?.periodMonth ?? undefined,
+        audit: true,
+        rows: [row],
       })
-      .catch(e => {
-        setSaveState(s => ({ ...s, [key]: 'error' }))
-        toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`)
-      })
-  }
-
-  // Always-current ref so the debounce timer calls the latest version of persistRow.
-  const persistRowRef = useRef(persistRow)
-  persistRowRef.current = persistRow
-
-  const flushAuditRef = useRef<() => void>(() => {})
-  flushAuditRef.current = () => {
-    const facilityId = submissionDetails?.facilityId
-    if (facilityId == null || editedKeys.current.size === 0) return
-    const rows = [...editedKeys.current]
-      .map(key => toRow(key, overrides[key] ?? {} as Override))
-      .filter((r): r is ClassificationRow => r != null)
-    if (rows.length === 0) return
-    api.lps.saveClassification({
-      facilityId,
-      effectiveDate: submissionDetails?.periodMonth ?? undefined,
-      audit: true,
-      rows,
-    }).catch(() => {})
+      if (activeSubmissionId != null) {
+        await api.submissions.saveShadowBbState(activeSubmissionId, nextOverrides)
+      }
+      setSaveState(s => ({ ...s, [key]: 'saved' }))
+      clearTimeout(savedTimers.current[key])
+      savedTimers.current[key] = setTimeout(() => {
+        setSaveState(s => { const next = { ...s }; delete next[key]; return next })
+      }, 2000)
+    } catch (e) {
+      setSaveState(s => ({ ...s, [key]: 'error' }))
+      toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`)
+      throw e
+    }
   }
 
   useEffect(() => () => {
     Object.values(savedTimers.current).forEach(clearTimeout)
-    Object.values(persistTimers.current).forEach(clearTimeout)
-    flushAuditRef.current()
   }, [])
 
-  // Apply a field change immediately to live overrides, detect flash-worthy column changes,
-  // and debounce the API persist so rapid typing doesn't produce a request per keystroke.
-  const handleFieldChange = (field: keyof Override, value: unknown) => {
+  const saveDraft = async (draft: Override) => {
     if (!selectedKey) return
     const key = selectedKey
     const old = overrides[key]
-    const next = { ...old, [field]: value } as Override
-    if (field === 'cls') {
-      next.ubsAdvRatePct = parsePct(UBS_CLS_DEFAULT_RATE[value as string])
-    }
+    const next = draft
     if (old) {
       const oldC = calcRow(old, totalCommitM, totalUncalledM)
       const newC = calcRow(next, totalCommitM, totalUncalledM)
@@ -361,12 +361,9 @@ export default function RunShadowBB() {
         })
       }
     }
-    setOverrides(prev => ({ ...prev, [key]: next }))
-    editedKeys.current.add(key)
-    clearTimeout(persistTimers.current[key])
-    persistTimers.current[key] = setTimeout(() => {
-      persistRowRef.current(key, overridesRef.current[key])
-    }, 600)
+    const nextOverrides = { ...overrides, [key]: next }
+    setOverrides(nextOverrides)
+    await saveRow(key, next, nextOverrides)
   }
 
   const resetOverrides = () => {
@@ -437,8 +434,6 @@ export default function RunShadowBB() {
       .sort((a, b) => (a.name ?? a._agentName ?? '').localeCompare(b.name ?? b._agentName ?? ''))
   }, [submissionLPs, overrides, unclassifiedOnly, unclassified])
 
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(displayLPs)
-
   const totalCommitM = useMemo(() =>
     Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capCommit), 0)
   , [overrides])
@@ -447,6 +442,55 @@ export default function RunShadowBB() {
     Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.ucM), 0)
   , [overrides])
 
+  const rankByKey = useMemo(() => {
+    const ranked = [...submissionLPs].sort((a, b) =>
+      parseMoneyM(overrides[b._key]?.ucM) - parseMoneyM(overrides[a._key]?.ucM)
+    )
+    return Object.fromEntries(ranked.map((lp, i) => [lp._key, i + 1]))
+  }, [submissionLPs, overrides])
+
+  const sortColumns = useMemo(() => {
+    const getOverride = (lp: SubmissionLP) => overrides[lp._key]
+    const getComputed = (lp: SubmissionLP) => {
+      const ov = getOverride(lp)
+      return ov ? calcRow(ov, totalCommitM, totalUncalledM) : null
+    }
+    return [
+      { key: 'rank', getValue: (lp: SubmissionLP) => rankByKey[lp._key] ?? '' },
+      { key: 'name', getValue: (lp: SubmissionLP) => getOverride(lp)?.name || lp.name || lp._agentName || '' },
+      { key: 'parent', getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
+      { key: 'spv', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
+      { key: 'cls', getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
+      { key: 'type', getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
+      { key: 'ig', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
+      { key: 'agentCls', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentCls ?? '' },
+      { key: 'sp', getValue: (lp: SubmissionLP) => getOverride(lp)?.sp ?? '' },
+      { key: 'mdy', getValue: (lp: SubmissionLP) => getOverride(lp)?.mdy ?? '' },
+      { key: 'fitch', getValue: (lp: SubmissionLP) => getOverride(lp)?.fitch ?? '' },
+      { key: 'lpSizeBil', getValue: (lp: SubmissionLP) => getOverride(lp)?.lpSizeBil ?? '' },
+      { key: 'lpSizeCriteria', getValue: (lp: SubmissionLP) => getOverride(lp)?.lpSizeCriteria ?? '' },
+      { key: 'capCommit', getValue: (lp: SubmissionLP) => parseMoneyM(getOverride(lp)?.capCommit) },
+      { key: 'ucM', getValue: (lp: SubmissionLP) => parseMoneyM(getOverride(lp)?.ucM) },
+      { key: 'ubsAdvRatePct', getValue: (lp: SubmissionLP) => getOverride(lp)?.ubsAdvRatePct ?? '' },
+      { key: 'agentRatePct', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentRatePct ?? '' },
+      { key: 'concLimitPct', getValue: (lp: SubmissionLP) => getOverride(lp)?.concLimitPct ?? '' },
+      { key: 'agentConcLimitPct', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentConcLimitPct ?? '' },
+      { key: 'cmtPct', getValue: (lp: SubmissionLP) => getComputed(lp)?.cmtPct ?? '' },
+      { key: 'calledM', getValue: (lp: SubmissionLP) => getComputed(lp)?.calledM ?? '' },
+      { key: 'pctUncalled', getValue: (lp: SubmissionLP) => getComputed(lp)?.pctUncalled ?? '' },
+      { key: 'pctCalled', getValue: (lp: SubmissionLP) => getComputed(lp)?.pctCalled ?? '' },
+      { key: 'agentExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentExcess ?? '' },
+      { key: 'ubsExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsExcess ?? '' },
+      { key: 'agentBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentBBCalc ?? '' },
+      { key: 'ubsBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsBBCalc ?? '' },
+      { key: 'included', getValue: (lp: SubmissionLP) => !!getComputed(lp)?.included },
+      { key: 'notes', getValue: (lp: SubmissionLP) => getOverride(lp)?.notes ?? '' },
+    ]
+  }, [overrides, rankByKey, totalCommitM, totalUncalledM])
+
+  const { sort, sortedRows: sortedDisplayLPs, requestSort } = useSortableRows(displayLPs, sortColumns)
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedDisplayLPs)
+
   // Deselect if the selected row leaves the current page or the BB result replaces the table.
   useEffect(() => {
     if (!selectedKey) return
@@ -454,22 +498,22 @@ export default function RunShadowBB() {
   }, [pageItems, selectedKey, result])
 
   useEffect(() => {
-    if (selectedKey === null || displayLPs.length === 0) return
+    if (selectedKey === null || sortedDisplayLPs.length === 0) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
       e.preventDefault()
-      const idx = displayLPs.findIndex(lp => lp._key === selectedKey)
+      const idx = sortedDisplayLPs.findIndex(lp => lp._key === selectedKey)
       if (idx === -1) return
       const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
-      if (nextIdx < 0 || nextIdx >= displayLPs.length) return
-      setSelectedKey(displayLPs[nextIdx]._key)
+      if (nextIdx < 0 || nextIdx >= sortedDisplayLPs.length) return
+      setSelectedKey(sortedDisplayLPs[nextIdx]._key)
       const nextPage = Math.floor(nextIdx / pageSize) + 1
       if (nextPage !== page) setPage(nextPage)
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [displayLPs, selectedKey, page, pageSize, setPage])
+  }, [sortedDisplayLPs, selectedKey, page, pageSize, setPage])
 
   const run = async () => {
     setRunning(true)
@@ -486,14 +530,19 @@ export default function RunShadowBB() {
         : DEFAULT_CL_M
       const rate      = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? '0%')
       const agentRate = typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : (lp.agentRate ?? '')
+      const agentConc = typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (lp.agentConc ?? '')
+      const sizeAum = ov.lpSizeCriteria === 'AUM' ? ov.lpSizeBil : ''
+      const sizeNav = ov.lpSizeCriteria === 'NAV' ? ov.lpSizeBil : ''
+      const sizeAssets = ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil : ''
       return {
         ...lp,
-        parent: ov.parent, spv: ov.spv, region: ov.region as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
+        name: ov.name || lp.name || lp._agentName,
+        parent: ov.parent, spv: ov.spv, region: lp.region as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
         cls: ov.cls || 'Excluded', agentCls: ov.agentCls,
         sp: ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
-        aum: ov.aum, nav: ov.nav, pension: ov.pension, pensionFunded: ov.pensionFunded,
+        aum: sizeAum, nav: sizeNav, pension: sizeAssets, pensionFunded: '',
         capCommit: ov.capCommit, rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
-        ubsConc: fmtM(concLimitM),
+        agentConc, ubsConc: fmtM(concLimitM),
         agentExcessConc: fmtM(c.agentExcess), ubsExcessConc: fmtM(c.ubsExcess),
         abb: fmtM(c.agentBBCalc), ubb: fmtM(c.ubsBBCalc),
         concLimitM, inc: ov.inc ?? false, notes: ov.notes,
@@ -604,28 +653,43 @@ export default function RunShadowBB() {
               </div>
             }
           >
-            {/* Table (left) + LP record card (right / overlay). Clicking a row opens the card.
-                Wide (>1500): 2-column grid with wider sticky card on the right; full dollar amounts.
-                Compact (≤1500): single column; card slides in as overlay; amounts in $M. */}
-            <div style={compact
-              ? { position: 'relative', padding: '4px 18px 0' }
-              : { display: 'grid', gridTemplateColumns: selectedLp && selectedKey && overrides[selectedKey] ? 'minmax(0, 1fr) 520px' : 'minmax(0, 1fr)', gap: 14, padding: '4px 18px 0', alignItems: 'start' }
-            }>
+            {/* Spreadsheet-order table + fixed overlay card. Opening a row never changes table width. */}
+            <div style={{ position: 'relative', padding: '4px 18px 0' }}>
 
               <div style={{ minWidth: 0 }}>
                 <div className="data-table-wrap">
-                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: SHADOW_BB_TABLE_WIDTH, minWidth: SHADOW_BB_TABLE_WIDTH }}>
                     <thead>
                       <tr>
-                        <th>Investor Name</th>
-                        <th style={{ width: 96 }}>LP Category</th>
-                        <th style={{ width: 168 }}>UBS Classification</th>
-                        <th className="num" style={{ width: 64 }}>UBS Rate</th>
-                        <th className="num" style={{ width: 66 }}>Agent Rate</th>
-                        <th className="num" style={{ width: compact ? 92 : 130 }}>Uncalled</th>
-                        <th className="num" style={{ width: compact ? 78 : 116 }}>Agent BB</th>
-                        <th className="num" style={{ width: compact ? 78 : 116 }}>UBS BB</th>
-                        <th style={{ width: 52, textAlign: 'center' }}>Incl.</th>
+                        <SortableHeader sortKey="rank" sort={sort} onSort={requestSort} style={{ width: 52 }}>Rank</SortableHeader>
+                        <SortableHeader sortKey="name" sort={sort} onSort={requestSort} style={{ width: 220 }}>Investor Name</SortableHeader>
+                        <SortableHeader sortKey="parent" sort={sort} onSort={requestSort} style={{ width: 160 }}>Parent</SortableHeader>
+                        <SortableHeader sortKey="spv" sort={sort} onSort={requestSort} style={{ width: 54 }}>SPV</SortableHeader>
+                        <SortableHeader sortKey="cls" sort={sort} onSort={requestSort} style={{ width: 174 }}>UBS LP Classification</SortableHeader>
+                        <SortableHeader sortKey="type" sort={sort} onSort={requestSort} style={{ width: 122 }}>Institutional vs HNW</SortableHeader>
+                        <SortableHeader sortKey="ig" sort={sort} onSort={requestSort} style={{ width: 114 }}>Investment Grade?</SortableHeader>
+                        <SortableHeader sortKey="agentCls" sort={sort} onSort={requestSort} style={{ width: 166 }}>Agent LP Classification</SortableHeader>
+                        <SortableHeader sortKey="sp" sort={sort} onSort={requestSort} style={{ width: 76 }}>S&P</SortableHeader>
+                        <SortableHeader sortKey="mdy" sort={sort} onSort={requestSort} style={{ width: 84 }}>Moody's</SortableHeader>
+                        <SortableHeader sortKey="fitch" sort={sort} onSort={requestSort} style={{ width: 76 }}>Fitch</SortableHeader>
+                        <SortableHeader sortKey="lpSizeBil" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>LP Size ($ Bil)</SortableHeader>
+                        <SortableHeader sortKey="lpSizeCriteria" sort={sort} onSort={requestSort} style={{ width: 127 }}>LP Size Criteria</SortableHeader>
+                        <SortableHeader sortKey="capCommit" sort={sort} onSort={requestSort} className="num" style={{ width: 138 }}>Capital Commitment</SortableHeader>
+                        <SortableHeader sortKey="ucM" sort={sort} onSort={requestSort} className="num" style={{ width: 126 }}>Uncalled Capital</SortableHeader>
+                        <SortableHeader sortKey="ubsAdvRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 114 }}>UBS Advance Rate</SortableHeader>
+                        <SortableHeader sortKey="agentRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 120 }}>Agent Advance Rate</SortableHeader>
+                        <SortableHeader sortKey="concLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Conc. Limit</SortableHeader>
+                        <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>Agent Conc. Limit</SortableHeader>
+                        <SortableHeader sortKey="cmtPct" sort={sort} onSort={requestSort} className="num" style={{ width: 132 }}>% of Commitments</SortableHeader>
+                        <SortableHeader sortKey="calledM" sort={sort} onSort={requestSort} className="num" style={{ width: 116 }}>Called Capital</SortableHeader>
+                        <SortableHeader sortKey="pctUncalled" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>% of Uncalled</SortableHeader>
+                        <SortableHeader sortKey="pctCalled" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>% of LP Called</SortableHeader>
+                        <SortableHeader sortKey="agentExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 134 }}>Agent Excess Conc.</SortableHeader>
+                        <SortableHeader sortKey="ubsExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Excess Conc.</SortableHeader>
+                        <SortableHeader sortKey="agentBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>Agent BB</SortableHeader>
+                        <SortableHeader sortKey="ubsBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>UBS BB</SortableHeader>
+                        <SortableHeader sortKey="included" sort={sort} onSort={requestSort} style={{ width: 72, textAlign: 'center' }}>Included</SortableHeader>
+                        <SortableHeader sortKey="notes" sort={sort} onSort={requestSort} style={{ width: 180 }}>Notes</SortableHeader>
                       </tr>
                     </thead>
                     <tbody>
@@ -635,28 +699,48 @@ export default function RunShadowBB() {
                         const missing  = !ov.cls
                         const selected = key === selectedKey
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
-                        const n = lp.name ?? lp._agentName ?? '—'
+                        const n = ov.name || lp.name || lp._agentName || '—'
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)}
                             style={{ cursor: 'pointer',
                               background: !selected && missing ? 'color-mix(in srgb, var(--danger) 6%, transparent)' : undefined }}>
+                            <td>{rankByKey[key] ?? '—'}</td>
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
                                 {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
-                                {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>✓</span>}
-                                {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>✕</span>}
+                                {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}
+                                {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>Error</span>}
                               </div>
                             </td>
-                            <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{ov.type || '—'}</td>
+                            <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
+                            <td>{ov.spv ? 'Y' : 'N'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
-                            <td className="num">{typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : '—'}</td>
-                            <td className="num">{typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct.toFixed(0)}%` : '—'}</td>
-                            <td className="num">{compact ? (ov.ucM || '—') : (ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—')}</td>
+                            <td>{ov.type || '—'}</td>
+                            <td>{ov.ig ? 'Yes' : 'No'}</td>
+                            <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
+                            <td>{ov.sp || '—'}</td>
+                            <td>{ov.mdy || '—'}</td>
+                            <td>{ov.fitch || '—'}</td>
+                            <td className="num" title={ov.lpSizeBil || '—'}>{fmtBillionDisplay(ov.lpSizeBil)}</td>
+                            <td>{ov.lpSizeCriteria || '—'}</td>
+                            <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
+                            <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
+                            <td>{pctStr(ov.ubsAdvRatePct)}</td>
+                            <td>{pctStr(ov.agentRatePct)}</td>
+                            <td>{pctStr(ov.concLimitPct)}</td>
+                            <td>{pctStr(ov.agentConcLimitPct)}</td>
+                            <td>{fmtPct(c.cmtPct)}</td>
+                            <td className="num">{fmtFull(c.calledM)}</td>
+                            <td>{fmtPct(c.pctUncalled)}</td>
+                            <td>{fmtPct(c.pctCalled)}</td>
+                            <td className={`num ${c.agentExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.agentExcess)}</td>
+                            <td className={`num ${c.ubsExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsExcess)}</td>
                             <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
                             <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
+                            <td title={ov.notes || '—'}>{ov.notes || '—'}</td>
                           </tr>
                         )
                       })}
@@ -672,34 +756,20 @@ export default function RunShadowBB() {
                 </div>
               </div>
 
-              {/* Compact overlay card — slides in over the table on row click */}
-              {compact && selectedLp && selectedKey && overrides[selectedKey] && (
-                <div className="lp-detail-overlay">
+              {selectedLp && selectedKey && overrides[selectedKey] && (
+                <DraggablePanel className="lp-detail-overlay" storageKey="run-shadow-bb-lp-record">
                   <LPRecordCard
                     lp={selectedLp}
                     ov={overrides[selectedKey]}
-                    calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
+                    rank={rankByKey[selectedKey]}
+                    totalCommitM={totalCommitM}
+                    totalUncalledM={totalUncalledM}
                     saveStatus={saveState[selectedKey]}
                     running={running}
                     onDeselect={() => setSelectedKey(null)}
-                    onChange={handleFieldChange}
+                    onSave={saveDraft}
                   />
-                </div>
-              )}
-
-              {/* Wide right-side LP record card — sticky so it stays in view while scrolling */}
-              {!compact && selectedLp && selectedKey && overrides[selectedKey] && (
-                <div style={{ position: 'sticky', top: 4 }}>
-                  <LPRecordCard
-                    lp={selectedLp}
-                    ov={overrides[selectedKey]}
-                    calc={calcRow(overrides[selectedKey], totalCommitM, totalUncalledM)}
-                    saveStatus={saveState[selectedKey]}
-                    running={running}
-                    onDeselect={() => setSelectedKey(null)}
-                    onChange={handleFieldChange}
-                  />
-                </div>
+                </DraggablePanel>
               )}
             </div>
           </Card>
@@ -729,22 +799,36 @@ export default function RunShadowBB() {
 
 // ── LP record card — sectioned editable form; used as the right-side panel in Step 5.
 // Manual-Input columns are editable; Calculated columns are derived live by calcRow and read-only.
-// Layout and section structure mirror LP Master Database (LPDetailOverlay) exactly.
-function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus }: {
+// Layout and section structure match the LP Master and Shadow BB detail panels.
+export function LPRecordCard({ lp, ov, rank, totalCommitM, totalUncalledM, onSave, onDeselect, running, saveStatus }: {
   lp: SubmissionLP
   ov: Override
-  calc: ReturnType<typeof calcRow>
-  onChange: (field: keyof Override, value: unknown) => void
+  rank?: number
+  totalCommitM: number
+  totalUncalledM: number
+  onSave: (draft: Override) => Promise<void>
   onDeselect?: () => void
   running: boolean
   saveStatus?: 'saving' | 'saved' | 'error'
 }) {
-  const name = lp.name ?? lp._agentName ?? '—'
+  const [draft, setDraft] = useState<Override>(ov)
+  const [saving, setSaving] = useState(false)
 
-  // ── Helpers matching LP Master Database style ────────────────────────────────
+  useEffect(() => {
+    setDraft(ov)
+  }, [ov])
+
+  const calc = useMemo(() => calcRow(draft, totalCommitM, totalUncalledM), [draft, totalCommitM, totalUncalledM])
+  const name = draft.name || lp.name || lp._agentName || '—'
+  const dirty = JSON.stringify(draft) !== JSON.stringify(ov)
+
   const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
   const roSt:    React.CSSProperties = { ...inputSt, background: 'var(--tbl)', color: 'var(--muted)' }
-  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', padding: '12px 16px' }
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px 16px', padding: '12px 16px' }
+  const notesMax = 250
+  const agentClsOptions = draft.agentCls && !AGENT_RATE_SCHEDULE_VALUES.includes(draft.agentCls)
+    ? ['', draft.agentCls, ...AGENT_RATE_SCHEDULE_VALUES]
+    : ['', ...AGENT_RATE_SCHEDULE_VALUES]
 
   const sec = (t: string) => (
     <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
@@ -759,126 +843,134 @@ function LPRecordCard({ lp, ov, calc, onChange, onDeselect, running, saveStatus 
     <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 0 0' }}>{formula}</div>
   )
   const wrap = (span: boolean | number, children: React.ReactNode, key: string) => (
-    <div key={key} style={typeof span === 'number' ? { gridColumn: `span ${span}` } : span ? { gridColumn: '1 / -1' } : undefined}>{children}</div>
+    <div key={key} style={typeof span === 'number' ? { gridColumn: `span ${span}` } : span ? { gridColumn: '1 / -1' } : { gridColumn: 'span 3' }}>{children}</div>
   )
 
-  // Read-only calculated field with ƒ badge and optional formula caption
-  const ro = (label: string, value: React.ReactNode, span2: boolean | number = false, formula?: string) =>
+  const ro = (label: string, value: React.ReactNode, span2: boolean | number = false, formula?: string, width?: number) =>
     wrap(span2, <>
       {flbl(label, true)}
-      <input type="text" value={String(value ?? '—')} style={roSt} readOnly />
+      <input type="text" value={String(value ?? '—')} style={{ ...roSt, width: width ?? roSt.width }} readOnly />
       {formula && fcaption(formula)}
     </>, label)
 
+  const change = (field: keyof Override, value: unknown) => {
+    setDraft(prev => {
+      const nextValue = field === 'notes' && typeof value === 'string' ? value.slice(0, notesMax) : value
+      const next = { ...prev, [field]: nextValue } as Override
+      if (field === 'cls') {
+        next.ubsAdvRatePct = parsePct(UBS_CLS_DEFAULT_RATE[value as string])
+      }
+      if (field === 'agentCls') {
+        const tier = AGENT_TIERS.find(t => t.cls === value)
+        if (tier) next.agentRatePct = tier.rate
+      }
+      return next
+    })
+  }
+
+  const commit = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft)
+      onDeselect?.()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const txt = (label: string, field: keyof Override, span2: boolean | number = false) =>
-    wrap(span2, <>{flbl(label)}<input type="text" value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)} /></>, label)
+    wrap(span2, <>{flbl(label)}<input type="text" value={String(draft[field] ?? '')} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)} /></>, label)
+
+  const amountTxt = (label: string, field: keyof Override, span2: boolean | number = false) =>
+    wrap(span2, <>{flbl(label)}<input type="text" value={fmtMoneyInput(String(draft[field] ?? ''))} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)} /></>, label)
+
+  const billionTxt = (label: string, field: keyof Override, span2: boolean | number = false) =>
+    wrap(span2, <>{flbl(label)}<input type="text" value={fmtBillionDisplay(String(draft[field] ?? '')) === '—' ? '' : fmtBillionDisplay(String(draft[field] ?? ''))} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)} /></>, label)
 
   const sel = (label: string, field: keyof Override, opts: readonly string[], span2: boolean | number = false) =>
-    wrap(span2, <>{flbl(label)}<select value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)}>{opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}</select></>, label)
+    wrap(span2, <>{flbl(label)}<select value={String(draft[field] ?? '')} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)}>{opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}</select></>, label)
 
-  const chk = (label: string, field: keyof Override) =>
-    wrap(false, <>{flbl(label)}<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}><input type="checkbox" checked={!!ov[field]} disabled={running} onChange={e => onChange(field, e.target.checked)} /> Yes</label></>, label)
+  const chk = (label: string, field: keyof Override, span: boolean | number = false, accent = false) =>
+    wrap(span, <div style={accent ? { border: '1px dotted var(--green)', background: 'var(--green-lt)', borderRadius: 4, padding: '6px 8px' } : undefined}>{flbl(label)}<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', minHeight: 24 }}><input type="checkbox" checked={!!draft[field]} disabled={running || saving} onChange={e => change(field, e.target.checked)} /> Yes</label></div>, label)
 
-  // ── UBS vs Agent comparison row ──────────────────────────────────────────────
-  const cmpAgent = (node: React.ReactNode, tone?: 'neg' | 'zero') => (
-    <div style={{ fontSize: 12.5, padding: '4px 8px', minHeight: 28, display: 'flex', alignItems: 'center',
-      background: 'var(--tbl)', borderRadius: 3, color: tone === 'neg' ? 'var(--danger)' : tone === 'zero' ? 'var(--muted)' : 'var(--text)' }}>{node}</div>
-  )
-  const cmpUbsRo = (node: React.ReactNode, tone?: 'neg' | 'pos' | 'zero') => (
-    <div style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 8px', minHeight: 28, display: 'flex', alignItems: 'center',
-      background: 'color-mix(in srgb, var(--red) 7%, transparent)', borderRadius: 3,
-      color: tone === 'neg' ? 'var(--danger)' : tone === 'pos' ? 'var(--green)' : tone === 'zero' ? 'var(--muted)' : 'var(--navy)' }}>{node}</div>
-  )
-  const cmpUbsSel = (field: keyof Override, opts: readonly string[]) => (
-    <select value={String(ov[field] ?? '')} disabled={running} style={inputSt} onChange={e => onChange(field, e.target.value)}>
-      {opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}
-    </select>
-  )
-  const cmpUbsPct = (field: keyof Override, step = 5) => (
+  const pctInput = (label: string, field: keyof Override, step = 5) =>
+    wrap(false, <>{flbl(label)}
     <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-      <input type="number" value={ov[field] === '' || ov[field] == null ? '' : Number(ov[field])} disabled={running}
-        min={0} max={100} step={step} style={{ ...inputSt, textAlign: 'right' }}
-        onChange={e => onChange(field, e.target.value === '' ? '' : parseFloat(e.target.value))} />
+      <input type="number" value={draft[field] === '' || draft[field] == null ? '' : Number(draft[field])} disabled={running || saving}
+        min={0} max={100} step={step} style={{ ...inputSt, textAlign: 'left' }}
+        onChange={e => change(field, e.target.value === '' ? '' : parseFloat(e.target.value))} />
       <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
     </div>
-  )
-  const pctStr = (v: number | '' | undefined) => (typeof v === 'number' ? `${v}%` : '—')
-  const cmpRow = (label: string, agentNode: React.ReactNode, ubsNode: React.ReactNode) => (
-    <Fragment key={label}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center' }}>{label}</div>
-      {agentNode}
-      {ubsNode}
-    </Fragment>
-  )
+    </>, label)
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
-      {/* ── Header ── */}
-      <div style={{ background: 'var(--navy)', color: '#fff', padding: '12px 16px' }}>
+    <div style={{ height: '100%', border: '1px solid var(--border)', borderRadius: 0, overflow: 'hidden', boxShadow: '-6px 0 24px rgba(0,0,0,.12)', display: 'flex', flexDirection: 'column', background: 'var(--card)' }}>
+      <div className="lp-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '12px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>{name}</div>
+            <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>{name}</div>
             {lp._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(255,255,255,.2)', borderRadius: 3, padding: '2px 6px', flexShrink: 0 }}>NEW</span>}
           </div>
           {onDeselect && <button onClick={onDeselect} aria-label="Close" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, opacity: .7, padding: 0, flexShrink: 0 }}>×</button>}
         </div>
         <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .92 }}>
-          {ov.cls && <Tag>{ov.cls}</Tag>}
-          <span style={{ fontSize: 11, opacity: .8 }}>{pctStr(ov.ubsAdvRatePct)} UBS · {pctStr(ov.agentRatePct)} Agent</span>
-          {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving…</span>}
-          {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>✓ Saved</span>}
-          {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>✕ Failed</span>}
+          {draft.cls && <Tag>{draft.cls}</Tag>}
+          <span style={{ fontSize: 11, opacity: .8 }}>{pctStr(draft.ubsAdvRatePct)} UBS · {pctStr(draft.agentRatePct)} Agent</span>
+          {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving...</span>}
+          {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>Saved</span>}
+          {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>Failed</span>}
         </div>
       </div>
 
-      {/* ── Body — 2-column grid matching LP Master Database layout ── */}
-      <div style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={COLS}>
-          {sec('Identity')}
-          {wrap(true, <>{flbl('Investor Name')}<input type="text" value={name} style={roSt} readOnly /></>, 'inv-name')}
-          {txt('Parent / Manager / Sponsor', 'parent', true)}
-          {chk('SPV?', 'spv')}
-          {sel('Region / Location', 'region', ['', ...REGION_OPTS])}
-          {sel('Investor Type', 'type', TYPE_OPTS)}
+          {sec('Identification & Classification')}
+          {ro('Rank', rank ?? '—', 1, 'Ordinal rank by uncalled capital', 64)}
+          {txt('Investor Name', 'name', 5)}
+          {chk('SPV?', 'spv', 1)}
+          {txt('Parent', 'parent', 5)}
+          {sel('Agent LP Classification', 'agentCls', agentClsOptions)}
+          {sel('UBS LP Classification', 'cls', ['', ...UBS_CLS_OPTS])}
+          {sel('Institutional vs HNW', 'type', TYPE_OPTS)}
           {chk('Investment Grade?', 'ig')}
-          {ro('High Quality', <YesNo val={calc.highQuality} />, false, 'Flagged when UBS Advance Rate = 90%')}
+          
+          {sec('Ratings')}
+          {sel('S&P', 'sp', SP_RATING_OPTS, 2)}
+          {sel("Moody's", 'mdy', MDY_RATING_OPTS, 2)}
+          {sel('Fitch', 'fitch', SP_RATING_OPTS, 2)}
 
-          {sec('UBS vs Agent — Classification, Rates & Borrowing Base')}
-          <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '7px 12px', alignItems: 'center' }}>
-            <div />
-            <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>Agent · from BB</div>
-            <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--red)' }}>UBS · editable</div>
-            {cmpRow('LP Category',   cmpAgent(ov.agentCls || '—'),                                               cmpUbsSel('cls', UBS_CLS_OPTS))}
-            {cmpRow('Advance Rate',  cmpAgent(pctStr(ov.agentRatePct)),                                           cmpUbsPct('ubsAdvRatePct', 5))}
-            {cmpRow('Conc. Limit',   cmpAgent(pctStr(ov.agentConcLimitPct)),                                      cmpUbsPct('concLimitPct', 0.5))}
-            {cmpRow('Elig. Uncalled',cmpAgent(fmtM(calc.agentEligUncl)),                                          cmpUbsRo(fmtM(calc.ubsEligUncalled)))}
-            {cmpRow('Excess Conc.',  cmpAgent(fmtM(calc.agentExcess), calc.agentExcess > 0 ? 'neg' : 'zero'),    cmpUbsRo(fmtM(calc.ubsExcess), calc.ubsExcess > 0 ? 'neg' : 'zero'))}
-            {cmpRow('Borrowing Base',cmpAgent(fmtM(calc.agentBBCalc), calc.agentBBCalc === 0 ? 'zero' : undefined), cmpUbsRo(fmtM(calc.ubsBBCalc), calc.ubsBBCalc > 0 ? 'pos' : 'zero'))}
-            {cmpRow('Included',      cmpAgent('—'),                                                               cmpUbsRo(<YesNo val={calc.ubsIncluded} />))}
-          </div>
-
-          {sec('Credit Ratings')}
-          {sel('S&P', 'sp', SP_RATING_OPTS)}
-          {sel("Moody's", 'mdy', MDY_RATING_OPTS)}
-          {sel('Fitch', 'fitch', SP_RATING_OPTS)}
-
-          {sec('Financial Scale')}
-          {txt('AUM', 'aum')}
-          {txt('NAV', 'nav')}
-          {txt('Pension Assets', 'pension')}
-          {txt('Pension Funded %', 'pensionFunded')}
-
-          {sec('Commitments & Capital')}
-          {txt('Capital Commitments', 'capCommit')}
+          {sec('Capital Metrics')}
+          {billionTxt('LP Size ($ Bil)', 'lpSizeBil')}
+          {sel('LP Size Criteria', 'lpSizeCriteria', LP_SIZE_CRITERIA_OPTS)}
+          {amountTxt('Capital Commitment', 'capCommit')}
+          {amountTxt('Uncalled Capital', 'ucM')}
           {ro('% of Capital Commitments', fmtPct(calc.cmtPct), false, 'LP commitment ÷ total fund commitments')}
-          {ro('Called Capital',           fmtM(calc.calledM),  false, 'Capital Commitments − Uncalled Capital')}
-          {txt('Uncalled Capital', 'ucM')}
+          {ro('Called Capital',           fmtFull(calc.calledM),  false, 'Capital Commitments − Uncalled Capital')}
           {ro('% of Uncalled Capital', fmtPct(calc.pctUncalled), false, 'LP uncalled ÷ total fund uncalled')}
           {ro('% of LP Called',        fmtPct(calc.pctCalled),   false, 'Called Capital ÷ Capital Commitments')}
 
-          {sec('Notes')}
-          {wrap(true, <>{flbl('Notes')}<textarea value={ov.notes ?? ''} disabled={running} style={{ ...inputSt, height: 56, resize: 'vertical' }} onChange={e => onChange('notes', e.target.value)} /></>, 'notes')}
+          {sec('Borrowing Base Calculation')}
+          {pctInput('Agent Advance Rate', 'agentRatePct', 5)}
+          {pctInput('UBS Advance Rate', 'ubsAdvRatePct', 5)}
+          {pctInput('Agent Concentration Limit', 'agentConcLimitPct', 0.5)}
+          {pctInput('UBS Concentration Limit', 'concLimitPct', 0.5)}
+          {ro('Agent Excess Concentration', fmtFull(calc.agentExcess), false, 'Uncalled above Agent concentration limit')}
+          {ro('UBS Excess Concentration', fmtFull(calc.ubsExcess), false, 'Uncalled above UBS concentration limit')}
+          {ro('Agent Borrowing Base', fmtFull(calc.agentBBCalc), false, 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration')}
+          {ro('UBS Borrowing Base', fmtFull(calc.ubsBBCalc), false, 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration')}
+          {chk('Included in BB?', 'inc', true, true)}
+
+          {sec('Additional Details')}
+          {wrap(true, <>
+            {flbl('Notes')}
+            <textarea value={draft.notes ?? ''} disabled={running || saving} style={{ ...inputSt, height: 56, resize: 'vertical' }} onChange={e => change('notes', e.target.value)} maxLength={notesMax} />
+            <div style={{ marginTop: 3, textAlign: 'right', fontSize: 10, color: 'var(--muted)' }}>{String(draft.notes ?? '').length}/{notesMax}</div>
+          </>, 'notes')}
         </div>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8, background: '#fff' }}>
+        <Button variant="secondary" onClick={onDeselect} disabled={saving}>Cancel</Button>
+        <Button onClick={commit} disabled={running || saving || !dirty}>{saving ? 'Saving...' : 'Save'}</Button>
       </div>
     </div>
   )

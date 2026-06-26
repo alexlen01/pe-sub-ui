@@ -1,23 +1,29 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useApp }  from '../../context/AppContext'
 import Button      from '../../components/ui/Button'
+import Card        from '../../components/ui/Card'
 import Modal       from '../../components/ui/Modal'
 import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
+import DraggablePanel from '../../components/ui/DraggablePanel'
 import {
   CLS_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, FITCH_RATING_OPTS, INVESTOR_TYPE_OPTS, LP_CATEGORY_LABEL,
-  AGENT_CLS_OPTS, UBS_CLS_OPTS, LP_SIZE_CRITERIA_OPTS, TYPE_OPTS,
+  UBS_CLS_OPTS, LP_SIZE_CRITERIA_OPTS, TYPE_OPTS, REGION_OPTS,
 } from '../../config/classificationConfig'
 import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA, UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
+import { AGENT_TIERS } from '../../config/eligibilityConfig'
 import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
-import { getFacilities, parseMoneyToNumber } from '../../services/facilityService'
+import { formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
 import { api } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 
 const CLS_CRITERIA = _CLS_CRITERIA
+const NOTES_MAX_LENGTH = 250
+const AGENT_RATE_SCHEDULE_OPTS = AGENT_TIERS.map(({ cls, rate }) => ({ value: cls, label: `${cls} (${rate}%)`, rate: `${rate}%` }))
 
 function hash(str: string) {
   return Math.abs([...str].reduce((a, c) => (Math.imul(31, a) + c.charCodeAt(0)) | 0, 0))
@@ -26,6 +32,33 @@ function hash(str: string) {
 function parseRatePct(s: string | undefined | null): number {
   const m = String(s ?? '').match(/([\d.]+)\s*%?/)
   return m && m[1] ? parseFloat(m[1]) / 100 : NaN
+}
+
+function agentRateForClass(cls: string): string {
+  return AGENT_RATE_SCHEDULE_OPTS.find(o => o.value === cls)?.rate ?? ''
+}
+
+function formatMoneyText(value: unknown): string {
+  const s = String(value ?? '').trim()
+  if (!s || s === '—' || /^N\/A$/i.test(s)) return s
+  const sign = s.trim().startsWith('–') || s.trim().startsWith('-') ? '–' : ''
+  const m = s.match(/([\d,.]+)\s*([KMBT]?)/i)
+  if (!m) return s
+  const n = Number(m[1].replace(/,/g, ''))
+  if (!Number.isFinite(n)) return s
+  const unit = (m[2] || '').toUpperCase()
+  const dollars =
+    unit === 'T' ? n * 1_000_000_000_000 :
+    unit === 'B' ? n * 1_000_000_000 :
+    unit === 'M' ? n * 1_000_000 :
+    unit === 'K' ? n * 1_000 :
+    s.includes('$') || n >= 100_000 ? n : n * 1_000_000
+  return `${sign}$${Math.round(dollars).toLocaleString('en-US')}`
+}
+
+function tableMoney(value: unknown): string {
+  const s = String(value ?? '').trim()
+  return s ? formatMoneyText(s) : '—'
 }
 type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
 
@@ -42,8 +75,11 @@ function moneyToBillion(s: string | undefined | null): number | null {
 }
 
 function billionToMoney(b: string | number | undefined | null): string {
-  const n = typeof b === 'number' ? b : parseFloat(String(b ?? '').replace(/,/g, ''))
-  return Number.isFinite(n) ? `$${n}B` : ''
+  const fromMoney = typeof b === 'string' ? moneyToBillion(b) : null
+  const n = fromMoney ?? (typeof b === 'number' ? b : parseFloat(String(b ?? '').replace(/[$,B]/gi, '')))
+  return Number.isFinite(n)
+    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 3 })}B`
+    : ''
 }
 
 function inferLpSizeCriteria(lp: LPRecord): LpSizeCriteria {
@@ -90,12 +126,13 @@ const CLS_LEGEND_ITEMS = [
 ]
 
 // ── Right-side LP detail panel ────────────────────────────────────────────────
-function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
+function LPDetailPanel({ lp, open, onClose, onSave, canEdit, rank }: {
   lp: LPRecord | null
   open: boolean
   onClose: () => void
   onSave: (lp: LPRecord) => void
   canEdit: boolean
+  rank?: number
 }) {
   const [subview,  setSubview]  = useState<null | 'history' | 'reclassify'>(null)
   const [newCls,    setNewCls]    = useState('')
@@ -131,9 +168,11 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => {
-      const value = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
+      const rawValue = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
+      const value = k === 'notes' && typeof rawValue === 'string' ? rawValue.slice(0, NOTES_MAX_LENGTH) : rawValue
       const next = { ...p, [k]: value }
       if (k === 'cls' && !p.rate) next.rate = UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
+      if (k === 'agentCls') next.agentRate = agentRateForClass(String(value)) || next.agentRate
       if (k === 'lpSizeCriteria' && lp) next.lpSize = lpSizeValue(applyLpSizeToRecord(lp, p), String(value))
       return next
     })
@@ -157,6 +196,7 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
       uec: c.uec,
       ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
     } as LPRecord)
+    onClose()
   }
 
   const handleReclassify = () => {
@@ -181,36 +221,46 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
   )
 
   const f = (label: string, _viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, neg: _neg, pos: _posStyle, zero: _zero, formula } = cfg
+    const { wide, span2, opts, chk, ta, ro, neg: _neg, pos: _posStyle, zero: _zero, formula, cols, money, accent, maxLength, inputMode, width } = cfg
     const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
-    const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : span2 ? { gridColumn: 'span 2' } : {}
+    const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : cols ? { gridColumn: `span ${Number(cols)}` } : span2 ? { gridColumn: 'span 2' } : { gridColumn: 'span 3' }
     const caption = formula
       ? <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 8px 0' }}>{String(formula)}</div>
       : null
 
     const disabled = !ro && !canEdit
     const roSt: React.CSSProperties = ro || disabled ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
+    const boxSt: React.CSSProperties = accent
+      ? { border: '1px dotted var(--green)', background: 'var(--green-lt)', borderRadius: 4, padding: '6px 8px' }
+      : {}
+    const controlSt: React.CSSProperties = { width: width ? Number(width) : '100%', ...roSt }
+    const displayVal = cfg.moneyUnit === 'B'
+      ? billionToMoney(editVal as string | number | undefined)
+      : money ? formatMoneyText(editVal) : String(editVal)
+    const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
+    const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
+    const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || 'Not Rated') : o.label
     return (
-      <div className="form-group" style={{ ...colSt, marginBottom: 0 }} key={label || editKey || ''}>
+      <div className="form-group" style={{ ...colSt, ...boxSt, marginBottom: 0 }} key={label || editKey || ''}>
         <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
         {chk
           ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
               <input type="checkbox" checked={!!form[editKey!]} onChange={set(editKey!)} disabled={disabled} /> Yes
             </label>
           : ta
-          ? <textarea style={{ width: '100%', height: 72, ...roSt }} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled} />
+          ? <textarea style={{ width: '100%', height: 72, ...roSt }} value={displayVal} onChange={disabled ? undefined : set(editKey!)} disabled={disabled} maxLength={typeof maxLength === 'number' ? maxLength : undefined} />
           : opts
-          ? <select style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled}>
-              {(opts as readonly string[]).map(o => <option key={o || '__empty'} value={o}>{o || 'Not Rated'}</option>)}
+          ? <select style={controlSt} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled}>
+              {selectOptions.map(o => <option key={optionValue(o) || '__empty'} value={optionValue(o)}>{optionLabel(o)}</option>)}
             </select>
-          : <input type="text" style={{ width: '100%', ...roSt }} value={String(editVal)} onChange={ro || disabled ? undefined : set(editKey!)} readOnly={!!ro} disabled={disabled} />
+          : <input type="text" style={controlSt} value={displayVal} onChange={ro || disabled ? undefined : set(editKey!)} readOnly={!!ro} disabled={disabled} inputMode={typeof inputMode === 'string' ? inputMode as React.HTMLAttributes<HTMLInputElement>['inputMode'] : undefined} maxLength={typeof maxLength === 'number' ? maxLength : undefined} />
         }
         {caption}
       </div>
     )
   }
 
-  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px 20px' }
+  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '6px 16px' }
 
   const renderDetail = () => {
     // Effective record reflects live edits so calculated columns update as the user types.
@@ -226,6 +276,10 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
     const agentBBStr    = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'  // Uncalled Capital × Agent Advance Rate
     const ubsExcessStr  = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
     const agentExcessStr = eff.agentExcessConc || '—'
+    const agentClsValue = String(form.agentCls ?? '')
+    const agentClsOptions = agentClsValue && !AGENT_RATE_SCHEDULE_OPTS.some(o => o.value === agentClsValue)
+      ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...AGENT_RATE_SCHEDULE_OPTS]
+      : [{ value: '', label: 'Select classification' }, ...AGENT_RATE_SCHEDULE_OPTS]
 
     // Read-only display of a value derived by formula (never hand-editable).
     const calc = (label: string, val: unknown, cfg: Record<string, unknown> = {}) =>
@@ -233,56 +287,63 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
 
     return (
     <div style={COLS}>
-      {/* Section order, placement and formulas follow pe-sub-docs/SHADOW_BB_ANALYSIS.md
-          › "LP Record Columns". Manual-input fields are editable; calculated fields are
-          read-only, badged ƒ, and annotated with their formula. */}
-      {sec('Identity')}
-      {f('Investor Name', lp.name, 'name', { span2: true })}
-      {f('Parent', lp.parent, 'parent')}
-      {f('SPV', lp.spv ? 'Yes' : 'No', 'spv', { chk: true })}
-
-      {sec('Classification & Eligibility')}
+      {/* Manual-input fields are editable; calculated fields are read-only, badged ƒ,
+          and annotated with their formula. */}
+      {sec('Identification & Classification')}
+      {calc('Rank', rank ?? '—', { cols: 1, width: 64, formula: 'Ordinal rank in the current LP view' })}
+      {f('Investor Name', lp.name, 'name', { cols: 5 })}
+      {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
+      {f('Parent', lp.parent, 'parent', { cols: 5 })}
+      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
       {f('UBS LP Classification', lp.cls, 'cls', { opts: UBS_CLS_OPTS.filter(Boolean) })}
       {f('Institutional vs HNW', lp.investorType ?? lp.type, 'type', { opts: TYPE_OPTS })}
       {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: AGENT_CLS_OPTS })}
+      {f('Region / Location', lp.region || '—', 'region', { opts: ['', ...REGION_OPTS], wide: true })}
       {Boolean(form.cls && CLS_CRITERIA[form.cls as string]) && (
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
           <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
         </div>
       )}
 
-      {sec('Credit Ratings')}
-      {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS })}
-      {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS })}
-      {f('Fitch', lp.fitch, 'fitch', { opts: FITCH_RATING_OPTS })}
+      {sec('Ratings')}
+      {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS, cols: 2 })}
+      {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS, cols: 2 })}
+      {f('Fitch', lp.fitch, 'fitch', { opts: FITCH_RATING_OPTS, cols: 2 })}
 
-      {sec('Financial Scale')}
-      {f('LP Size', form.lpSize, 'lpSize')}
+      {sec('Capital Metrics')}
+      {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B' })}
       {f('LP Size Criteria', form.lpSizeCriteria, 'lpSizeCriteria', { opts: LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
-
-      {sec('Commitments & Capital')}
-      {f('Capital Commitment', lp.capCommit, 'capCommit')}
-      {f('Uncalled Capital', lp.uc, 'uc')}
-      {f('UBS Advance Rate', lp.rate, 'rate')}
-      {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
-      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
-      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
+      {f('Capital Commitment', lp.capCommit, 'capCommit', { money: true })}
+      {f('Uncalled Capital', lp.uc, 'uc', { money: true })}
       {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
-      {calc('Called Capital', calledCapStr, { formula: 'Capital Commitment - Uncalled Capital' })}
+      {calc('Called Capital', calledCapStr, { money: true, formula: 'Capital Commitment - Uncalled Capital' })}
       {calc('% of Uncalled Capital', lp.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
       {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
-      {sec('Borrowing Base')}
-      {calc('Agent Excess Concentration', agentExcessStr, { formula: 'Excess uncalled above Agent concentration limit' })}
-      {calc('UBS Excess Concentration', ubsExcessStr, { formula: 'Excess uncalled above UBS concentration limit' })}
-      {calc('Agent Borrowing Base', agentBBStr, { formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
-      {calc('UBS Borrowing Base', c.ubb, { pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
+      {sec('Borrowing Base Calculation')}
+      {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
+      {f('UBS Advance Rate', lp.rate, 'rate')}
+      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
+      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
+      {calc('Agent Excess Concentration', agentExcessStr, { money: true, formula: 'Excess uncalled above Agent concentration limit' })}
+      {calc('UBS Excess Concentration', ubsExcessStr, { money: true, formula: 'Excess uncalled above UBS concentration limit' })}
+      {calc('Agent Borrowing Base', agentBBStr, { money: true, formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
+      {calc('UBS Borrowing Base', c.ubb, { money: true, pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
+      {f('Included in BB', lp.inc ? 'Yes' : 'No', 'inc', { chk: true, wide: true, accent: true })}
 
-      {sec('Notes')}
+      {sec('Additional Details')}
       <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
         {fieldLabel('Notes', false)}
-        <textarea style={{ width: '100%', height: 72, background: canEdit ? undefined : 'var(--tbl)', color: canEdit ? undefined : 'var(--muted)' }} value={form.notes as string ?? ''} onChange={canEdit ? set('notes') : undefined} disabled={!canEdit} />
+        <textarea
+          style={{ width: '100%', height: 72, background: canEdit ? undefined : 'var(--tbl)', color: canEdit ? undefined : 'var(--muted)' }}
+          value={String(form.notes ?? '')}
+          onChange={canEdit ? set('notes') : undefined}
+          disabled={!canEdit}
+          maxLength={NOTES_MAX_LENGTH}
+        />
+        <div style={{ marginTop: 3, textAlign: 'right', fontSize: 10, color: 'var(--muted)' }}>
+          {String(form.notes ?? '').length}/{NOTES_MAX_LENGTH}
+        </div>
       </div>
     </div>
     )
@@ -347,10 +408,10 @@ function LPDetailPanel({ lp, open, onClose, onSave, canEdit }: {
   return (
     <div style={{ height: '100%', maxHeight: 'calc(100vh - 150px)', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        <div style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
+        <div className="lp-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.name}>
+              <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.name}>
                 {lp.name}
                 {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.65, fontSize: 12 }}> / {subviewTitle}</span>}
               </div>
@@ -431,21 +492,22 @@ function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: Facili
       style={{
         background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
         borderLeft: `4px solid ${color}`,
+        position: 'relative',
         padding: '14px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6,
         transition: 'box-shadow .15s',
       }}
       onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(0,0,0,.10)'}
       onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+      <div style={{ paddingRight: canEdit ? 24 : 0, minWidth: 0 }}>
+        <div title={facility.name} style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {facility.name}
         </div>
         {canEdit && (
           <button
             onClick={e => { e.stopPropagation(); onEdit(facility) }}
             title="Edit facility details"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 13, lineHeight: 1, padding: 2, flexShrink: 0 }}
+            style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 13, lineHeight: 1, padding: 2 }}
           >&#9998;</button>
         )}
       </div>
@@ -471,6 +533,12 @@ const toISODate = (display: string) => {
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
+const moneyForFacilityEdit = (display: string) => {
+  const cleaned = display === '—' ? '' : display
+  const n = parseMoneyToNumber(cleaned)
+  return n == null ? cleaned : formatUsdNoDecimals(n)
+}
+
 type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string; collateralDate: string }
 type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation'
 
@@ -494,8 +562,8 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
       name:             clean(facility.name),
       agentBank:        clean(facility.agentBank),
       accountNumber:    clean(facility.accountNumber),
-      loanAmount:       clean(facility.loanAmount),
-      ubsParticipation: clean(facility.ubsParticipation),
+      loanAmount:       moneyForFacilityEdit(facility.loanAmount),
+      ubsParticipation: moneyForFacilityEdit(facility.ubsParticipation),
       maturityDate:     toISODate(clean(facility.maturityDate)),
       collateralDate:   toISODate(clean(facility.collateralDate)),
     })
@@ -660,7 +728,23 @@ export default function LPMaster() {
     })
   }, [lpData, search, clsFilter, typeFilter, incFilter, facFilter])
 
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
+  const sortColumns = useMemo(() => [
+    { key: 'name', getValue: (lp: LPRecord) => lp.name },
+    { key: 'parent', getValue: (lp: LPRecord) => lp.parent ?? '' },
+    { key: 'type', getValue: (lp: LPRecord) => lp.investorType ?? lp.type ?? '' },
+    { key: 'cls', getValue: (lp: LPRecord) => lp.cls ?? '' },
+    { key: 'category', getValue: (lp: LPRecord) => LP_CATEGORY_LABEL[lp.cls] ?? '' },
+    { key: 'aum', getValue: (lp: LPRecord) => lp.aum ?? '' },
+    { key: 'uc', getValue: (lp: LPRecord) => lp.uc ?? '' },
+    { key: 'uec', getValue: (lp: LPRecord) => lp.uec ?? '' },
+    { key: 'rate', getValue: (lp: LPRecord) => lp.rate ?? '' },
+    { key: 'ubb', getValue: (lp: LPRecord) => lp.ubb ?? '' },
+    { key: 'abb', getValue: (lp: LPRecord) => lp.abb ?? '' },
+    { key: 'delta', getValue: (lp: LPRecord) => lp.delta ?? '' },
+  ], [])
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const selectedRank = selected ? sortedRows.findIndex(lp => lp.name === selected.name) + 1 : undefined
 
   const handleSave = (updated: LPRecord) => {
     updateLPRecord(updated)
@@ -671,14 +755,16 @@ export default function LPMaster() {
   // Persist every editable facility field (Identity + Agent Bank Summary) via PATCH, then reflect
   // the saved values locally. Rows are reconciled by id (the name is itself editable now).
   const handleFacilitySave = async (updated: FacilityRow) => {
+    const loanAmount = parseMoneyToNumber(updated.loanAmount)
+    const ubsParticipation = parseMoneyToNumber(updated.ubsParticipation)
     if (updated.id != null) {
       try {
         await api.facilities.update(updated.id, {
           name:             updated.name.trim(),
           agentBank:        updated.agentBank.trim(),
           accountNumber:    updated.accountNumber === '—' ? null : updated.accountNumber,
-          loanAmount:       parseMoneyToNumber(updated.loanAmount),
-          ubsParticipation: parseMoneyToNumber(updated.ubsParticipation),
+          loanAmount,
+          ubsParticipation,
           maturityDate:     toISODate(updated.maturityDate) || null,
           collateralDate:   toISODate(updated.collateralDate) || null,
         })
@@ -687,7 +773,12 @@ export default function LPMaster() {
         return
       }
     }
-    setFacilities(prev => prev.map(f => (f.id === updated.id ? { ...f, ...updated } : f)))
+    setFacilities(prev => prev.map(f => (f.id === updated.id ? {
+      ...f,
+      ...updated,
+      loanAmount: formatUsdNoDecimals(loanAmount),
+      ubsParticipation: formatUsdNoDecimals(ubsParticipation),
+    } : f)))
     setEditingFacility(null)
     toast(`Facility updated — ${updated.name}.`)
   }
@@ -725,35 +816,37 @@ export default function LPMaster() {
   // ── Facility grid view ────────────────────────────────────────────────────
   if (view === 'grid') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
-        <div className="filter-bar">
-          <input
-            type="text"
-            placeholder="Search facilities or agent bank…"
-            style={{ width: 300 }}
-            value={facSearch}
-            onChange={e => setFacSearch(e.target.value)}
-            autoFocus
-          />
-          <Button variant="secondary" size="sm" onClick={openAll}>
-            View All {facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString()} LPs →
-          </Button>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
-            {visibleFacilities.length} of {facilities.length} facilities
-          </span>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-            {visibleFacilities.map(f => (
-              <FacilityCard key={f.name} facility={f} canEdit={canEdit} onClick={() => openFacility(f)} onEdit={setEditingFacility} />
-            ))}
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))', padding: '16px 24px 24px', overflow: 'hidden' }}>
+        <Card style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} bodyStyle={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div className="filter-bar" style={{ padding: '8px 18px' }}>
+            <input
+              type="text"
+              placeholder="Search facilities or agent bank…"
+              style={{ width: 300 }}
+              value={facSearch}
+              onChange={e => setFacSearch(e.target.value)}
+              autoFocus
+            />
+            <Button variant="secondary" size="sm" onClick={openAll}>
+              View All {facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString()} LPs →
+            </Button>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
+              {visibleFacilities.length} of {facilities.length} facilities
+            </span>
           </div>
-          {visibleFacilities.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '60px 0', fontSize: 13 }}>
-              No facilities match "{facSearch}"
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              {visibleFacilities.map(f => (
+                <FacilityCard key={f.name} facility={f} canEdit={canEdit} onClick={() => openFacility(f)} onEdit={setEditingFacility} />
+              ))}
             </div>
-          )}
-        </div>
+            {visibleFacilities.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '60px 0', fontSize: 13 }}>
+                No facilities match "{facSearch}"
+              </div>
+            )}
+          </div>
+        </Card>
 
         <FacilityDetailOverlay
           facility={editingFacility}
@@ -769,68 +862,68 @@ export default function LPMaster() {
 
   // ── LP list view ──────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))', padding: '16px 24px 24px', overflow: 'hidden' }}>
 
-      <div className="filter-bar">
-        <button
-          onClick={backToGrid}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, fontWeight: 600, padding: '0 4px', display: 'flex', alignItems: 'center', gap: 4 }}
-        >
-          &#x2190; Facilities
-        </button>
-        <span style={{ color: 'var(--border)' }}>|</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>
-          {facFilter ? facFilter.name : 'All Facilities'}
-        </span>
-        {facFilter && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {facFilter.agentBank}</span>
-        )}
-        <span style={{ color: 'var(--border)' }}>|</span>
-        <input
-          type="text"
-          placeholder="Search LP name, parent…"
-          style={{ width: 240 }}
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1) }}
-        />
-        <select style={{ width: 160 }} value={clsFilter} onChange={e => { setClsFilter(e.target.value); setPage(1) }}>
-          {CLS_OPTS.map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
-        </select>
-        <InfoTip title="LP Category" items={CLS_LEGEND_ITEMS} align="left" width={330} />
-        <select style={{ width: 170 }} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
-          <option value="">Investor Type: All</option>
-          {INVESTOR_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
-          <option value="">Included: All</option>
-          <option value="Y">Included (Y)</option>
-          <option value="N">Excluded from BB</option>
-        </select>
-        <Button variant="secondary" size="sm" onClick={() => toast('LP master exported to Excel.')}>&#x2193; Export</Button>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
-          {filtered.length} of {lpData.length} LPs
-        </span>
-      </div>
+      <Card style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} bodyStyle={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="filter-bar" style={{ padding: '8px 18px' }}>
+          <button
+            onClick={backToGrid}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, fontWeight: 600, padding: '0 4px', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            &#x2190; Facilities
+          </button>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>
+            {facFilter ? facFilter.name : 'All Facilities'}
+          </span>
+          {facFilter && (
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {facFilter.agentBank}</span>
+          )}
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <input
+            type="text"
+            placeholder="Search LP name, parent…"
+            style={{ width: 240 }}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
+          />
+          <select style={{ width: 160 }} value={clsFilter} onChange={e => { setClsFilter(e.target.value); setPage(1) }}>
+            {CLS_OPTS.map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
+          </select>
+          <InfoTip title="LP Category" items={CLS_LEGEND_ITEMS} align="left" width={330} />
+          <select style={{ width: 170 }} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
+            <option value="">Investor Type: All</option>
+            {INVESTOR_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
+            <option value="">Included: All</option>
+            <option value="Y">Included (Y)</option>
+            <option value="N">Excluded from BB</option>
+          </select>
+          <Button variant="secondary" size="sm" onClick={() => toast('LP master exported to Excel.')}>&#x2193; Export</Button>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
+            {filtered.length} of {lpData.length} LPs
+          </span>
+        </div>
 
-      <div style={{ flex: 1, overflow: 'hidden', padding: '0 24px 24px 0' }}>
-        <div style={selected ? { display: 'flex', gap: 12, alignItems: 'stretch', height: '100%' } : { height: '100%' }}>
-          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <div style={{ height: '100%', minWidth: 0, overflowY: 'auto' }}>
             <div className="data-table-wrap">
         <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1080 }}>
           <thead>
             <tr>
-              <th style={{ width: '22%', maxWidth: 220 }}>Investor Name</th>
-              <th style={{ width: '20%', maxWidth: 200 }}>Parent</th>
-              <th style={{ width: 115 }}>Investor Type</th>
-              <th style={{ width: 110 }}>UBS Classification</th>
-              <th style={{ width: 115 }}>LP Category</th>
-              <th className="num" style={{ width: 75 }}>AUM</th>
-              <th className="num" style={{ width: 100 }}>Uncalled Cap.</th>
-              <th className="num" style={{ width: 110 }}>UBS Elig. Uncalled</th>
-              <th className="num" style={{ width: 65 }}>BUSA Rate</th>
-              <th className="num" style={{ width: 80 }}>UBS BB</th>
-              <th className="num" style={{ width: 80 }}>Agent BB</th>
-              <th className="num" style={{ width: 70 }}>Delta</th>
+              <SortableHeader sortKey="name" sort={sort} onSort={requestSort} style={{ width: '22%', maxWidth: 220 }}>Investor Name</SortableHeader>
+              <SortableHeader sortKey="parent" sort={sort} onSort={requestSort} style={{ width: '20%', maxWidth: 200 }}>Parent</SortableHeader>
+              <SortableHeader sortKey="type" sort={sort} onSort={requestSort} style={{ width: 115 }}>Investor Type</SortableHeader>
+              <SortableHeader sortKey="cls" sort={sort} onSort={requestSort} style={{ width: 110 }}>UBS Classification</SortableHeader>
+              <SortableHeader sortKey="category" sort={sort} onSort={requestSort} style={{ width: 115 }}>LP Category</SortableHeader>
+              <SortableHeader sortKey="aum" sort={sort} onSort={requestSort} className="num" style={{ width: 75 }}>AUM</SortableHeader>
+              <SortableHeader sortKey="uc" sort={sort} onSort={requestSort} className="num" style={{ width: 100 }}>Uncalled Cap.</SortableHeader>
+              <SortableHeader sortKey="uec" sort={sort} onSort={requestSort} className="num" style={{ width: 110 }}>UBS Elig. Uncalled</SortableHeader>
+              <SortableHeader sortKey="rate" sort={sort} onSort={requestSort} className="num" style={{ width: 65 }}>BUSA Rate</SortableHeader>
+              <SortableHeader sortKey="ubb" sort={sort} onSort={requestSort} className="num" style={{ width: 80 }}>UBS BB</SortableHeader>
+              <SortableHeader sortKey="abb" sort={sort} onSort={requestSort} className="num" style={{ width: 80 }}>Agent BB</SortableHeader>
+              <SortableHeader sortKey="delta" sort={sort} onSort={requestSort} className="num" style={{ width: 70 }}>Delta</SortableHeader>
             </tr>
           </thead>
           <tbody>
@@ -845,13 +938,13 @@ export default function LPMaster() {
                 <td style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType ?? lp.type}</td>
                 <td><Tag>{lp.cls}</Tag></td>
                 <td style={{ fontSize: 11, color: 'var(--muted)' }}>{LP_CATEGORY_LABEL[lp.cls] ?? '—'}</td>
-                <td className="num">{lp.aum}</td>
-                <td className="num">{lp.uc}</td>
-                <td className="num">{lp.uec}</td>
-                <td className="num">{lp.rate}</td>
-                <td className={`num ${lp.ubb === '$0' ? 'zero' : ''}`}>{lp.ubb}</td>
-                <td className={`num ${!lp.abb || lp.abb === '$0' ? 'zero' : ''}`}>{lp.abb || '—'}</td>
-                <td className={`num ${lp.delta?.startsWith('–') ? 'neg' : !lp.delta || lp.delta === '$0' ? 'zero' : ''}`}>{lp.delta || '—'}</td>
+                <td className="num">{tableMoney(lp.aum)}</td>
+                <td className="num">{tableMoney(lp.uc)}</td>
+                <td className="num">{tableMoney(lp.uec)}</td>
+                <td>{lp.rate}</td>
+                <td className={`num ${lp.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.ubb)}</td>
+                <td className={`num ${!lp.abb || lp.abb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.abb)}</td>
+                <td className={`num ${lp.delta?.startsWith('–') ? 'neg' : !lp.delta || lp.delta === '$0' ? 'zero' : ''}`}>{tableMoney(lp.delta)}</td>
               </tr>
             ))}
           </tbody>
@@ -878,19 +971,21 @@ export default function LPMaster() {
         </div>
       </div>
 
-          {selected && (
-            <div style={{ width: 520, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0, maxHeight: 'calc(100vh - 150px)' }}>
-              <LPDetailPanel
-                lp={selected}
-                open={!!selected}
-                onClose={() => setSelected(null)}
-                onSave={handleSave}
-                canEdit={canEdit}
-              />
-            </div>
-          )}
         </div>
-      </div>
+      </Card>
+
+      {selected && (
+        <DraggablePanel className="lp-detail-overlay" storageKey="lp-master-detail">
+          <LPDetailPanel
+            lp={selected}
+            open={!!selected}
+            onClose={() => setSelected(null)}
+            onSave={handleSave}
+            canEdit={canEdit}
+            rank={selectedRank && selectedRank > 0 ? selectedRank : undefined}
+          />
+        </DraggablePanel>
+      )}
 
     </div>
   )

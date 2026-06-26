@@ -144,7 +144,9 @@ export interface ExtractedLP {
 
 export interface AgentExtractedRow {
   id: number; name: string
+  agentClass?: string
   commit: string; uncalled: string; aum: string; nav: string
+  lpSizeBil?: string; lpSizeCriteria?: string
   sp: string; moodys: string; fitch: string
   agentRate: string; agentConc: string
   agentBBFmt: string; pctBBFmt: string
@@ -169,6 +171,7 @@ export interface LpClassificationRequest {
   audit?: boolean          // true → write one aggregated audit entry; omitted → silent per-row save
   rows: Array<{
     name: string
+    originalName?: string
     // Identity & classification (manual)
     parent?: string
     spv?: boolean

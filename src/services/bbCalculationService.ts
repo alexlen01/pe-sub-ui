@@ -29,14 +29,21 @@ export const BUSA_RATES: Record<string, number> = {
 
 export function parseM(s: string | undefined | null): number {
   if (!s || s === '$0') return 0
-  const m = String(s).match(/\$?([\d,.]+)M/)
-  return m ? parseFloat(m[1].replace(',', '')) : 0
+  const str = String(s)
+  const m = str.match(/\$?\s*([\d,.]+)\s*([MB])?/i)
+  if (!m) return 0
+  const val = parseFloat(m[1].replace(/,/g, ''))
+  if (!Number.isFinite(val)) return 0
+  const unit = (m[2] || '').toUpperCase()
+  if (unit === 'B') return val * 1000
+  if (unit === 'M') return val
+  return str.includes('$') || val >= 100_000 ? val / 1_000_000 : val
 }
 
 export function fmtM(n: number): string {
   if (n === 0) return '$0'
   const abs = Math.abs(n)
-  return `${n < 0 ? '–' : ''}$${abs.toFixed(1)}M`
+  return `${n < 0 ? '–' : ''}$${abs.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
 }
 
 export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }

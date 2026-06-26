@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useApp } from '../../context/AppContext'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import StepBar from '../../components/ui/StepBar'
+import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
@@ -68,8 +70,8 @@ function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { ro
       className={overlay ? 'lp-detail-overlay' : undefined}
       style={overlay ? undefined : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
     >
-      <div style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div><div style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
+      <div className="lp-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div><div className="lp-detail-name" style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#fff', lineHeight: 1, padding: 2, opacity: 0.7 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -149,7 +151,6 @@ export default function MatchQueue() {
   const [checked, setChecked] = useState(new Set<number>())
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
-  const [allRejectedOpen, setAllRejectedOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleAbort = async (msg = 'Submission aborted.') => {
@@ -160,7 +161,6 @@ export default function MatchQueue() {
       abortSubmission(activeSubmission ?? '')
     }
     setAbortOpen(false)
-    setAllRejectedOpen(false)
     toast(msg)
     navigate('upload')
   }
@@ -199,28 +199,38 @@ export default function MatchQueue() {
     pendingDecides.current.push(api.matching.decide(id, action).catch(() => {}))
   }
 
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(filtered)
+  const sortColumns = useMemo(() => [
+    { key: 'agentName', getValue: (r: QueueRow) => r.agentName },
+    { key: 'masterName', getValue: (r: QueueRow) => r.masterName ?? '' },
+    { key: 'score', getValue: (r: QueueRow) => r.score },
+    { key: 'quality', getValue: (r: QueueRow) => scoreBand(r.score) },
+    { key: 'status', getValue: (r: QueueRow) => r.status },
+    { key: 'action', getValue: (r: QueueRow) => r.status },
+  ], [])
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
 
   useEffect(() => {
-    if (selectedId === null || filtered.length === 0) return
+    if (selectedId === null || sortedRows.length === 0) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
       e.preventDefault()
-      const idx = filtered.findIndex(r => r.id === selectedId)
+      const idx = sortedRows.findIndex(r => r.id === selectedId)
       if (idx === -1) return
       const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
-      if (nextIdx < 0 || nextIdx >= filtered.length) return
-      setSelectedId(filtered[nextIdx].id)
+      if (nextIdx < 0 || nextIdx >= sortedRows.length) return
+      setSelectedId(sortedRows[nextIdx].id)
       const nextPage = Math.floor(nextIdx / pageSize) + 1
       if (nextPage !== page) setPage(nextPage)
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [filtered, selectedId, page, pageSize, setPage])
+  }, [sortedRows, selectedId, page, pageSize, setPage])
 
   const pending = queue.filter(r => r.status === 'Pending').length
   const acceptedCount = queue.filter(r => r.status === 'Accepted').length
+  const rejectedCount = queue.filter(r => r.status === 'Rejected').length
   const autoAccepted = queue.filter(r => r.status === 'Accepted' && r.score >= 95).length
   const canCommit = pending === 0
   const selectionIds = new Set([...checked].filter(id => filtered.some(r => r.id === id)))
@@ -232,13 +242,9 @@ export default function MatchQueue() {
       toast(`${pending} decision${pending !== 1 ? 's' : ''} still pending — resolve all matches before committing.`, 4000, 'warning')
       return
     }
-    if (acceptedCount === 0) {
-      setAllRejectedOpen(true)
-      return
-    }
     if (activeSubmissionId) {
-      // Wait for the accept/reject PATCHes, then commit the accepted matches to LP Master and
-      // refresh LP Master — so the records exist before Run Shadow BB loads its classification table.
+      // Wait for the accept/reject PATCHes, then commit accepted matches and rejected-as-new
+      // records to LP Master before Run Shadow BB loads its classification table.
       setCommitting(true)
       try {
         await Promise.allSettled(pendingDecides.current)
@@ -252,7 +258,7 @@ export default function MatchQueue() {
       }
       setCommitting(false)
     }
-    toast(`${acceptedCount} LP match${acceptedCount !== 1 ? 'es' : ''} committed to LP Master.`, 3200, 'success')
+    toast(`${acceptedCount} accepted · ${rejectedCount} new LP${rejectedCount !== 1 ? 's' : ''} committed to LP Master.`, 3200, 'success')
     navigate('run-shadow-bb')
   }
   const selectedRow = selectedId ? queue.find(r => r.id === selectedId) ?? null : null
@@ -265,7 +271,7 @@ export default function MatchQueue() {
       {autoAccepted > 0 && (
         <div style={{ padding: '7px 20px', background: 'var(--red-lt)', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontWeight: 700 }}>✓ {autoAccepted} records auto-matched</span>
-          <span style={{ color: 'var(--muted)' }}>— extraction confidence ≥ 95% · committed to LP Master without review</span>
+          <span style={{ color: 'var(--muted)' }}>— match score ≥ 95% · existing LP Master records will feed Run Shadow BB</span>
           <button onClick={() => setStatusFilter('Accepted')} style={{ marginLeft: 8, background: 'none', border: '1px solid var(--red)', borderRadius: 4, padding: '1px 8px', fontSize: 11, color: 'var(--red)', cursor: 'pointer' }}>View</button>
         </div>
       )}
@@ -284,10 +290,12 @@ export default function MatchQueue() {
             <thead>
               <tr>
                 <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
-                <th>Agent LP Name</th><th>Matched LP Master Record</th>
-                <th style={{ width: 70, textAlign: 'right' }}>Conf.</th>
-                <th style={{ width: 96 }}>Quality</th><th style={{ width: 82 }}>Status</th>
-                <th style={{ width: 160, padding: '8px 6px' }}>Action</th>
+                <SortableHeader sortKey="agentName" sort={sort} onSort={requestSort}>Agent LP Name</SortableHeader>
+                <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort}>Matched LP Master Record</SortableHeader>
+                <SortableHeader sortKey="score" sort={sort} onSort={requestSort} className="num" style={{ width: 70, textAlign: 'right' }}>Confidence</SortableHeader>
+                <SortableHeader sortKey="quality" sort={sort} onSort={requestSort} style={{ width: 96 }}>Quality</SortableHeader>
+                <SortableHeader sortKey="status" sort={sort} onSort={requestSort} style={{ width: 82 }}>Status</SortableHeader>
+                <SortableHeader sortKey="action" sort={sort} onSort={requestSort} style={{ width: 160, padding: '8px 6px' }}>Action</SortableHeader>
               </tr>
             </thead>
             <tbody>
@@ -315,19 +323,17 @@ export default function MatchQueue() {
             </div>
           </div>
         </div>
-        {selectedRow
-          ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
-          : <div style={{ width: 360, flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
-        }
+        <DraggablePanel storageKey="match-queue-right-card" style={{ flexShrink: 0, alignSelf: 'stretch' }}>
+          {selectedRow
+            ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
+            : <div style={{ width: 360, height: '100%', flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
+          }
+        </DraggablePanel>
       </div>
     </div>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => handleAbort()}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>
-    </Modal>
-    <Modal open={allRejectedOpen} onClose={() => setAllRejectedOpen(false)} title="All LPs Rejected" subtitle="No LP matches have been accepted — the submission cannot proceed."
-      footer={<><Button variant="secondary" onClick={() => setAllRejectedOpen(false)}>Review Decisions</Button><Button variant="danger" onClick={() => handleAbort('All LPs rejected — submission aborted.')}>Abort Submission</Button></>}>
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Every LP in this submission has been rejected, so there is nothing to commit to LP Master. The submission will be permanently removed. You can re-upload the Agent BB to start over.</div>
     </Modal>
     </>
   )

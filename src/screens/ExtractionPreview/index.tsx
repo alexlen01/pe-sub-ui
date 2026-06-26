@@ -1,16 +1,17 @@
-import { useState, useEffect, startTransition } from 'react'
+import { useState, useEffect, useMemo, startTransition } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useApp } from '../../context/AppContext'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
+import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields, type DocRecognitionRow, type UnrecognizedColumn } from '../../services/extractionService'
 import { getTemplateProfiles, getTemplateProfile, detectTemplate, findDetectedTemplate, buildDocRecognition, type MappedColumn } from '../../services/templateService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
-import { formatCombinedRatings, hasAnyRating } from '../../utils/ratings'
 
 type FieldMapRow = Awaited<ReturnType<typeof getExtractionFieldMap>>[0]
 type CanonicalField = Awaited<ReturnType<typeof getAllCanonicalFields>>[0]
@@ -69,7 +70,8 @@ type LPField = {
 const PETERSHILL_GRID_COLUMNS: ExtractedGridColumn[] = [
   { key: 'name',                     header: 'Deal Investor Name',                 canonical: 'Investor Name',                         width: 255 },
   { key: 'agentClass',               header: 'LP Classification',                  canonical: 'LP Category',                           width: 142 },
-  { key: 'ratings',                  header: 'Ratings',                            canonical: 'Ratings',                              width: 112, align: 'left', rating: true },
+  { key: 'sp',                       header: 'S&P',                                 canonical: 'S&P',                                   width: 64,  align: 'left', rating: true },
+  { key: 'moodys',                   header: "Moody's",                            canonical: "Moody's",                              width: 76,  align: 'left', rating: true },
   { key: 'sizeValueTier',            header: 'LP Size ($ Bil)',                    canonical: 'LP Size',                              width: 96,  align: 'right' },
   { key: 'sizeMetricType',           header: 'LP Size Criteria',                   canonical: 'Criteria',                             width: 72,  align: 'left' },
   { key: 'commit',                   header: 'Original Commitment',                canonical: 'Capital Commitments',                  width: 126, align: 'right', money: true },
@@ -196,9 +198,9 @@ function LPDetailPanel({
         display: 'flex', flexDirection: 'column', background: 'var(--card)',
       }}
     >
-      <div style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+      <div className="lp-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>Row #{row.id} — Field Detail</div>
+          <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>Row #{row.id} — Field Detail</div>
           <div title={row.name} style={{ fontSize: 11, marginTop: 2, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}{row.transferee ? <TransfereeMark /> : null}</div>
         </div>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#fff', lineHeight: 1, padding: 0, opacity: 0.7, flexShrink: 0 }}>×</button>
@@ -359,18 +361,15 @@ function lpSizeValue(row: ExtractedRow): string {
   return [size, criteria].filter(Boolean).join(' ')
 }
 
-function gridValue(row: ExtractedRow, col: ExtractedGridColumn, compact: boolean, includeFitchRating: boolean): string {
-  if (col.key === 'ratings') return formatCombinedRatings(row, includeFitchRating)
+function gridValue(row: ExtractedRow, col: ExtractedGridColumn, compact: boolean): string {
   if (col.key === 'sizeValueTier') return lpSizeParts(row).size || '—'
   if (col.key === 'sizeMetricType') return lpSizeParts(row).criteria || '—'
   const raw = row[col.key]
   return formatDisplayValue(raw == null ? undefined : String(raw), Boolean(col.money), compact)
 }
 
-function gridCellStyle(row: ExtractedRow, col: ExtractedGridColumn, includeFitchRating: boolean): React.CSSProperties {
-  const hasValue = col.key === 'ratings'
-    ? hasAnyRating(row, includeFitchRating)
-    : col.key === 'sizeValueTier'
+function gridCellStyle(row: ExtractedRow, col: ExtractedGridColumn): React.CSSProperties {
+  const hasValue = col.key === 'sizeValueTier'
       ? Boolean(lpSizeParts(row).size)
       : col.key === 'sizeMetricType'
         ? Boolean(lpSizeParts(row).criteria)
@@ -457,12 +456,16 @@ export default function ExtractionPreview() {
     return () => ro.disconnect()
   }, [])
 
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(extracted)
+  const sortColumns = useMemo(() => PETERSHILL_GRID_COLUMNS.map(col => ({
+    key: String(col.key),
+    getValue: (row: ExtractedRow) => gridValue(row, col, false),
+  })), [])
+  const { sort, sortedRows, requestSort } = useSortableRows(extracted, sortColumns)
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
 
   const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
   const compact       = containerWidth < 1500
-  const includeFitchRating = fieldMap.some(m => canonicalName(m.canonical) === 'Fitch Rating')
 
   const profile     = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
 
@@ -484,25 +487,25 @@ export default function ExtractionPreview() {
   useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
 
   useEffect(() => {
-    if (extracted.length === 0) return
+    if (sortedRows.length === 0) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
       e.preventDefault()
       const pageStart = (page - 1) * pageSize
-      const pageEnd = Math.min(pageStart + pageSize - 1, extracted.length - 1)
-      const idx = selectedLPId == null ? -1 : extracted.findIndex(r => r.id === selectedLPId)
+      const pageEnd = Math.min(pageStart + pageSize - 1, sortedRows.length - 1)
+      const idx = selectedLPId == null ? -1 : sortedRows.findIndex(r => r.id === selectedLPId)
       const nextIdx = idx === -1
         ? (e.key === 'ArrowDown' ? pageStart : pageEnd)
         : (e.key === 'ArrowDown' ? idx + 1 : idx - 1)
-      if (nextIdx < 0 || nextIdx >= extracted.length) return
-      setSelectedLPId(extracted[nextIdx].id)
+      if (nextIdx < 0 || nextIdx >= sortedRows.length) return
+      setSelectedLPId(sortedRows[nextIdx].id)
       const nextPage = Math.floor(nextIdx / pageSize) + 1
       if (nextPage !== page) setPage(nextPage)
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [extracted, selectedLPId, page, pageSize, setPage])
+  }, [sortedRows, selectedLPId, page, pageSize, setPage])
 
   const suggestMapping = async (extractedKey: string) => {
     const col = unrecog.find(c => c.extracted === extractedKey)
@@ -744,11 +747,20 @@ export default function ExtractionPreview() {
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
             <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
-              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1554 }}>
+              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1582 }}>
                 <thead>
                   <tr>
                     {PETERSHILL_GRID_COLUMNS.map(col => (
-                      <th key={col.key} style={{ ...HDR, width: col.width, textAlign: col.align }}>{col.canonical}</th>
+                      <SortableHeader
+                        key={col.key}
+                        sortKey={String(col.key)}
+                        sort={sort}
+                        onSort={requestSort}
+                        className={col.align === 'right' ? 'num' : ''}
+                        style={{ ...HDR, width: col.width, textAlign: col.align }}
+                      >
+                        {col.canonical}
+                      </SortableHeader>
                     ))}
                   </tr>
                 </thead>
@@ -761,12 +773,12 @@ export default function ExtractionPreview() {
                       style={{ cursor: 'pointer' }}
                     >
                       {PETERSHILL_GRID_COLUMNS.map(col => (
-                        <td key={col.key} style={gridCellStyle(r, col, includeFitchRating)}>
+                        <td key={col.key} style={gridCellStyle(r, col)}>
                           {col.key === 'name' ? (
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>
                               {r.name}{r.transferee ? <TransfereeMark /> : null}
                             </div>
-                          ) : gridValue(r, col, compact, includeFitchRating)}
+                          ) : gridValue(r, col, compact)}
                         </td>
                       ))}
                     </tr>
@@ -776,14 +788,15 @@ export default function ExtractionPreview() {
               </div>
 
               {selectedLP && (
-                <LPDetailPanel
-                  row={selectedLP}
-                  onClose={() => setSelectedLPId(null)}
-                  onDiscard={id => setDiscardConfirmId(id)}
-                  fieldMap={fieldMap}
-                  compact={compact}
-                  overlay
-                />
+                <DraggablePanel className="lp-detail-overlay extraction-detail-overlay" storageKey="extraction-preview-detail">
+                  <LPDetailPanel
+                    row={selectedLP}
+                    onClose={() => setSelectedLPId(null)}
+                    onDiscard={id => setDiscardConfirmId(id)}
+                    fieldMap={fieldMap}
+                    compact={compact}
+                  />
+                </DraggablePanel>
               )}
             </div>
 

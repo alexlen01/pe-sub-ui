@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { getFacilityBBSnapshot } from '../services/bbCalculationService'
 import { api } from '../services/api'
 import type { CommitLpRow } from '../services/api'
-import { getFacilities, getSubmissions, formatLastRun, parseMoneyToNumber } from '../services/facilityService'
+import { getFacilities, getSubmissions, formatLastRun, formatUsdNoDecimals, parseMoneyToNumber } from '../services/facilityService'
 import { getLPs, getLPByName, lookupLPsByName } from '../services/lpService'
 
 // Stub global fetch with a path→body map. The first registered key contained in the request
@@ -50,7 +50,7 @@ describe('getFacilities — live', () => {
     expect(rows[0].lps).toBe(100)
     // Real API values flow through — no client-side stub generation.
     expect(rows[0].accountNumber).toBe('5VX1796')
-    expect(rows[0].loanAmount).toBe('$2.5B')
+    expect(rows[0].loanAmount).toBe('$2,500,000,000')
     expect(rows[0].maturityDate).toBe('Mar 15, 2029')
     expect(rows[0].collateralDate).toBe('Jun 1, 2026')
   })
@@ -137,12 +137,19 @@ describe('parseMoneyToNumber', () => {
     expect(parseMoneyToNumber('150M')).toBe(150_000_000)
     expect(parseMoneyToNumber('$1,200,000')).toBe(1_200_000)
     expect(parseMoneyToNumber('500K')).toBe(500_000)
+    expect(parseMoneyToNumber('500000000')).toBe(500_000_000)
   })
   it('returns null for blank / dash / unparseable input', () => {
     expect(parseMoneyToNumber('')).toBeNull()
     expect(parseMoneyToNumber('—')).toBeNull()
     expect(parseMoneyToNumber(null)).toBeNull()
     expect(parseMoneyToNumber('n/a')).toBeNull()
+  })
+})
+
+describe('formatUsdNoDecimals', () => {
+  it('formats dollar values with US grouping and no decimals', () => {
+    expect(formatUsdNoDecimals(500_000_000)).toBe('$500,000,000')
   })
 })
 

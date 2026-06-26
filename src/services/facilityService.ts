@@ -35,6 +35,20 @@ function formatMoney(n: number | null | undefined): string {
   return `$${n.toLocaleString('en-US')}`
 }
 
+export function formatUsdNoDecimals(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })
+}
+
+export function formatLoanAmount(n: number | null | undefined): string {
+  return formatUsdNoDecimals(n)
+}
+
 // Shadow BB figures arrive from the API in $millions. Format for display as "$138.6M"
 // (matching the Executive Summary's parseM contract). Returns "—" when no BB has been run.
 function formatM(n: number | null | undefined): string {
@@ -174,7 +188,7 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       lastRunAt:            f.lastRunAt,
       latestSubmissionId:   review?.id ?? latestById.get(f.id) ?? null,
       accountNumber:        f.accountNumber ?? '—',
-      loanAmount:           formatMoney(f.loanAmount),
+      loanAmount:           formatLoanAmount(f.loanAmount),
       maturityDate:         f.maturityDate ? formatFullDate(f.maturityDate) : '—',
       collateralDate:       f.collateralDate ? formatFullDate(f.collateralDate) : '—',
       facilityStatusDate:   f.lastRunAt ? formatFullDate(f.lastRunAt) : '—',

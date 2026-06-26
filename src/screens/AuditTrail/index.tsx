@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useApp }  from '../../context/AppContext'
 import Button       from '../../components/ui/Button'
 import Tag          from '../../components/ui/Tag'
@@ -34,7 +35,16 @@ export default function AuditTrail() {
   }, [auditLog, search, evtFilter, userFilter])
 
   const users = [...new Set(auditLog.map(r => r.user).filter(Boolean))]
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(rows)
+  const sortColumns = useMemo(() => [
+    { key: 'ts', getValue: (r: AuditRow) => r.ts },
+    { key: 'event', getValue: (r: AuditRow) => r.event },
+    { key: 'detail', getValue: (r: AuditRow) => r.detail },
+    { key: 'facility', getValue: (r: AuditRow) => r.facility },
+    { key: 'user', getValue: (r: AuditRow) => r.user },
+    { key: 'ip', getValue: (r: AuditRow) => r.ip },
+  ], [])
+  const { sort, sortedRows, requestSort } = useSortableRows(rows, sortColumns)
+  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
@@ -62,12 +72,12 @@ export default function AuditTrail() {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: 140 }}>Timestamp</th>
-              <th style={{ width: 150 }}>Event Type</th>
-              <th>Detail</th>
-              <th style={{ width: 180 }}>Facility</th>
-              <th style={{ width: 100 }}>User</th>
-              <th style={{ width: 100 }}>IP Address</th>
+              <SortableHeader sortKey="ts" sort={sort} onSort={requestSort} style={{ width: 140 }}>Timestamp</SortableHeader>
+              <SortableHeader sortKey="event" sort={sort} onSort={requestSort} style={{ width: 150 }}>Event Type</SortableHeader>
+              <SortableHeader sortKey="detail" sort={sort} onSort={requestSort}>Detail</SortableHeader>
+              <SortableHeader sortKey="facility" sort={sort} onSort={requestSort} style={{ width: 180 }}>Facility</SortableHeader>
+              <SortableHeader sortKey="user" sort={sort} onSort={requestSort} style={{ width: 100 }}>User</SortableHeader>
+              <SortableHeader sortKey="ip" sort={sort} onSort={requestSort} style={{ width: 100 }}>IP Address</SortableHeader>
             </tr>
           </thead>
           <tbody>
