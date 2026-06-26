@@ -20,6 +20,7 @@ interface SortableHeaderProps {
   children: ReactNode
   className?: string
   style?: CSSProperties
+  title?: string
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
@@ -91,13 +92,14 @@ export function useSortableRows<T>(
   return { sort, sortedRows, requestSort }
 }
 
-export function SortableHeader({ sortKey, sort, onSort, children, className, style }: SortableHeaderProps) {
+export function SortableHeader({ sortKey, sort, onSort, children, className, style, title }: SortableHeaderProps) {
   const active = sort?.key === sortKey
   const ariaSort = active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'
   return (
     <th
       className={['sortable-th', active ? 'sortable-th-active' : '', className ?? ''].filter(Boolean).join(' ')}
       style={style}
+      title={title}
       aria-sort={ariaSort}
       tabIndex={0}
       onClick={() => onSort(sortKey)}

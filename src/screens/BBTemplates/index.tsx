@@ -53,7 +53,7 @@ const row: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-e
 interface GroupRow { groupSort: number; headerText: string; classification: string }
 
 interface FormState {
-  agentBank:              string
+  templateName:           string
   templateClass:          string
   sheetName:              string
   headerRowIndex:         string
@@ -72,7 +72,7 @@ interface FormState {
 
 function emptyForm(): FormState {
   return {
-    agentBank: '', templateClass: 'A', sheetName: '', headerRowIndex: '',
+    templateName: '', templateClass: 'A', sheetName: '', headerRowIndex: '',
     autoLearned: false, trancheCount: '1', hasGroupingRows: false, hasColorFlags: false,
     summaryRowsAboveHeader: '0',
     tabSheetName: '', tabHeaderRowIndex: '', tabHeaderRowSpan: '1',
@@ -84,7 +84,7 @@ function emptyForm(): FormState {
 function fromTemplate(t: BbTemplate): FormState {
   const lpGrid = t.tabs.find(tb => tb.tabRole === 'LP_GRID')
   return {
-    agentBank:              t.agentBank,
+    templateName:           t.templateName,
     templateClass:          t.templateClass,
     sheetName:              t.sheetName ?? '',
     headerRowIndex:         t.headerRowIndex != null ? String(t.headerRowIndex) : '',
@@ -116,7 +116,7 @@ function toRequest(f: FormState): BbTemplateInput {
   }
 
   return {
-    agentBank:              f.agentBank.trim(),
+    templateName:           f.templateName.trim(),
     templateClass:          f.templateClass,
     sheetName:              f.sheetName.trim() || null,
     headerRowIndex:         f.headerRowIndex ? parseInt(f.headerRowIndex) : null,
@@ -164,7 +164,7 @@ function TemplateFormModal({
     }))
 
   const handleSave = async () => {
-    if (!form.agentBank.trim()) { setError('Agent Bank is required.'); return }
+    if (!form.templateName.trim()) { setError('Template Name is required.'); return }
     setBusy(true)
     setError('')
     try {
@@ -199,8 +199,8 @@ function TemplateFormModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={row}>
               <div style={field()}>
-                <span style={label}>Agent Bank *</span>
-                <input style={inp()} value={form.agentBank} onChange={e => set('agentBank', e.target.value)} placeholder="e.g. Wells Fargo Bank" />
+                <span style={label}>Template Name *</span>
+                <input style={inp()} value={form.templateName} onChange={e => set('templateName', e.target.value)} placeholder="e.g. Blue Owl GP Stakes V / Wells Fargo" />
               </div>
               <div style={field('110px')}>
                 <span style={label}>Class</span>
@@ -350,7 +350,7 @@ function DeleteModal({ template, onClose, onConfirm }: {
       open={template != null}
       onClose={onClose}
       title="Remove BB Template?"
-      subtitle={template?.agentBank ?? ''}
+      subtitle={template?.templateName ?? ''}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -359,7 +359,7 @@ function DeleteModal({ template, onClose, onConfirm }: {
       }
     >
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-        This will permanently delete the template definition for <strong>{template?.agentBank}</strong> (Class {template?.templateClass}), including all tab and group section definitions. Existing submissions that matched against this template are not affected.
+        This will permanently delete the template definition for <strong>{template?.templateName}</strong> (Class {template?.templateClass}), including all tab and group section definitions. Existing submissions that matched against this template are not affected.
       </div>
       {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
     </Modal>
@@ -418,21 +418,21 @@ export default function BBTemplates() {
   const handleCreate = async (form: FormState) => {
     const created = await api.bbTemplates.create(toRequest(form))
     setTemplates(prev => [...prev, created])
-    toast(`Template "${created.agentBank}" (Class ${created.templateClass}) registered.`)
+    toast(`Template "${created.templateName}" (Class ${created.templateClass}) registered.`)
   }
 
   const handleEdit = async (form: FormState) => {
     if (!editTarget) return
     const updated = await api.bbTemplates.update(editTarget.id, toRequest(form))
     setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t))
-    toast(`Template "${updated.agentBank}" updated.`)
+    toast(`Template "${updated.templateName}" updated.`)
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
     await api.bbTemplates.remove(deleteTarget.id)
     setTemplates(prev => prev.filter(t => t.id !== deleteTarget.id))
-    toast(`Template "${deleteTarget.agentBank}" removed.`)
+    toast(`Template "${deleteTarget.templateName}" removed.`)
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,7 +443,7 @@ export default function BBTemplates() {
     try {
       const imported = await api.bbTemplates.import(file)
       setTemplates(prev => [...prev, imported])
-      toast(`Template "${imported.agentBank}" (Class ${imported.templateClass}) imported from Excel.`)
+      toast(`Template "${imported.templateName}" (Class ${imported.templateClass}) imported from Excel.`)
     } catch (err) {
       toast(`Import failed: ${String(err)}`)
     } finally {
@@ -487,7 +487,7 @@ export default function BBTemplates() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--tbl)' }}>
-                <th style={{ ...TH, textAlign: 'left' }}>Agent Template</th>
+                <th style={{ ...TH, textAlign: 'left' }}>Template Name</th>
                 <th style={{ ...TH, textAlign: 'center', width: 100 }}>Class</th>
                 <th style={{ ...TH, textAlign: 'left', width: 180 }}>Sheet Name</th>
                 <th style={{ ...TH, textAlign: 'right', width: 100 }}>Header Row</th>
@@ -516,7 +516,7 @@ export default function BBTemplates() {
                         <span style={{ marginRight: 6, fontSize: 10, color: 'var(--muted)', userSelect: 'none' }}>
                           {isOpen ? '▾' : '▸'}
                         </span>
-                        {t.agentBank}
+                        {t.templateName}
                       </td>
                       <td style={{ ...TD, textAlign: 'center' }}>
                         <ClassBadge cls={t.templateClass} />
@@ -568,7 +568,7 @@ export default function BBTemplates() {
       {editTarget && (
         <TemplateFormModal
           open={editTarget != null}
-          title={`Edit Template — ${editTarget.agentBank}`}
+          title={`Edit Template — ${editTarget.templateName}`}
           initial={fromTemplate(editTarget)}
           onClose={() => setEditTarget(null)}
           onSave={handleEdit}

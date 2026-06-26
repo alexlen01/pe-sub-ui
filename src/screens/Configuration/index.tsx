@@ -347,7 +347,7 @@ export default function Configuration() {
         action={<Button size="sm" onClick={() => navigate('bb-templates')}>Manage Templates</Button>}
       >
         <div style={{ padding: '10px 18px 14px', fontSize: 12, color: 'var(--muted)' }}>
-          Register and maintain the structural definitions that the extraction engine uses to parse each Agent BB workbook format. One entry per agent bank / template class variant.
+          Register and maintain the structural definitions that the extraction engine uses to parse each Agent BB workbook format. One entry per template name / template class variant.
         </div>
       </Card>
 

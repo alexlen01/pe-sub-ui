@@ -20,10 +20,12 @@ type CanonicalField = Awaited<ReturnType<typeof getAllCanonicalFields>>[0]
 interface ExtractedRow {
   id: number
   name: string
+  canonicalFields?: Record<string, unknown>
   parent?: string
   transferee?: boolean
   agentClass?: string
   commit?: string
+  calledCap?: string
   uncalled?: string
   pctCalledFmt?: string
   pctUnfundedFmt?: string
@@ -49,9 +51,9 @@ interface ExtractedRow {
 type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: boolean }
 
 type ExtractedGridColumn = {
-  key: keyof ExtractedRow
-  header: string
+  key: string
   canonical: string
+  group?: string
   width: number
   align?: React.CSSProperties['textAlign']
   money?: boolean
@@ -67,21 +69,57 @@ type LPField = {
   money?: boolean
 }
 
-const PETERSHILL_GRID_COLUMNS: ExtractedGridColumn[] = [
-  { key: 'name',                     header: 'Deal Investor Name',                 canonical: 'Investor Name',                         width: 255 },
-  { key: 'agentClass',               header: 'LP Classification',                  canonical: 'LP Category',                           width: 142 },
-  { key: 'sp',                       header: 'S&P',                                 canonical: 'S&P',                                   width: 64,  align: 'left', rating: true },
-  { key: 'moodys',                   header: "Moody's",                            canonical: "Moody's",                              width: 76,  align: 'left', rating: true },
-  { key: 'sizeValueTier',            header: 'LP Size ($ Bil)',                    canonical: 'LP Size',                              width: 96,  align: 'right' },
-  { key: 'sizeMetricType',           header: 'LP Size Criteria',                   canonical: 'Criteria',                             width: 72,  align: 'left' },
-  { key: 'commit',                   header: 'Original Commitment',                canonical: 'Capital Commitments',                  width: 126, align: 'right', money: true },
-  { key: 'uncalled',                 header: 'Unfunded Capital Commitment',        canonical: 'Uncalled Capital',                     width: 138, align: 'right', money: true },
-  { key: 'agentConc',                header: 'Concentration Limit',                canonical: 'Concentration Limit',                  width: 108, align: 'right' },
-  { key: 'excessConcFmt',            header: 'Excess Concentration',               canonical: 'Excess Concentration',                 width: 126, align: 'right', money: true },
-  { key: 'eligibleCommitmentFmt',    header: 'Eligible Commitment',                canonical: 'Eligible Commitment',                  width: 126, align: 'right', money: true },
-  { key: 'agentRate',                header: 'Advance Rate',                       canonical: 'Advance Rate',                         width: 84,  align: 'right', strong: true },
-  { key: 'agentBBFmt',               header: 'Borrowing Base Contribution',        canonical: 'Borrowing Base',                       width: 136, align: 'right', money: true },
-]
+type CanonicalMeta = {
+  key?: keyof ExtractedRow
+  width: number
+  align?: React.CSSProperties['textAlign']
+  money?: boolean
+  rating?: boolean
+  strong?: boolean
+}
+
+const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
+  'Investor Name':             { key: 'name', width: 255 },
+  'LP Category':               { key: 'agentClass', width: 142 },
+  Transferee:                  { key: 'transferee', width: 84 },
+  'Parent / Sponsor':          { key: 'parent', width: 150 },
+  'Eligibility Flag':          { width: 104 },
+  'Capital Commitments':       { key: 'commit', width: 126, align: 'right', money: true },
+  '% of Capital Commitments':  { width: 112, align: 'right' },
+  'Called Capital':            { key: 'calledCap', width: 116, align: 'right', money: true },
+  'Recallable Distributions':  { width: 132, align: 'right', money: true },
+  'Uncalled Capital':          { key: 'uncalled', width: 138, align: 'right', money: true },
+  '% of Uncalled Capital':     { key: 'pctUnfundedFmt', width: 118, align: 'right' },
+  '% of LP Called':            { key: 'pctCalledFmt', width: 104, align: 'right' },
+  'Size Metric Type':          { key: 'sizeMetricType', width: 118 },
+  'Size Value / Tier':         { key: 'sizeValueTier', width: 112, align: 'right' },
+  AUM:                         { key: 'aum', width: 104, align: 'right', money: true },
+  NAV:                         { key: 'nav', width: 104, align: 'right', money: true },
+  'Net Worth':                 { width: 112, align: 'right', money: true },
+  'Pension Assets':            { width: 118, align: 'right', money: true },
+  'Pension Funded %':          { width: 112, align: 'right' },
+  'Advance Rate':              { key: 'agentRate', width: 84, align: 'right', strong: true },
+  'Eligible Commitment':       { key: 'eligibleCommitmentFmt', width: 126, align: 'right', money: true },
+  '% of Eligible Uncalled':    { key: 'pctEligibleUnfundedFmt', width: 126, align: 'right' },
+  '% of Borrowing Base':       { key: 'pctBBFmt', width: 116, align: 'right' },
+  'Borrowing Base':            { key: 'agentBBFmt', width: 136, align: 'right', money: true },
+  'Concentration Limit':       { key: 'agentConc', width: 108, align: 'right' },
+  'Concentration (%)':         { width: 112, align: 'right' },
+  'Excess Concentration':      { key: 'excessConcFmt', width: 126, align: 'right', money: true },
+  'Excess Concentration (%)':  { width: 126, align: 'right' },
+  'S&P Rating':                { key: 'sp', width: 72, rating: true },
+  "Moody's Rating":            { key: 'moodys', width: 84, rating: true },
+  'Fitch Rating':              { key: 'fitch', width: 78, rating: true },
+}
+
+const FALLBACK_GRID_COLUMNS: ExtractedGridColumn[] = [
+  'Investor Name', 'LP Category', 'S&P Rating', "Moody's Rating", 'Size Value / Tier',
+  'Size Metric Type', 'Capital Commitments', 'Uncalled Capital', 'Concentration Limit',
+  'Excess Concentration', 'Eligible Commitment', 'Advance Rate', 'Borrowing Base',
+].map(canonical => {
+  const meta = CANONICAL_GRID_META[canonical]
+  return { key: canonical, canonical, width: meta.width, align: meta.align, money: meta.money, rating: meta.rating, strong: meta.strong }
+})
 
 const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' | 'label'>> = {
   'Investor Name':              { key: 'name' },
@@ -151,7 +189,10 @@ function detailFieldsFromMapping(fieldMap: FieldMapRow[]): LPField[] {
 }
 
 const FALLBACK_DETAIL_FIELDS: LPField[] = [
-  ...PETERSHILL_GRID_COLUMNS.map(({ key, header, canonical, money }) => ({ key, extracted: header, label: canonical, canonical, money })),
+  ...FALLBACK_GRID_COLUMNS.flatMap(({ canonical, money }) => {
+    const def = DETAIL_FIELD_DEFS[canonical]
+    return def ? [{ ...def, extracted: canonical, label: canonical, canonical, money }] : []
+  }),
 ]
 
 // Transferee marker — shown next to the investor name (no dedicated column/field).
@@ -361,19 +402,55 @@ function lpSizeValue(row: ExtractedRow): string {
   return [size, criteria].filter(Boolean).join(' ')
 }
 
+function canonicalGroup(field: CanonicalField): string {
+  return String(field.label ?? '').split(/\s›\s/)[0] || ''
+}
+
+function columnsFromCanonicals(canonicals: CanonicalField[]): ExtractedGridColumn[] {
+  if (!canonicals.length) return FALLBACK_GRID_COLUMNS
+  return canonicals.map(field => {
+    const canonical = field.value
+    const meta = CANONICAL_GRID_META[canonical] ?? { width: 116 }
+    return {
+      key: canonical,
+      canonical,
+      group: canonicalGroup(field),
+      width: meta.width,
+      align: meta.align,
+      money: meta.money,
+      rating: meta.rating,
+      strong: meta.strong,
+    }
+  })
+}
+
+function rawCanonicalValue(row: ExtractedRow, col: ExtractedGridColumn): unknown {
+  const canonicalValue = row.canonicalFields?.[col.canonical]
+  if (canonicalValue !== undefined && canonicalValue !== null && String(canonicalValue).trim() !== '') {
+    return canonicalValue
+  }
+
+  const meta = CANONICAL_GRID_META[col.canonical]
+  if (col.canonical === 'Size Value / Tier') return lpSizeParts(row).size
+  if (col.canonical === 'Size Metric Type') return lpSizeParts(row).criteria
+  if (meta?.key) return (row as unknown as Record<string, unknown>)[meta.key]
+  return (row as unknown as Record<string, unknown>)[col.canonical]
+}
+
+function hasGridValue(row: ExtractedRow, col: ExtractedGridColumn): boolean {
+  const value = rawCanonicalValue(row, col)
+  if (typeof value === 'boolean') return value
+  return String(value ?? '').trim() !== ''
+}
+
 function gridValue(row: ExtractedRow, col: ExtractedGridColumn, compact: boolean): string {
-  if (col.key === 'sizeValueTier') return lpSizeParts(row).size || '—'
-  if (col.key === 'sizeMetricType') return lpSizeParts(row).criteria || '—'
-  const raw = row[col.key]
+  const raw = rawCanonicalValue(row, col)
+  if (typeof raw === 'boolean') return raw ? 'Y' : '—'
   return formatDisplayValue(raw == null ? undefined : String(raw), Boolean(col.money), compact)
 }
 
 function gridCellStyle(row: ExtractedRow, col: ExtractedGridColumn): React.CSSProperties {
-  const hasValue = col.key === 'sizeValueTier'
-      ? Boolean(lpSizeParts(row).size)
-      : col.key === 'sizeMetricType'
-        ? Boolean(lpSizeParts(row).criteria)
-      : Boolean(row[col.key])
+  const hasValue = hasGridValue(row, col)
   return {
     textAlign: col.align,
     fontFamily: col.money ? 'monospace' : undefined,
@@ -381,7 +458,7 @@ function gridCellStyle(row: ExtractedRow, col: ExtractedGridColumn): React.CSSPr
     fontWeight: col.rating || col.strong ? 600 : undefined,
     color: !hasValue
       ? 'var(--muted)'
-      : col.key === 'agentRate' && row.agentRate === '0%'
+      : col.canonical === 'Advance Rate' && gridValue(row, col, false) === '0%'
         ? 'var(--danger)'
         : col.rating
           ? 'var(--navy)'
@@ -456,10 +533,15 @@ export default function ExtractionPreview() {
     return () => ro.disconnect()
   }, [])
 
-  const sortColumns = useMemo(() => PETERSHILL_GRID_COLUMNS.map(col => ({
-    key: String(col.key),
+  const gridColumns = useMemo(() => columnsFromCanonicals(canonicals), [canonicals])
+  const gridMinWidth = useMemo(
+    () => Math.max(1582, gridColumns.reduce((sum, col) => sum + col.width, 0)),
+    [gridColumns],
+  )
+  const sortColumns = useMemo(() => gridColumns.map(col => ({
+    key: col.key,
     getValue: (row: ExtractedRow) => gridValue(row, col, false),
-  })), [])
+  })), [gridColumns])
   const { sort, sortedRows, requestSort } = useSortableRows(extracted, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
 
@@ -597,7 +679,7 @@ export default function ExtractionPreview() {
       try {
         const res = await api.submissions.confirm(activeSubmissionId)
         if (res?.templateSaved) {
-          toast(`Template saved for ${res.agentBank} — future submissions will use exact sheet and header row.`)
+          toast(`Template saved for ${res.templateName} — future submissions will use exact sheet and header row.`)
         }
         startTransition(() => navigate('match-queue'))
       } catch (e) {
@@ -747,17 +829,18 @@ export default function ExtractionPreview() {
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
             <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
-              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1582 }}>
+              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: gridMinWidth }}>
                 <thead>
                   <tr>
-                    {PETERSHILL_GRID_COLUMNS.map(col => (
+                    {gridColumns.map(col => (
                       <SortableHeader
                         key={col.key}
-                        sortKey={String(col.key)}
+                        sortKey={col.key}
                         sort={sort}
                         onSort={requestSort}
                         className={col.align === 'right' ? 'num' : ''}
                         style={{ ...HDR, width: col.width, textAlign: col.align }}
+                        title={col.group ? `${col.group} - ${col.canonical}` : col.canonical}
                       >
                         {col.canonical}
                       </SortableHeader>
@@ -772,9 +855,9 @@ export default function ExtractionPreview() {
                       onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {PETERSHILL_GRID_COLUMNS.map(col => (
+                      {gridColumns.map(col => (
                         <td key={col.key} style={gridCellStyle(r, col)}>
-                          {col.key === 'name' ? (
+                          {col.canonical === 'Investor Name' ? (
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>
                               {r.name}{r.transferee ? <TransfereeMark /> : null}
                             </div>

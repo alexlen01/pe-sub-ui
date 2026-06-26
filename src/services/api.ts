@@ -218,7 +218,7 @@ export interface BbTemplateTab {
   skipRowKeywords: string[]; groups: BbTemplateGroup[]
 }
 export interface BbTemplate {
-  id: number; agentBank: string; templateClass: string
+  id: number; templateName: string; templateClass: string
   sheetName: string | null; headerRowIndex: number | null
   autoLearned: boolean; trancheCount: number
   hasGroupingRows: boolean; hasColorFlags: boolean
@@ -232,7 +232,7 @@ export interface BbTemplateTabInput {
   skipRowKeywords: string[]; groups: BbTemplateGroupInput[]
 }
 export interface BbTemplateInput {
-  agentBank: string; templateClass: string; sheetName: string | null
+  templateName: string; templateClass: string; sheetName: string | null
   headerRowIndex: number | null; autoLearned: boolean; trancheCount: number
   hasGroupingRows: boolean; hasColorFlags: boolean; summaryRowsAboveHeader: number
   tabs: BbTemplateTabInput[]
@@ -347,7 +347,7 @@ export const api = {
     abort: (id: number) =>
       post<void>(`/api/submissions/${id}/abort`, {}),
     confirm: (id: number) =>
-      post<{ templateSaved: boolean; agentBank: string }>(`/api/submissions/${id}/confirm`, {}),
+      post<{ templateSaved: boolean; templateName: string }>(`/api/submissions/${id}/confirm`, {}),
     saveShadowBbState: (id: number, overrides: Record<string, unknown> | null) =>
       patch<Submission>(`/api/submissions/${id}/shadow-bb-state`, { overrides }),
     complete: (id: number) =>
