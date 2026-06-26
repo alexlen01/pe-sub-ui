@@ -23,7 +23,7 @@ const LP_CLASSIFICATIONS = [
   'Included',
 ]
 
-const DEFAULT_SKIP_KEYWORDS = 'Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total'
+const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 'Sum', 'Net Total']
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ function emptyForm(): FormState {
     autoLearned: false, trancheCount: '1', hasGroupingRows: false, hasColorFlags: false,
     summaryRowsAboveHeader: '0',
     tabSheetName: '', tabHeaderRowIndex: '', tabHeaderRowSpan: '1',
-    tabSkipKeywords: DEFAULT_SKIP_KEYWORDS,
+    tabSkipKeywords: DEFAULT_SKIP_KEYWORDS.join(','),
     groups: [],
   }
 }
@@ -96,7 +96,7 @@ function fromTemplate(t: BbTemplate): FormState {
     tabSheetName:       lpGrid?.sheetName ?? '',
     tabHeaderRowIndex:  lpGrid?.headerRowIndex != null ? String(lpGrid.headerRowIndex) : '',
     tabHeaderRowSpan:   String(lpGrid?.headerRowSpan ?? 1),
-    tabSkipKeywords:    lpGrid?.skipRowKeywords?.join(',') ?? DEFAULT_SKIP_KEYWORDS,
+    tabSkipKeywords:    lpGrid?.skipRowKeywords?.join(',') ?? '',
     groups:             (lpGrid?.groups ?? []).map(g => ({ ...g })),
   }
 }
@@ -111,7 +111,7 @@ function toRequest(f: FormState): BbTemplateInput {
     sheetName:      f.tabSheetName.trim() || null,
     headerRowIndex: f.tabHeaderRowIndex ? parseInt(f.tabHeaderRowIndex) : null,
     headerRowSpan:  parseInt(f.tabHeaderRowSpan) || 1,
-    skipRowKeywords: skipKeywords.length ? skipKeywords : DEFAULT_SKIP_KEYWORDS.split(','),
+    skipRowKeywords: skipKeywords,
     groups: f.groups.map(g => ({ groupSort: g.groupSort, headerText: g.headerText, classification: g.classification })),
   }
 
@@ -402,6 +402,7 @@ export default function BBTemplates() {
   const [deleteTarget, setDeleteTarget] = useState<BbTemplate | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
+  const mutationDisabled = loadError != null
 
   const load = () => {
     setLoadError(null)
@@ -471,10 +472,10 @@ export default function BBTemplates() {
         subtitle="One row per Agent BB workbook format variant registered for extraction."
         action={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button size="sm" variant="secondary" disabled={importing} onClick={() => importRef.current?.click()}>
+            <Button size="sm" variant="secondary" disabled={importing || mutationDisabled} onClick={() => importRef.current?.click()}>
               {importing ? 'Importing…' : '↑ Upload Template'}
             </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>+ Add Template</Button>
+            <Button size="sm" disabled={mutationDisabled} onClick={() => setCreateOpen(true)}>+ Add Template</Button>
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} />
           </div>
         }
@@ -534,8 +535,8 @@ export default function BBTemplates() {
                       <td style={{ ...TD, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(t.updatedAt)}</td>
                       <td style={{ ...TD, textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-                          <Button size="sm" variant="secondary" onClick={() => setEditTarget(t)}>Edit</Button>
-                          <Button size="sm" variant="danger"    onClick={() => setDeleteTarget(t)}>Remove</Button>
+                          <Button size="sm" variant="secondary" disabled={mutationDisabled} onClick={() => setEditTarget(t)}>Edit</Button>
+                          <Button size="sm" variant="danger" disabled={mutationDisabled} onClick={() => setDeleteTarget(t)}>Remove</Button>
                         </div>
                       </td>
                     </tr>
