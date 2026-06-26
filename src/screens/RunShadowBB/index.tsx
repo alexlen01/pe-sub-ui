@@ -162,6 +162,7 @@ export default function RunShadowBB() {
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
+  const [lpRatesLoaded, setLpRatesLoaded] = useState(false)
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [containerWidth, setContainerWidth] = useState(Infinity)
@@ -220,10 +221,19 @@ export default function RunShadowBB() {
   }, [submissionDetails?.facilityId])
 
   useEffect(() => {
+    setLpRatesLoaded(false)
+    if (activeSubmissionId != null && !submissionDetails) return
     api.lps.rates(submissionDetails?.periodMonth ?? undefined)
-      .then(rates => setLpRates(new Map(rates.map(r => [r.lpName.toLowerCase(), r]))))
-      .catch(() => {})
-  }, [submissionDetails?.periodMonth])
+      .then(rates => {
+        setLpRates(new Map(rates.map(r => [r.lpName.toLowerCase(), r])))
+        setLpRatesLoaded(true)
+      })
+      .catch(e => {
+        setLoadError(String(e))
+        setLpRates(new Map())
+        setLpRatesLoaded(false)
+      })
+  }, [activeSubmissionId, submissionDetails, submissionDetails?.periodMonth])
 
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
     return facilityLPs.map(lp => ({
@@ -314,6 +324,10 @@ export default function RunShadowBB() {
     const facilityId = submissionDetails?.facilityId
     const row = toRow(key, ov)
     if (facilityId == null || !row) return
+    if (!lpRatesLoaded || loadError) {
+      toast('LP rates were not loaded from the database; save is disabled to avoid persisting UI defaults.')
+      return
+    }
     setSaveState(s => ({ ...s, [key]: 'saving' }))
     try {
       await api.lps.saveClassification({
@@ -516,6 +530,10 @@ export default function RunShadowBB() {
   }, [sortedDisplayLPs, selectedKey, page, pageSize, setPage])
 
   const run = async () => {
+    if (!lpRatesLoaded || loadError) {
+      toast('LP rates were not loaded from the database; Shadow BB run is disabled to avoid using UI defaults.')
+      return
+    }
     setRunning(true)
     setLoadError(null)
     if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`)
@@ -649,7 +667,7 @@ export default function RunShadowBB() {
                 {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
                 {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
-                <Button size="sm" onClick={run} disabled={running}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
+                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
           >
@@ -765,7 +783,7 @@ export default function RunShadowBB() {
                     totalCommitM={totalCommitM}
                     totalUncalledM={totalUncalledM}
                     saveStatus={saveState[selectedKey]}
-                    running={running}
+                    running={running || !lpRatesLoaded || loadError != null}
                     onDeselect={() => setSelectedKey(null)}
                     onSave={saveDraft}
                   />

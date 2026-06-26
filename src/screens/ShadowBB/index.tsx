@@ -375,6 +375,10 @@ export default function ShadowBB() {
 
   const saveDraft = async (draft: Override) => {
     if (!selectedKey) return
+    if (loadError) {
+      toast('Shadow BB data was not loaded from the database; save is disabled to avoid persisting UI defaults.')
+      return
+    }
     const lpName = draft.name || selectedKey
     const changes = overrideToLPRecord(draft, totalUncalledM)
     setOverrideMap(prev => {
@@ -717,7 +721,7 @@ export default function ShadowBB() {
                       totalCommitM={totalCommitM}
                       totalUncalledM={totalUncalledM}
                       saveStatus={saveStatuses[selectedKey]}
-                      running={false}
+                      running={loadError != null}
                       onDeselect={() => setSelectedKey(null)}
                       onSave={saveDraft}
                     />

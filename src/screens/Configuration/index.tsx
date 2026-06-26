@@ -3,16 +3,32 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
 import { api } from '../../services/api'
-import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../../config/eligibilityConfig'
 import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
 
+type AgentRateParam = { label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }
+
 interface EligibilityConfig {
-  BUSA_TIERS?:        RateTier[]
-  AGENT_TIERS?:       RateTier[]
-  AGENT_RATE_PARAMS?: typeof AGENT_RATE_PARAMS
-  ELIG_RULES?:        EligRule[]
-  CONC_LIMITS?:       ConcLimit[]
-  GLOBAL_SETTINGS?:   GlobalSetting[]
+  BUSA_TIERS:        RateTier[]
+  AGENT_TIERS:       RateTier[]
+  AGENT_RATE_PARAMS: AgentRateParam[]
+  ELIG_RULES:        EligRule[]
+  CONC_LIMITS:       ConcLimit[]
+  GLOBAL_SETTINGS:   GlobalSetting[]
+}
+
+function missingConfigSections(config: Partial<EligibilityConfig>): string[] {
+  return [
+    ['BUSA_TIERS', config.BUSA_TIERS],
+    ['AGENT_TIERS', config.AGENT_TIERS],
+    ['AGENT_RATE_PARAMS', config.AGENT_RATE_PARAMS],
+    ['ELIG_RULES', config.ELIG_RULES],
+    ['CONC_LIMITS', config.CONC_LIMITS],
+    ['GLOBAL_SETTINGS', config.GLOBAL_SETTINGS],
+  ].filter(([, value]) => !Array.isArray(value)).map(([key]) => key as string)
+}
+
+function isCompleteConfig(config: Partial<EligibilityConfig>): config is EligibilityConfig {
+  return missingConfigSections(config).length === 0
 }
 
 const RETENTION_OPTIONS = [1, 2, 3, 5, 7, 10, 15]
@@ -81,12 +97,12 @@ const unit = (s: string) => (
 export default function Configuration() {
   const { toast, navigate } = useApp()
 
-  const [busa,           setBusa]           = useState<RateTier[]>(BUSA_TIERS)
-  const [agentTiers,     setAgentTiers]     = useState<RateTier[]>(AGENT_TIERS)
-  const [agentParams,    setAgentParams]    = useState<Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }>>(AGENT_RATE_PARAMS)
-  const [eligRules,      setEligRules]      = useState<EligRule[]>(ELIG_RULES)
-  const [concLimits,     setConcLimits]     = useState<ConcLimit[]>(CONC_LIMITS)
-  const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>(GLOBAL_SETTINGS)
+  const [busa,           setBusa]           = useState<RateTier[]>([])
+  const [agentTiers,     setAgentTiers]     = useState<RateTier[]>([])
+  const [agentParams,    setAgentParams]    = useState<AgentRateParam[]>([])
+  const [eligRules,      setEligRules]      = useState<EligRule[]>([])
+  const [concLimits,     setConcLimits]     = useState<ConcLimit[]>([])
+  const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>([])
   const [loading,        setLoading]        = useState(true)
   const [saving,         setSaving]         = useState<string | null>(null)
   const [loadError,      setLoadError]      = useState<string | null>(null)
@@ -95,19 +111,26 @@ export default function Configuration() {
     setLoadError(null)
     api.config.eligibility()
       .then((result: unknown) => {
-        const config = result as EligibilityConfig
-        if (config.BUSA_TIERS)        setBusa(config.BUSA_TIERS)
-        if (config.AGENT_TIERS)       setAgentTiers(config.AGENT_TIERS)
-        if (config.AGENT_RATE_PARAMS) setAgentParams(config.AGENT_RATE_PARAMS)
-        if (config.ELIG_RULES)        setEligRules(config.ELIG_RULES)
-        if (config.CONC_LIMITS)       setConcLimits(config.CONC_LIMITS)
-        if (config.GLOBAL_SETTINGS)   setGlobalSettings(config.GLOBAL_SETTINGS)
+        const config = result as Partial<EligibilityConfig>
+        const missing = missingConfigSections(config)
+        if (missing.length > 0) throw new Error(`Missing config sections: ${missing.join(', ')}`)
+        if (!isCompleteConfig(config)) throw new Error('Eligibility configuration is incomplete')
+        setBusa(config.BUSA_TIERS)
+        setAgentTiers(config.AGENT_TIERS)
+        setAgentParams(config.AGENT_RATE_PARAMS)
+        setEligRules(config.ELIG_RULES)
+        setConcLimits(config.CONC_LIMITS)
+        setGlobalSettings(config.GLOBAL_SETTINGS)
       })
       .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
   }, [])
 
   const handleSave = useCallback(async (section: string, saves: Array<[string, unknown]>) => {
+    if (loadError) {
+      toast('Configuration was not loaded; save is disabled until the DB config is available.')
+      return
+    }
     setSaving(section)
     try {
       for (const [key, data] of saves) {
@@ -119,18 +142,27 @@ export default function Configuration() {
     } finally {
       setSaving(null)
     }
-  }, [toast])
+  }, [loadError, toast])
 
-  const busy = saving !== null || loading
+  const busy = saving !== null || loading || loadError != null
 
   if (loading) {
     return <div style={{ padding: '40px 24px', color: 'var(--muted)', fontSize: 13 }}>Loading configuration…</div>
   }
 
+  if (loadError) {
+    return (
+      <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div><Button variant="ghost" size="sm" onClick={() => navigate('upload')}>← Back to Upload</Button></div>
+        <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>
+          API error — {loadError}. Configuration saves are disabled so UI defaults cannot replace database-backed settings.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {loadError && <div style={{ padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
         {/* 1 — BUSA Advance Rate Schedule */}

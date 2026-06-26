@@ -489,10 +489,10 @@ export default function BBTemplates() {
             <thead>
               <tr style={{ background: 'var(--tbl)' }}>
                 <th style={{ ...TH, textAlign: 'left' }}>Template Name</th>
-                <th style={{ ...TH, textAlign: 'center', width: 100 }}>Class</th>
+                <th style={{ ...TH, textAlign: 'center', width: 180 }}>Class</th>
                 <th style={{ ...TH, textAlign: 'left', width: 180 }}>Sheet Name</th>
                 <th style={{ ...TH, textAlign: 'right', width: 100 }}>Header Row</th>
-                <th style={{ ...TH, textAlign: 'right', width: 95 }}>Tranches</th>
+                <th style={{ ...TH, textAlign: 'right', width: 105 }}>Tranches</th>
                 <th style={{ ...TH, textAlign: 'center', width: 85 }}>Groups</th>
                 <th style={{ ...TH, textAlign: 'center', width: 95 }}>Colours</th>
                 <th style={{ ...TH, textAlign: 'left', width: 120 }}>Created</th>

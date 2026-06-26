@@ -3,9 +3,9 @@ import { ALIAS_GROUPS, ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
 import { resolveColumn } from '../services/templateService'
 
 describe('ALIAS_GROUPS structural integrity', () => {
-  it('all 31 canonical fields are defined', () => {
+  it('all 32 canonical fields are defined', () => {
     const totalFields = ALIAS_GROUPS.reduce((sum, g) => sum + g.fields.length, 0)
-    expect(totalFields).toBe(31)
+    expect(totalFields).toBe(32)
   })
 
   it('every field has at least one alias', () => {
@@ -73,6 +73,20 @@ describe('Map To dropdown — derived fields are selectable', () => {
     expect(bb!.aliases.map(a => a.text)).toContain('Borrowing Base')
   })
 
+  it('orders Ratings before Commitment Data and keeps Notes at the bottom', () => {
+    expect(ALIAS_GROUPS.map(g => g.group)).toEqual([
+      'Identity & Classification',
+      'Ratings',
+      'Commitment Data',
+      'Uncalled Data',
+      'Financial Scale',
+      'Borrowing Base',
+      'Concentration',
+      'Notes',
+    ])
+    expect(ALIAS_GROUPS.at(-1)?.fields.map(f => f.canonical)).toEqual(['Notes'])
+  })
+
   it('Financial Scale starts with LP Size Grouping fields before AUM', () => {
     const financialScale = ALIAS_GROUPS.find(g => g.group === 'Financial Scale')
     expect(financialScale?.fields.slice(0, 3).map(f => f.canonical)).toEqual([
@@ -100,6 +114,12 @@ describe('Map To dropdown — derived fields are selectable', () => {
     expect(values).not.toContain('S&P Numeric Score')
     expect(values).not.toContain("Moody's Numeric Score")
     expect(values).not.toContain('Numeric Rating')
+  })
+
+  it('maps Notes as a canonical field', () => {
+    const match = resolveColumn('Notes')
+    expect(match?.canonical).toBe('Notes')
+    expect(match?.group).toBe('Notes')
   })
 
   it('auto-suggests near aliases at the Jaro-Winkler 0.900 threshold', () => {

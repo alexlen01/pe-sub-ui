@@ -1,5 +1,5 @@
 // Mock data for field mapping dictionary — must stay in sync with V1_2__seed.sql.
-// 31 canonical fields across 7 groups.
+// 32 canonical fields across 8 groups.
 // is_derived fields are included so the UI can render them (greyed out / labelled).
 
 export const ALIAS_GROUPS = [
@@ -69,6 +69,43 @@ export const ALIAS_GROUPS = [
       aliases: [
         { id:29, text:'Eligibility', tier:'Core', bank:null },
         { id:30, text:'Eligible',    tier:'Bank', bank:'WF' },
+      ],
+    },
+  ]},
+
+  { group: 'Ratings', fields: [
+    {
+      id: 24, canonical: 'S&P Rating',
+      lpMasterField: 'Ratings - S&P Rating',
+      disambiguation: 'Use last occurrence when column header repeats in same sheet', isDerived: false,
+      aliases: [
+        { id:112, text:"S&P",              tier:'Core', bank:null },
+        { id:113, text:"S&P Rating",       tier:'Core', bank:null },
+        { id:114, text:"S&P Credit Rating",tier:'Core', bank:null },
+        { id:115, text:"S and P",          tier:'Core', bank:null },
+        { id:116, text:"S & P's Rating",   tier:'Core', bank:null },
+        { id:117, text:"S & P",            tier:'Core', bank:null },
+      ],
+    },
+    {
+      id: 25, canonical: "Moody's Rating",
+      lpMasterField: "Ratings - Moody's Rating",
+      disambiguation: 'Use last occurrence when column header repeats in same sheet', isDerived: false,
+      aliases: [
+        { id:118, text:"Moody's",         tier:'Core', bank:null },
+        { id:119, text:"Moody's Rating",  tier:'Core', bank:null },
+        { id:120, text:"Moodys",          tier:'Core', bank:null },
+        { id:121, text:"Applicable Rating",tier:'Bank', bank:'BNY' },
+      ],
+    },
+    {
+      id: 26, canonical: 'Fitch Rating',
+      lpMasterField: 'Ratings - Fitch Rating',
+      disambiguation: null, isDerived: false,
+      aliases: [
+        { id:122, text:'Fitch',              tier:'Core', bank:null },
+        { id:123, text:'Fitch Rating',       tier:'Core', bank:null },
+        { id:124, text:'Fitch Credit Rating',tier:'Core', bank:null },
       ],
     },
   ]},
@@ -373,39 +410,18 @@ export const ALIAS_GROUPS = [
     },
   ]},
 
-  { group: 'Ratings', fields: [
+  { group: 'Notes', fields: [
     {
-      id: 24, canonical: 'S&P Rating',
-      lpMasterField: 'Ratings - S&P Rating',
-      disambiguation: 'Use last occurrence when column header repeats in same sheet', isDerived: false,
+      id: 35, canonical: 'Notes',
+      lpMasterField: 'Notes - Notes',
+      disambiguation: 'Free-text analyst notes captured from agent borrowing base submissions',
+      isDerived: false,
       aliases: [
-        { id:112, text:"S&P",              tier:'Core', bank:null },
-        { id:113, text:"S&P Rating",       tier:'Core', bank:null },
-        { id:114, text:"S&P Credit Rating",tier:'Core', bank:null },
-        { id:115, text:"S and P",          tier:'Core', bank:null },
-        { id:116, text:"S & P's Rating",   tier:'Core', bank:null },
-        { id:117, text:"S & P",            tier:'Core', bank:null },
-      ],
-    },
-    {
-      id: 25, canonical: "Moody's Rating",
-      lpMasterField: "Ratings - Moody's Rating",
-      disambiguation: 'Use last occurrence when column header repeats in same sheet', isDerived: false,
-      aliases: [
-        { id:118, text:"Moody's",         tier:'Core', bank:null },
-        { id:119, text:"Moody's Rating",  tier:'Core', bank:null },
-        { id:120, text:"Moodys",          tier:'Core', bank:null },
-        { id:121, text:"Applicable Rating",tier:'Bank', bank:'BNY' },
-      ],
-    },
-    {
-      id: 26, canonical: 'Fitch Rating',
-      lpMasterField: 'Ratings - Fitch Rating',
-      disambiguation: null, isDerived: false,
-      aliases: [
-        { id:122, text:'Fitch',              tier:'Core', bank:null },
-        { id:123, text:'Fitch Rating',       tier:'Core', bank:null },
-        { id:124, text:'Fitch Credit Rating',tier:'Core', bank:null },
+        { id:165, text:'Notes',         tier:'Core', bank:null },
+        { id:166, text:'Analyst Notes', tier:'Core', bank:null },
+        { id:167, text:'LP Notes',      tier:'Core', bank:null },
+        { id:168, text:'Comments',      tier:'Core', bank:null },
+        { id:169, text:'Remarks',       tier:'Core', bank:null },
       ],
     },
   ]},
