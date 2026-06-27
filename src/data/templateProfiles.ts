@@ -153,7 +153,7 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     headerRow: 11,
     groupHeaders: [
       'Included Investors (Rated)',
-      'Inlcuded Investors (Non-Rated)',
+      'Included Investors (Non-Rated)',
       'Institutional Designated Investors',
       'PWM Designated Investors',
       'Excluded Investors',
@@ -173,7 +173,7 @@ export const TEMPLATE_PROFILES: TemplateProfile[] = [
     ],
     notes: [
       'Goldman Sachs Bank USA administered. Class A borrowing base — 5 LP-category group sections.',
-      'Group header 2 contains agent-generated typo "Inlcuded" — stored verbatim.',
+      'Group header 2 contains agent-generated typo "Included" — stored verbatim.',
     ],
   },
   {
