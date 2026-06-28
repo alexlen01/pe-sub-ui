@@ -341,10 +341,22 @@ function DeleteModal({ template, onClose, onConfirm }: {
 }) {
   const [busy, setBusy] = useState(false)
   const [err,  setErr]  = useState('')
+  useEffect(() => {
+    if (template) {
+      setBusy(false)
+      setErr('')
+    }
+  }, [template?.id])
   const confirm = async () => {
+    setErr('')
     setBusy(true)
-    try { await onConfirm(); onClose() }
-    catch (e) { setErr(String(e)); setBusy(false) }
+    try {
+      await onConfirm()
+      onClose()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    }
   }
   return (
     <Modal
@@ -434,10 +446,16 @@ export default function BBTemplates() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    await api.bbTemplates.remove(deleteTarget.id)
-    setTemplates(prev => prev.filter(t => t.id !== deleteTarget.id))
-    toast(`Template "${deleteTarget.templateName}" removed.`)
-    refreshTemplateService()
+    try {
+      await api.bbTemplates.remove(deleteTarget.id)
+      setTemplates(prev => prev.filter(t => t.id !== deleteTarget.id))
+      toast(`Template "${deleteTarget.templateName}" removed.`)
+      refreshTemplateService()
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      toast(`Remove failed: ${message}`)
+      throw e
+    }
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
