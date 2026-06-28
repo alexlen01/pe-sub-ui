@@ -150,6 +150,7 @@ export interface AgentExtractedRow {
   sp: string; moodys: string; fitch: string
   agentRate: string; agentConc: string
   agentBBFmt: string; pctBBFmt: string
+  fundSleeve?: string
 }
 
 export interface DocRecognition {

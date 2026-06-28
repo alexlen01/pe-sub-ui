@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
-import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { useSortableRows } from '../../hooks/useTableSort'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import DraggablePanel from '../../components/ui/DraggablePanel'
@@ -16,10 +16,12 @@ import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculatio
 import { api } from '../../services/api'
 import type { LpClassificationRequest } from '../../services/api'
 import {
-  LPRecordCard, SHADOW_BB_TABLE_WIDTH, YesNo,
+  SHADOW_BB_INITIAL_WIDTHS, YesNo, ShadowBBTableHead,
   calcRow, fmtFull, parseMoneyM, parsePct, pctStr,
   type Override, type SubmissionLP,
 } from '../RunShadowBB'
+import { useColumnResize } from '../../hooks/useColumnResize'
+import LPRecordPanel from '../../components/ui/LPRecordPanel'
 
 function fmtMoneyM(m: number | null | undefined, full = false): string {
   if (m == null) return '—'
@@ -39,7 +41,7 @@ function canonicalClassBucket(cls: string | null | undefined): ClsBucket {
     case 'FoF & Other > $10Bn AUM': case 'Corp Pension > $5Bn Assets': case 'Unrated NAV > $1Bn':
     case 'Unrated >2bn': case 'Unrated 1–2bn':
       return 'Unrated Investors'
-    case 'Other Institutional': case 'Eligible':
+    case 'Other Institutional': case 'Eligible': case 'Included (PWM)':
       return 'Eligible Investors'
     case 'Excluded':
       return 'Excluded Investors'
@@ -361,6 +363,16 @@ export default function ShadowBB() {
     [overrides],
   )
 
+  const totalAgentBBCalc = useMemo(
+    () => Object.values(overrides).reduce((s, ov) => s + calcRow(ov, totalCommitM, totalUncalledM).agentBBCalc, 0),
+    [overrides, totalCommitM, totalUncalledM],
+  )
+
+  const totalUbsBBCalc = useMemo(
+    () => Object.values(overrides).reduce((s, ov) => s + calcRow(ov, totalCommitM, totalUncalledM).ubsBBCalc, 0),
+    [overrides, totalCommitM, totalUncalledM],
+  )
+
   const rankByKey = useMemo(() => {
     const ranked = [...shadowRows].sort((a, b) =>
       parseMoneyM(overrides[b._key]?.ucM) - parseMoneyM(overrides[a._key]?.ucM)
@@ -372,6 +384,45 @@ export default function ShadowBB() {
     () => (selectedKey ? shadowRows.find(r => r._key === selectedKey) ?? null : null),
     [shadowRows, selectedKey],
   )
+
+  const sbOvToLP = (lp: SubmissionLP, ov: Override): LPRecord => ({
+    ...(lp as LPRecord),
+    name:        ov.name || lp.name || lp._agentName || '',
+    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], ig: ov.ig,
+    cls:         (ov.cls || 'Eligible') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
+    agentCls:    ov.agentCls, region: (ov.region || lp.region || '') as LPRecord['region'],
+    fundSleeve:  ov.fundSleeve ?? lp.fundSleeve,
+    sp:          ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
+    aum:         ov.lpSizeCriteria === 'AUM' ? (ov.lpSizeBil || '') : (lp.aum ?? ''),
+    nav:         ov.lpSizeCriteria === 'NAV' ? (ov.lpSizeBil || '') : (lp.nav ?? ''),
+    pension:     lp.pension ?? '', pensionFunded: lp.pensionFunded ?? '',
+    capCommit:   ov.capCommit ?? '', uc: ov.ucM != null ? String(ov.ucM) : (lp.uc ?? ''),
+    rate:        typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? ''),
+    agentRate:   typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct}%`  : (lp.agentRate ?? ''),
+    agentConc:   typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (lp.agentConc ?? ''),
+    ubsConc:     typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : (lp.ubsConc ?? ''),
+    inc: ov.inc, notes: ov.notes ?? '', rcl: lp.rcl ?? false, tf: lp.tf ?? false, hq: lp.hq ?? false,
+    abb: lp.abb ?? '', ubb: lp.ubb ?? '', delta: lp.delta ?? '', uec: lp.uec ?? '',
+    pctCapCommit: lp.pctCapCommit ?? '', calledCap: lp.calledCap ?? '',
+    pctUncalled: lp.pctUncalled ?? '', pctCalled: lp.pctCalled ?? '',
+    agentExcessConc: lp.agentExcessConc, ubsExcessConc: lp.ubsExcessConc,
+  })
+
+  const sbLpToOv = (saved: LPRecord, prev: Override): Override => ({
+    ...prev,
+    name: saved.name, parent: saved.parent ?? '', spv: saved.spv, type: saved.type, ig: saved.ig,
+    cls: saved.cls ?? '', agentCls: saved.agentCls ?? '',
+    region: saved.region ?? '', fundSleeve: saved.fundSleeve ?? '',
+    sp: saved.sp ?? '', mdy: saved.mdy ?? '', fitch: saved.fitch ?? '',
+    lpSizeBil: saved.aum || saved.nav || saved.pension || '',
+    lpSizeCriteria: saved.aum ? 'AUM' : saved.nav ? 'NAV' : saved.pension ? 'Assets' : prev.lpSizeCriteria || '',
+    capCommit: saved.capCommit ?? '', ucM: saved.uc ?? prev.ucM,
+    ubsAdvRatePct: parsePct(saved.rate) !== '' ? parsePct(saved.rate) : prev.ubsAdvRatePct,
+    agentRatePct:  parsePct(saved.agentRate) !== '' ? parsePct(saved.agentRate) : prev.agentRatePct,
+    concLimitPct:  parsePct(saved.ubsConc) !== '' ? parsePct(saved.ubsConc) : prev.concLimitPct,
+    agentConcLimitPct: parsePct(saved.agentConc) !== '' ? parsePct(saved.agentConc) : prev.agentConcLimitPct,
+    inc: saved.inc, notes: saved.notes ?? '',
+  })
 
   const saveDraft = async (draft: Override) => {
     if (!selectedKey) return
@@ -440,14 +491,17 @@ export default function ShadowBB() {
       return ov ? calcRow(ov, totalCommitM, totalUncalledM) : null
     }
     return [
-      { key: 'rank', getValue: (lp: SubmissionLP) => rankByKey[lp._key] ?? '' },
-      { key: 'name', getValue: (lp: SubmissionLP) => getOverride(lp)?.name || lp.name || lp._agentName || '' },
-      { key: 'parent', getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
-      { key: 'spv', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
-      { key: 'cls', getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
-      { key: 'type', getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
-      { key: 'ig', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
-      { key: 'agentCls', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentCls ?? '' },
+      { key: 'rank',         getValue: (lp: SubmissionLP) => rankByKey[lp._key] ?? '' },
+      { key: 'name',         getValue: (lp: SubmissionLP) => getOverride(lp)?.name || lp.name || lp._agentName || '' },
+      { key: 'fundSleeve',   getValue: (lp: SubmissionLP) => getOverride(lp)?.fundSleeve ?? lp.fundSleeve ?? '' },
+      { key: 'parent',       getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
+      { key: 'spv',          getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
+      { key: 'region',       getValue: (lp: SubmissionLP) => getOverride(lp)?.region ?? lp.region ?? '' },
+      { key: 'investorType', getValue: (lp: SubmissionLP) => lp.investorType ?? lp.type ?? '' },
+      { key: 'cls',          getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
+      { key: 'type',         getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
+      { key: 'ig',           getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
+      { key: 'agentCls',     getValue: (lp: SubmissionLP) => getOverride(lp)?.agentCls ?? '' },
       { key: 'sp', getValue: (lp: SubmissionLP) => getOverride(lp)?.sp ?? '' },
       { key: 'mdy', getValue: (lp: SubmissionLP) => getOverride(lp)?.mdy ?? '' },
       { key: 'fitch', getValue: (lp: SubmissionLP) => getOverride(lp)?.fitch ?? '' },
@@ -466,13 +520,16 @@ export default function ShadowBB() {
       { key: 'agentExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentExcess ?? '' },
       { key: 'ubsExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsExcess ?? '' },
       { key: 'agentBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentBBCalc ?? '' },
+      { key: 'pctAgentBB', getValue: (lp: SubmissionLP) => totalAgentBBCalc > 0 ? (getComputed(lp)?.agentBBCalc ?? 0) / totalAgentBBCalc : 0 },
       { key: 'ubsBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsBBCalc ?? '' },
+      { key: 'pctUbsBB', getValue: (lp: SubmissionLP) => totalUbsBBCalc > 0 ? (getComputed(lp)?.ubsBBCalc ?? 0) / totalUbsBBCalc : 0 },
       { key: 'included', getValue: (lp: SubmissionLP) => !!getComputed(lp)?.included },
       { key: 'notes', getValue: (lp: SubmissionLP) => getOverride(lp)?.notes ?? '' },
     ]
-  }, [overrides, rankByKey, totalCommitM, totalUncalledM])
+  }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('shadow-bb', SHADOW_BB_INITIAL_WIDTHS)
 
   useEffect(() => {
     if (selectedKey === null || sortedRows.length === 0) return
@@ -619,40 +676,8 @@ export default function ShadowBB() {
               action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
-                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: SHADOW_BB_TABLE_WIDTH, minWidth: SHADOW_BB_TABLE_WIDTH }}>
-                    <thead>
-                      <tr>
-                        <SortableHeader sortKey="rank" sort={sort} onSort={requestSort} style={{ width: 52 }}>Rank</SortableHeader>
-                        <SortableHeader sortKey="name" sort={sort} onSort={requestSort} style={{ width: 220 }}>Investor Name</SortableHeader>
-                        <SortableHeader sortKey="parent" sort={sort} onSort={requestSort} style={{ width: 160 }}>Parent</SortableHeader>
-                        <SortableHeader sortKey="spv" sort={sort} onSort={requestSort} style={{ width: 54 }}>SPV</SortableHeader>
-                        <SortableHeader sortKey="cls" sort={sort} onSort={requestSort} style={{ width: 174 }}>UBS LP Classification</SortableHeader>
-                        <SortableHeader sortKey="type" sort={sort} onSort={requestSort} style={{ width: 122 }}>Institutional vs HNW</SortableHeader>
-                        <SortableHeader sortKey="ig" sort={sort} onSort={requestSort} style={{ width: 114 }}>Investment Grade?</SortableHeader>
-                        <SortableHeader sortKey="agentCls" sort={sort} onSort={requestSort} style={{ width: 166 }}>Agent LP Classification</SortableHeader>
-                        <SortableHeader sortKey="sp" sort={sort} onSort={requestSort} style={{ width: 76 }}>S&P</SortableHeader>
-                        <SortableHeader sortKey="mdy" sort={sort} onSort={requestSort} style={{ width: 84 }}>Moody's</SortableHeader>
-                        <SortableHeader sortKey="fitch" sort={sort} onSort={requestSort} style={{ width: 76 }}>Fitch</SortableHeader>
-                        <SortableHeader sortKey="lpSizeBil" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>LP Size ($ Bil)</SortableHeader>
-                        <SortableHeader sortKey="lpSizeCriteria" sort={sort} onSort={requestSort} style={{ width: 127 }}>LP Size Criteria</SortableHeader>
-                        <SortableHeader sortKey="capCommit" sort={sort} onSort={requestSort} className="num" style={{ width: 138 }}>Capital Commitment</SortableHeader>
-                        <SortableHeader sortKey="ucM" sort={sort} onSort={requestSort} className="num" style={{ width: 126 }}>Uncalled Capital</SortableHeader>
-                        <SortableHeader sortKey="ubsAdvRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 114 }}>UBS Advance Rate</SortableHeader>
-                        <SortableHeader sortKey="agentRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 120 }}>Agent Advance Rate</SortableHeader>
-                        <SortableHeader sortKey="concLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Conc. Limit</SortableHeader>
-                        <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>Agent Conc. Limit</SortableHeader>
-                        <SortableHeader sortKey="cmtPct" sort={sort} onSort={requestSort} className="num" style={{ width: 132 }}>% of Commitments</SortableHeader>
-                        <SortableHeader sortKey="calledM" sort={sort} onSort={requestSort} className="num" style={{ width: 116 }}>Called Capital</SortableHeader>
-                        <SortableHeader sortKey="pctUncalled" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>% of Uncalled</SortableHeader>
-                        <SortableHeader sortKey="pctCalled" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>% of LP Called</SortableHeader>
-                        <SortableHeader sortKey="agentExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 134 }}>Agent Excess Conc.</SortableHeader>
-                        <SortableHeader sortKey="ubsExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Excess Conc.</SortableHeader>
-                        <SortableHeader sortKey="agentBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>Agent BB</SortableHeader>
-                        <SortableHeader sortKey="ubsBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>UBS BB</SortableHeader>
-                        <SortableHeader sortKey="included" sort={sort} onSort={requestSort} style={{ width: 72, textAlign: 'center' }}>Included</SortableHeader>
-                        <SortableHeader sortKey="notes" sort={sort} onSort={requestSort} style={{ width: 180 }}>Notes</SortableHeader>
-                      </tr>
-                    </thead>
+                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>
+                    <ShadowBBTableHead sort={sort} onSort={requestSort} widths={bbWidths} onResizeStart={bbResizeStart} />
                     <tbody>
                       {pageItems.map(lp => {
                         const key = lp._key
@@ -672,32 +697,37 @@ export default function ShadowBB() {
                                 {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>Error</span>}
                               </div>
                             </td>
+                            <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
-                            <td>{ov.spv ? 'Y' : 'N'}</td>
-                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td>{ov.spv ? 'Yes' : 'No'}</td>
+                            <td>{ov.region || lp.region || '—'}</td>
+                            <td title={lp.investorType || '—'}>{lp.investorType || '—'}</td>
                             <td>{ov.type || '—'}</td>
-                            <td>{ov.ig ? 'Yes' : 'No'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
+                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
+                            <td>{ov.ig ? 'Yes' : 'No'}</td>
                             <td>{ov.sp || '—'}</td>
                             <td>{ov.mdy || '—'}</td>
                             <td>{ov.fitch || '—'}</td>
-                            <td className="num" title={ov.lpSizeBil || '—'}>{ov.lpSizeBil || '—'}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
+                            <td className="num" title={ov.lpSizeBil || '—'}>{ov.lpSizeBil || '—'}</td>
                             <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
-                            <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
-                            <td className="num">{pctStr(ov.ubsAdvRatePct)}</td>
-                            <td className="num">{pctStr(ov.agentRatePct)}</td>
-                            <td className="num">{pctStr(ov.concLimitPct)}</td>
-                            <td className="num">{pctStr(ov.agentConcLimitPct)}</td>
                             <td className="num">{fmtPct(c.cmtPct)}</td>
                             <td className="num">{fmtFull(c.calledM)}</td>
+                            <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
                             <td className="num">{fmtPct(c.pctUncalled)}</td>
                             <td className="num">{fmtPct(c.pctCalled)}</td>
+                            <td className="num">{pctStr(ov.agentRatePct)}</td>
+                            <td className="num">{pctStr(ov.ubsAdvRatePct)}</td>
+                            <td className="num">{pctStr(ov.agentConcLimitPct)}</td>
+                            <td className="num">{pctStr(ov.concLimitPct)}</td>
                             <td className={`num ${c.agentExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.agentExcess)}</td>
                             <td className={`num ${c.ubsExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsExcess)}</td>
                             <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
+                            <td className="num">{totalAgentBBCalc > 0 && c.agentBBCalc > 0 ? fmtPct(c.agentBBCalc / totalAgentBBCalc) : '—'}</td>
                             <td className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
-                            <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
+                            <td className="num">{totalUbsBBCalc > 0 && c.ubsBBCalc > 0 ? fmtPct(c.ubsBBCalc / totalUbsBBCalc) : '—'}</td>
                             <td title={ov.notes || '—'}>{ov.notes || '—'}</td>
                           </tr>
                         )
@@ -714,16 +744,16 @@ export default function ShadowBB() {
                 </div>
                 {selectedLP && selectedKey && overrides[selectedKey] && (
                   <DraggablePanel className="lp-detail-overlay" storageKey="shadow-bb-lp-record">
-                    <LPRecordCard
-                      lp={selectedLP}
-                      ov={overrides[selectedKey]}
+                    <LPRecordPanel
+                      lp={sbOvToLP(selectedLP, overrides[selectedKey])}
+                      open={true}
                       rank={rankByKey[selectedKey]}
-                      totalCommitM={totalCommitM}
-                      totalUncalledM={totalUncalledM}
-                      saveStatus={saveStatuses[selectedKey]}
-                      running={loadError != null}
-                      onDeselect={() => setSelectedKey(null)}
-                      onSave={saveDraft}
+                      running={false}
+                      canEdit={loadError == null}
+                      onClose={() => setSelectedKey(null)}
+                      onSave={saved => saveDraft(sbLpToOv(saved, overrides[selectedKey]))}
+                      totalAgentBB={totalAgentBBCalc}
+                      totalUbsBB={totalUbsBBCalc}
                     />
                   </DraggablePanel>
                 )}

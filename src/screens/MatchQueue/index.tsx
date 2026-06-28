@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { useColumnResize } from '../../hooks/useColumnResize'
 import { useApp } from '../../context/AppContext'
 import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import StepBar from '../../components/ui/StepBar'
-import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
@@ -209,6 +209,9 @@ export default function MatchQueue() {
   ], [])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { widths, onResizeStart, tableWidth: mqTableWidth } = useColumnResize('match-queue', {
+    checkbox: 36, agentName: 260, masterName: 340, score: 70, quality: 96, status: 82, action: 160,
+  })
 
   useEffect(() => {
     if (selectedId === null || sortedRows.length === 0) return
@@ -284,18 +287,18 @@ export default function MatchQueue() {
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
         <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
       </div>
-      <div style={{ flex: 1, display: 'flex', gap: 12 }}>
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0, position: 'relative' }}>
-          <table className="data-table" style={{ tableLayout: 'fixed' }}>
+      <div style={{ flex: 1, display: 'flex', gap: 12, padding: '0 20px', overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
+          <table className="data-table" style={{ tableLayout: 'fixed', width: '100%', minWidth: mqTableWidth }}>
             <thead>
               <tr>
-                <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
-                <SortableHeader sortKey="agentName" sort={sort} onSort={requestSort}>Agent LP Name</SortableHeader>
-                <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort}>Matched LP Master Record</SortableHeader>
-                <SortableHeader sortKey="score" sort={sort} onSort={requestSort} className="num" style={{ width: 70, textAlign: 'right' }}>Confidence</SortableHeader>
-                <SortableHeader sortKey="quality" sort={sort} onSort={requestSort} style={{ width: 96 }}>Quality</SortableHeader>
-                <SortableHeader sortKey="status" sort={sort} onSort={requestSort} style={{ width: 82 }}>Status</SortableHeader>
-                <SortableHeader sortKey="action" sort={sort} onSort={requestSort} style={{ width: 160, padding: '8px 6px' }}>Action</SortableHeader>
+                <th style={{ width: widths.checkbox, position: 'relative' }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
+                <SortableHeader sortKey="agentName"  sort={sort} onSort={requestSort} style={{ width: widths.agentName }}                        onResizeStart={onResizeStart}>Agent LP Name</SortableHeader>
+                <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort} style={{ width: widths.masterName }}                       onResizeStart={onResizeStart}>Matched LP Master Record</SortableHeader>
+                <SortableHeader sortKey="score"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.score, textAlign: 'right' }} onResizeStart={onResizeStart}>Confidence</SortableHeader>
+                <SortableHeader sortKey="quality"    sort={sort} onSort={requestSort} style={{ width: widths.quality }}                          onResizeStart={onResizeStart}>Quality</SortableHeader>
+                <SortableHeader sortKey="status"     sort={sort} onSort={requestSort} style={{ width: widths.status }}                           onResizeStart={onResizeStart}>Status</SortableHeader>
+                <SortableHeader sortKey="action"     sort={sort} onSort={requestSort} style={{ width: widths.action, padding: '8px 6px' }}       onResizeStart={onResizeStart}>Action</SortableHeader>
               </tr>
             </thead>
             <tbody>
@@ -323,12 +326,22 @@ export default function MatchQueue() {
             </div>
           </div>
         </div>
-        <DraggablePanel storageKey="match-queue-right-card" style={{ flexShrink: 0, alignSelf: 'stretch' }}>
-          {selectedRow
-            ? <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
-            : <div style={{ width: 360, height: '100%', flexShrink: 0, alignSelf: 'flex-start', border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: 'var(--muted)', textAlign: 'center', background: 'var(--tbl)' }}><div style={{ fontSize: 22, opacity: 0.35 }}>⌕</div><div style={{ fontSize: 12, fontWeight: 600 }}>Match Analysis</div><div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row to review the normalisation pipeline and candidate matches.</div></div>
-          }
-        </DraggablePanel>
+
+        <div style={{ width: 360, flexShrink: 0, height: '100%', overflow: 'hidden' }}>
+          {selectedRow ? (
+            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
+          ) : (
+            <div style={{ height: '100%', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--card)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, color: 'var(--muted)' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity={0.4}>
+                <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z" />
+              </svg>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)', marginBottom: 4 }}>No row selected</div>
+                <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row in the queue to view the full match analysis and decision tools.</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."

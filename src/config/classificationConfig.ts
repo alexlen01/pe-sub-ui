@@ -34,6 +34,7 @@ export const UBS_CLS_OPTS = [
   'Unrated NAV > $1Bn',
   'Corp Pension > $5Bn Assets',
   'Other Institutional',
+  'Included (PWM)',
   'Excluded',
 ] as const
 export type UbsClsOpt = typeof UBS_CLS_OPTS[number]
@@ -47,6 +48,7 @@ export const UBS_CLS_DEFAULT_RATE: Record<string, string> = {
   'Unrated NAV > $1Bn':         '65%',
   'Corp Pension > $5Bn Assets': '65%',
   'Other Institutional':        '50%',
+  'Included (PWM)':             '50%',
   'Excluded':                   '0%',
 }
 
@@ -76,6 +78,22 @@ export function ubsClassFromAgentRate(agentRatePct: number | '' | undefined): Ub
   if (typeof agentRatePct !== 'number') return ''
   if (agentRatePct <= 0) return 'Excluded'
   return AGENT_RATE_UBS_TIERS.find(t => agentRatePct >= t.min)?.cls ?? 'Other Institutional'
+}
+
+// Agent LP Classification text → UBS LP Category.
+// Applied first during buildOverride; if the agent class is blank or unrecognised,
+// falls back to ubsClassFromAgentRate so the advance rate still seeds a suggestion.
+const AGENT_CLS_UBS_MAP: Partial<Record<string, UbsClsOpt>> = {
+  'Rated Included':           'Rated Investor',
+  'Non-Rated Included':       'Other Institutional',
+  'Designated Institutional': 'Other Institutional',
+  'Designated PWM':           'Included (PWM)',
+  'Ineligible Investors':     'Excluded',
+}
+
+export function ubsClassFromAgentCls(agentCls: string | undefined): UbsClsOpt {
+  if (!agentCls) return ''
+  return AGENT_CLS_UBS_MAP[agentCls] ?? ''
 }
 
 // Basis used for the "LP Size ($ Bil)" column on the Shadow BB.

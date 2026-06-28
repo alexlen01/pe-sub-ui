@@ -152,6 +152,17 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 .sortable-th-indicator { color: var(--muted); font-size: 9px; line-height: 1; opacity: .7; }
 .sortable-th-active .sortable-th-indicator { color: var(--red); opacity: 1; }
 .data-table th.num .sortable-th-label { justify-content: flex-end; width: 100%; }
+/* Column resize handle — absolutely positioned at the right edge of each <th> */
+.col-resize-handle {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 2;
+  border-right: 2px solid transparent;
+  transition: border-color 0.12s;
+}
+.col-resize-handle:hover { border-right-color: var(--red); }
 .draggable-panel-header {
   cursor: move;
   touch-action: none;

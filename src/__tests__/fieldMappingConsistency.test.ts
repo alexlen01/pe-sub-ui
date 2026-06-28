@@ -1,150 +1,145 @@
-import { describe, it, expect } from 'vitest'
-import { ALIAS_GROUPS, ALL_CANONICAL_FIELDS } from '../data/fieldMappingData'
-import { resolveColumn } from '../services/templateService'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { initTemplateService, resolveColumn, _resetForTesting } from '../services/templateService'
 
-describe('ALIAS_GROUPS structural integrity', () => {
-  it('all 32 canonical fields are defined', () => {
-    const totalFields = ALIAS_GROUPS.reduce((sum, g) => sum + g.fields.length, 0)
-    expect(totalFields).toBe(32)
+const MOCK_ALIAS_GROUPS = [
+  { group: 'Identity & Core Hierarchy', fields: [
+    { id: 1, canonical: 'Investor Name', lpMasterField: 'Identity & Core Hierarchy - Investor Name', disambiguation: null,
+      aliases: [
+        { id: 1, text: 'Investor Name',               tier: 'Core', bank: null },
+        { id: 2, text: 'Investor Name (Agent Records)', tier: 'Core', bank: null },
+        { id: 3, text: 'Investor',                     tier: 'Core', bank: null },
+        { id: 4, text: 'LP Name',                      tier: 'Core', bank: null },
+      ] },
+    { id: 4, canonical: 'Parent / Sponsor', lpMasterField: 'Identity & Core Hierarchy - Parent / Sponsor', disambiguation: null,
+      aliases: [
+        { id: 20, text: 'Parent / Sponsor',           tier: 'Core', bank: null },
+        { id: 21, text: 'Parent',                     tier: 'Core', bank: null },
+        { id: 27, text: 'Parent / Sponsor / Manager', tier: 'Core', bank: null },
+      ] },
+  ]},
+  { group: 'Commitment Data', fields: [
+    { id: 6, canonical: 'Capital Commitments', lpMasterField: 'Commitment Data - Capital Commitments', disambiguation: null,
+      aliases: [
+        { id: 31, text: 'Capital Commitments',            tier: 'Core', bank: null },
+        { id: 33, text: 'Original Commitment',            tier: 'Core', bank: null },
+        { id: 35, text: 'Total Commitment',               tier: 'Core', bank: null },
+        { id: 36, text: 'Commitment (USD)',                tier: 'Core', bank: null },
+      ] },
+    { id: 7, canonical: '% of Capital Commitments', lpMasterField: 'Commitment Data - % of Capital Commitments', disambiguation: null,
+      aliases: [
+        { id: 37, text: '% of Capital Commitments', tier: 'Core', bank: null },
+        { id: 38, text: '% Commitment',             tier: 'Core', bank: null },
+      ] },
+  ]},
+  { group: 'Uncalled Data', fields: [
+    { id: 10, canonical: 'Uncalled Capital', lpMasterField: 'Uncalled Data - Uncalled Capital', disambiguation: null,
+      aliases: [
+        { id: 49, text: 'Uncalled Capital',            tier: 'Core', bank: null },
+        { id: 50, text: 'Unfunded Capital Commitment', tier: 'Core', bank: null },
+        { id: 52, text: 'Unfunded Commitment',         tier: 'Core', bank: null },
+      ] },
+    { id: 12, canonical: '% of LP Called', lpMasterField: 'Uncalled Data - % of LP Called', disambiguation: null,
+      aliases: [
+        { id: 63, text: '% Called',  tier: 'Core', bank: null },
+      ] },
+  ]},
+  { group: 'Credit Ratings', fields: [
+    { id: 24, canonical: 'S&P Rating', lpMasterField: 'Credit Ratings - S&P Rating', disambiguation: null,
+      aliases: [
+        { id: 112, text: "S&P",         tier: 'Core', bank: null },
+        { id: 113, text: "S&P Rating",  tier: 'Core', bank: null },
+      ] },
+    { id: 25, canonical: "Moody's Rating", lpMasterField: "Credit Ratings - Moody's Rating", disambiguation: null,
+      aliases: [
+        { id: 118, text: "Moody's",        tier: 'Core', bank: null },
+        { id: 119, text: "Moody's Rating", tier: 'Core', bank: null },
+      ] },
+  ]},
+  { group: 'Borrowing Base', fields: [
+    { id: 17, canonical: 'Advance Rate', lpMasterField: 'Borrowing Base - Advance Rate', disambiguation: null,
+      aliases: [
+        { id: 84, text: 'Advance Rate', tier: 'Core', bank: null },
+      ] },
+    { id: 22, canonical: 'Concentration Limit', lpMasterField: 'Borrowing Base - Concentration Limit', disambiguation: null,
+      aliases: [
+        { id: 104, text: 'Concentration Limit', tier: 'Core', bank: null },
+      ] },
+  ]},
+]
+
+beforeEach(async () => {
+  _resetForTesting()
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    const body = url.includes('field-mapping') ? MOCK_ALIAS_GROUPS : []
+    return Promise.resolve({ json: () => Promise.resolve(body) })
+  }))
+  await initTemplateService()
+})
+
+describe('resolveColumn — exact matches', () => {
+  it('resolves an exact canonical alias', () => {
+    const m = resolveColumn('Investor Name')
+    expect(m?.canonical).toBe('Investor Name')
+    expect(m?.confidence).toBe(1)
   })
 
-  it('every field has at least one alias', () => {
-    for (const { group, fields } of ALIAS_GROUPS) {
-      for (const f of fields) {
-        expect(
-          f.aliases.length,
-          `${group} › ${f.canonical} has no aliases`
-        ).toBeGreaterThan(0)
-      }
-    }
+  it('resolves an exact bank-variant alias', () => {
+    const m = resolveColumn('Investor Name (Agent Records)')
+    expect(m?.canonical).toBe('Investor Name')
+    expect(m?.confidence).toBe(1)
   })
 
-  it('no duplicate canonical names', () => {
-    const seen = new Set<string>()
-    for (const { fields } of ALIAS_GROUPS) {
-      for (const f of fields) {
-        expect(seen.has(f.canonical), `Duplicate canonical: "${f.canonical}"`).toBe(false)
-        seen.add(f.canonical)
-      }
-    }
+  it('resolves Commitment (USD) to Capital Commitments, not a percent field', () => {
+    const m = resolveColumn('Commitment (USD)')
+    expect(m?.canonical).toBe('Capital Commitments')
+    expect(m?.group).toBe('Commitment Data')
   })
 
-  it('no duplicate alias texts across all fields (case-insensitive)', () => {
-    const seen = new Map<string, string>() // normalised text → "group › canonical"
-    for (const { group, fields } of ALIAS_GROUPS) {
-      for (const f of fields) {
-        for (const alias of f.aliases) {
-          const key = alias.text.toLowerCase()
-          const owner = `${group} › ${f.canonical}`
-          const existing = seen.get(key)
-          expect(
-            existing,
-            `Duplicate alias "${alias.text}" appears on both "${existing}" and "${owner}"`
-          ).toBeUndefined()
-          seen.set(key, owner)
-        }
-      }
-    }
+  it('resolves % Commitment to % of Capital Commitments', () => {
+    const m = resolveColumn('% Commitment')
+    expect(m?.canonical).toBe('% of Capital Commitments')
   })
 
-  it('lpMasterField matches pattern "<group> - <canonical>"', () => {
-    for (const { group, fields } of ALIAS_GROUPS) {
-      for (const f of fields) {
-        expect(f.lpMasterField).toBe(`${group} - ${f.canonical}`)
-      }
-    }
+  it('resolves Unfunded Commitment to Uncalled Capital', () => {
+    const m = resolveColumn('Unfunded Commitment')
+    expect(m?.canonical).toBe('Uncalled Capital')
   })
 })
 
-describe('Map To dropdown — derived fields are selectable', () => {
-  // The ExtractionPreview "Map To" dropdown sources its options from the full canonical
-  // field list. Derived fields (Borrowing Base, % of Borrowing Base, Eligible Commitment)
-  // must be offered as manual mapping targets — they are not filtered out.
-  it('exposes derived Borrowing Base fields as canonical options', () => {
-    const values = ALL_CANONICAL_FIELDS.map(f => f.value)
-    expect(values).toContain('Borrowing Base')
-    expect(values).toContain('% of Borrowing Base')
-    expect(values).toContain('Eligible Commitment')
+describe('resolveColumn — percent-field guard', () => {
+  it('does NOT resolve a non-percent header to a percent canonical', () => {
+    // "Total Commitment" must not match "% of Capital Commitments"
+    const m = resolveColumn('Total Commitment')
+    expect(m?.canonical).not.toBe('% of Capital Commitments')
   })
 
-  it('Borrowing Base field carries the exact "Borrowing Base" alias so the bare header auto-matches', () => {
-    const bb = ALIAS_GROUPS.flatMap(g => g.fields).find(f => f.canonical === 'Borrowing Base')
-    expect(bb).toBeDefined()
-    expect(bb!.aliases.map(a => a.text)).toContain('Borrowing Base')
+  it('resolves % Called to a percent canonical', () => {
+    const m = resolveColumn('% Called')
+    expect(m?.canonical).toBe('% of LP Called')
+  })
+})
+
+describe('resolveColumn — fuzzy matching', () => {
+  it('matches near aliases above the Jaro-Winkler 0.900 threshold', () => {
+    const m = resolveColumn('Capital Commit')
+    expect(m?.canonical).toBe('Capital Commitments')
+    expect(m?.confidence).toBeGreaterThanOrEqual(0.9)
+    expect(m?.confidence).toBeLessThan(1)
   })
 
-  it('orders Ratings before Commitment Data and keeps Notes at the bottom', () => {
-    expect(ALIAS_GROUPS.map(g => g.group)).toEqual([
-      'Identity & Classification',
-      'Ratings',
-      'Commitment Data',
-      'Uncalled Data',
-      'Financial Scale',
-      'Borrowing Base',
-      'Concentration',
-      'Notes',
-    ])
-    expect(ALIAS_GROUPS.at(-1)?.fields.map(f => f.canonical)).toEqual(['Notes'])
+  it('returns null for headers with no close match', () => {
+    expect(resolveColumn('XYZ Unknown Column 123')).toBeNull()
   })
 
-  it('Financial Scale starts with LP Size Grouping fields before AUM', () => {
-    const financialScale = ALIAS_GROUPS.find(g => g.group === 'Financial Scale')
-    expect(financialScale?.fields.slice(0, 3).map(f => f.canonical)).toEqual([
-      'Size Metric Type',
-      'Size Value / Tier',
-      'AUM',
-    ])
-    expect(financialScale?.fields[0].aliases.map(a => a.text)).toEqual(
-      expect.arrayContaining(['Size Metric Type', 'LP Size Metric', 'Financial Size Metric'])
-    )
-    expect(financialScale?.fields[1].aliases.map(a => a.text)).toEqual(
-      expect.arrayContaining(['Size Value / Tier', 'Size Tier', 'Size Bucket'])
-    )
+  it('returns null for empty input', () => {
+    expect(resolveColumn('')).toBeNull()
   })
+})
 
-  it('Financial Scale includes Net Worth with common aliases', () => {
-    const netWorth = ALIAS_GROUPS.find(g => g.group === 'Financial Scale')?.fields.find(f => f.canonical === 'Net Worth')
-    expect(netWorth?.aliases.map(a => a.text)).toEqual(
-      expect.arrayContaining(['Net Worth', 'Total Net Worth', 'Investor Net Worth', 'Net Worth (USD)'])
-    )
-  })
-
-  it('does not expose the removed numeric rating helper fields', () => {
-    const values = ALL_CANONICAL_FIELDS.map(f => f.value)
-    expect(values).not.toContain('S&P Numeric Score')
-    expect(values).not.toContain("Moody's Numeric Score")
-    expect(values).not.toContain('Numeric Rating')
-  })
-
-  it('maps Notes as a canonical field', () => {
-    const match = resolveColumn('Notes')
-    expect(match?.canonical).toBe('Notes')
-    expect(match?.group).toBe('Notes')
-  })
-
-  it('auto-suggests near aliases at the Jaro-Winkler 0.900 threshold', () => {
-    const match = resolveColumn('Capital Commit')
-    expect(match?.canonical).toBe('Capital Commitments')
-    expect(match?.group).toBe('Commitment Data')
-    expect(match?.confidence).toBeGreaterThanOrEqual(0.9)
-    expect(match?.confidence).toBeLessThan(0.95)
-  })
-
-  it('maps Commitment (USD) to Capital Commitments, not % of Capital Commitments', () => {
-    const match = resolveColumn('Commitment (USD)')
-    expect(match?.canonical).toBe('Capital Commitments')
-    expect(match?.group).toBe('Commitment Data')
-  })
-
-  it('still maps explicit percent commitment headers to % of Capital Commitments', () => {
-    const match = resolveColumn('% Commitment')
-    expect(match?.canonical).toBe('% of Capital Commitments')
-    expect(match?.group).toBe('Commitment Data')
-  })
-
-  it('maps NAV Range (USD) to NAV, not AUM', () => {
-    const match = resolveColumn('NAV Range (USD)')
-    expect(match?.canonical).toBe('NAV')
-    expect(match?.group).toBe('Financial Scale')
+describe('resolveColumn — contains match', () => {
+  it('matches a multi-word alias contained within a longer header', () => {
+    const m = resolveColumn('Parent / Sponsor / Manager')
+    expect(m?.canonical).toBe('Parent / Sponsor')
+    expect(m?.confidence).toBe(1)
   })
 })

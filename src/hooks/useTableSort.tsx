@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 
 export type SortDirection = 'asc' | 'desc'
 export type SortValue = string | number | boolean | Date | null | undefined
@@ -21,6 +21,7 @@ interface SortableHeaderProps {
   className?: string
   style?: CSSProperties
   title?: string
+  onResizeStart?: (col: string, e: MouseEvent) => void
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
@@ -92,13 +93,13 @@ export function useSortableRows<T>(
   return { sort, sortedRows, requestSort }
 }
 
-export function SortableHeader({ sortKey, sort, onSort, children, className, style, title }: SortableHeaderProps) {
+export function SortableHeader({ sortKey, sort, onSort, children, className, style, title, onResizeStart }: SortableHeaderProps) {
   const active = sort?.key === sortKey
   const ariaSort = active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'
   return (
     <th
       className={['sortable-th', active ? 'sortable-th-active' : '', className ?? ''].filter(Boolean).join(' ')}
-      style={style}
+      style={{ position: 'relative', ...style }}
       title={title}
       aria-sort={ariaSort}
       tabIndex={0}
@@ -114,6 +115,13 @@ export function SortableHeader({ sortKey, sort, onSort, children, className, sty
         <span>{children}</span>
         <span className="sortable-th-indicator">{active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
       </span>
+      {onResizeStart && (
+        <span
+          className="col-resize-handle"
+          onMouseDown={e => { e.stopPropagation(); onResizeStart(sortKey, e) }}
+          onClick={e => e.stopPropagation()}
+        />
+      )}
     </th>
   )
 }

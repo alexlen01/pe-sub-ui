@@ -1,41 +1,26 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { useColumnResize } from '../../hooks/useColumnResize'
 import { useApp }  from '../../context/AppContext'
 import Button      from '../../components/ui/Button'
 import Card        from '../../components/ui/Card'
 import Modal       from '../../components/ui/Modal'
 import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
-import DraggablePanel from '../../components/ui/DraggablePanel'
+import DraggablePanel  from '../../components/ui/DraggablePanel'
+import LPRecordPanel   from '../../components/ui/LPRecordPanel'
 import {
-  CLS_OPTS, SP_RATING_OPTS, MDY_RATING_OPTS, FITCH_RATING_OPTS, INVESTOR_TYPE_OPTS, LP_CATEGORY_LABEL,
-  UBS_CLS_OPTS, LP_SIZE_CRITERIA_OPTS, TYPE_OPTS, REGION_OPTS,
+  CLS_OPTS, INVESTOR_TYPE_OPTS,
 } from '../../config/classificationConfig'
-import { BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA, UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
-import { AGENT_TIERS } from '../../config/eligibilityConfig'
-import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
 import { api } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 
-const CLS_CRITERIA = _CLS_CRITERIA
-const NOTES_MAX_LENGTH = 250
-const AGENT_RATE_SCHEDULE_OPTS = AGENT_TIERS.map(({ cls, rate }) => ({ value: cls, label: `${cls} (${rate}%)`, rate: `${rate}%` }))
-
 function hash(str: string) {
   return Math.abs([...str].reduce((a, c) => (Math.imul(31, a) + c.charCodeAt(0)) | 0, 0))
-}
-// Parse an advance-rate string ("95%", "75%") to a decimal. Returns NaN for "N/A"/blank.
-function parseRatePct(s: string | undefined | null): number {
-  const m = String(s ?? '').match(/([\d.]+)\s*%?/)
-  return m && m[1] ? parseFloat(m[1]) / 100 : NaN
-}
-
-function agentRateForClass(cls: string): string {
-  return AGENT_RATE_SCHEDULE_OPTS.find(o => o.value === cls)?.rate ?? ''
 }
 
 function formatMoneyText(value: unknown): string {
@@ -60,57 +45,6 @@ function tableMoney(value: unknown): string {
   const s = String(value ?? '').trim()
   return s ? formatMoneyText(s) : '—'
 }
-type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
-
-function moneyToBillion(s: string | undefined | null): number | null {
-  const m = String(s ?? '').match(/\$?\s*([\d,.]+)\s*([KMBT]?)/i)
-  if (!m) return null
-  const val = parseFloat(m[1].replace(/,/g, ''))
-  if (!Number.isFinite(val)) return null
-  const unit = m[2].toUpperCase()
-  if (unit === 'T') return val * 1000
-  if (unit === 'M') return val / 1000
-  if (unit === 'K') return val / 1_000_000
-  return val
-}
-
-function billionToMoney(b: string | number | undefined | null): string {
-  const fromMoney = typeof b === 'string' ? moneyToBillion(b) : null
-  const n = fromMoney ?? (typeof b === 'number' ? b : parseFloat(String(b ?? '').replace(/[$,B]/gi, '')))
-  return Number.isFinite(n)
-    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 3 })}B`
-    : ''
-}
-
-function inferLpSizeCriteria(lp: LPRecord): LpSizeCriteria {
-  if (moneyToBillion(lp.aum) != null) return 'AUM'
-  if (moneyToBillion(lp.nav) != null) return 'NAV'
-  if (moneyToBillion(lp.pension) != null) return 'Assets'
-  return ''
-}
-
-function lpSizeValue(lp: LPRecord, criteria: string): string {
-  const source = criteria === 'NAV' ? lp.nav : criteria === 'Assets' ? lp.pension : criteria === 'AUM' ? lp.aum : ''
-  const b = moneyToBillion(source)
-  return b == null ? '' : String(Number(b.toFixed(3)))
-}
-
-function applyLpSizeToRecord(lp: LPRecord, form: Record<string, unknown>): LPRecord {
-  const next = { ...lp, ...form as Partial<LPRecord> } as LPRecord
-  const size = billionToMoney(form.lpSize as string | number | undefined)
-  switch (form.lpSizeCriteria) {
-    case 'AUM':
-      next.aum = size
-      break
-    case 'NAV':
-      next.nav = size
-      break
-    case 'Assets':
-      next.pension = size
-      break
-  }
-  return next
-}
 function lpBelongsToFacility(lp: { name: string }, facilityName: string) {
   if (facilityName === 'Blue Owl GP Stakes V') return true
   const h = hash(facilityName)
@@ -123,353 +57,6 @@ const CLS_LEGEND_ITEMS = [
   { label: 'Unrated $1–2bn — 65%',  desc: 'Unrated fund with AUM between $1bn and $2bn.' },
   { label: 'Eligible — 50%',        desc: 'Meets eligibility criteria but AUM is below $1bn.' },
   { label: 'Excluded — 0%',         desc: 'Does not meet credit agreement eligibility criteria. Not counted in the borrowing base.' },
-]
-
-// ── Right-side LP detail panel ────────────────────────────────────────────────
-function LPDetailPanel({ lp, open, onClose, onSave, canEdit, rank }: {
-  lp: LPRecord | null
-  open: boolean
-  onClose: () => void
-  onSave: (lp: LPRecord) => void
-  canEdit: boolean
-  rank?: number
-}) {
-  const [subview,  setSubview]  = useState<null | 'history' | 'reclassify'>(null)
-  const [newCls,    setNewCls]    = useState('')
-  const [rationale, setRationale] = useState('')
-  const [form, setForm] = useState<Record<string, unknown>>({})
-
-  useEffect(() => {
-    if (!lp) return
-    const lpSizeCriteria = inferLpSizeCriteria(lp)
-    setSubview(null)
-    setForm({
-      name: lp.name, parent: lp.parent, spv: lp.spv, agentCls: lp.agentCls ?? '',
-      type: lp.type, cls: lp.cls, ig: lp.ig,
-      region: lp.region, hq: lp.hq,
-      sp: lp.sp, mdy: lp.mdy, fitch: lp.fitch,
-      aum: lp.aum, nav: lp.nav, pension: lp.pension || 'N/A', pensionFunded: lp.pensionFunded || 'N/A',
-      lpSizeCriteria, lpSize: lpSizeValue(lp, lpSizeCriteria),
-      capCommit: lp.capCommit, pctCapCommit: lp.pctCapCommit, calledCap: lp.calledCap,
-      uc: lp.uc, pctUncalled: lp.pctUncalled, pctCalled: lp.pctCalled,
-      rate: lp.rate, agentRate: lp.agentRate,
-      agentConc: lp.agentConc, ubsConc: lp.ubsConc, abb: lp.abb, ubb: lp.ubb,
-      inc: lp.inc, notes: lp.notes ?? '',
-    })
-  }, [lp?.name])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    if (open) window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open || !lp) return null
-
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(p => {
-      const rawValue = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
-      const value = k === 'notes' && typeof rawValue === 'string' ? rawValue.slice(0, NOTES_MAX_LENGTH) : rawValue
-      const next = { ...p, [k]: value }
-      if (k === 'cls' && !p.rate) next.rate = UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
-      if (k === 'agentCls') next.agentRate = agentRateForClass(String(value)) || next.agentRate
-      if (k === 'lpSizeCriteria' && lp) next.lpSize = lpSizeValue(applyLpSizeToRecord(lp, p), String(value))
-      return next
-    })
-
-  const handleSave = () => {
-    const eff = applyLpSizeToRecord(lp, form)
-    const c = computeLPRecord(eff)
-    const capCommitM = parseM(eff.capCommit)
-    const calledCapM = capCommitM - parseM(eff.uc)
-    const agentRateDec = parseRatePct(eff.agentRate)
-    onSave({
-      ...eff,
-      rate: eff.rate || UBS_CLS_DEFAULT_RATE[form.cls as string] || BUSA_RATE_MAP[form.cls as string] || lp.rate,
-      clsTag: CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
-      // Calculated columns — kept in sync with the formulas in SHADOW_BB_ANALYSIS.md
-      hq: c.busaRate === 0.90,
-      calledCap: fmtM(calledCapM),
-      pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
-      abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
-      ubb: c.ubb,
-      uec: c.uec,
-      ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
-    } as LPRecord)
-    onClose()
-  }
-
-  const handleReclassify = () => {
-    onSave({ ...lp, cls: newCls, rcl: true, clsTag: CLS_TAG_MAP[newCls] ?? lp.clsTag, rate: UBS_CLS_DEFAULT_RATE[newCls] ?? BUSA_RATE_MAP[newCls] ?? lp.rate, notes: (lp.notes ? lp.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}` } as LPRecord)
-    setSubview(null)
-  }
-
-  const sec = (t: string) => (
-    <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
-  )
-
-  // A read-only field carries `ro` and is, in this overlay, always a value derived by
-  // formula (see SHADOW_BB_ANALYSIS.md › "Source: Calculated"). Mark it visually and
-  // surface its formula as a caption so inputs and derived values are distinguishable.
-  const fieldLabel = (label: string, calculated: boolean) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-      <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)' }}>{label}</span>
-      {calculated && (
-        <span title="Calculated field" style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: 'var(--red)', background: '#eef3fb', borderRadius: 3, padding: '1px 4px', fontStyle: 'italic' }}>ƒ</span>
-      )}
-    </div>
-  )
-
-  const f = (label: string, _viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, neg: _neg, pos: _posStyle, zero: _zero, formula, cols, money, accent, maxLength, inputMode, width } = cfg
-    const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
-    const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : cols ? { gridColumn: `span ${Number(cols)}` } : span2 ? { gridColumn: 'span 2' } : { gridColumn: 'span 3' }
-    const caption = formula
-      ? <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--muted)', lineHeight: 1.4, padding: '2px 8px 0' }}>{String(formula)}</div>
-      : null
-
-    const disabled = !ro && !canEdit
-    const roSt: React.CSSProperties = ro || disabled ? { background: 'var(--tbl)', color: 'var(--muted)' } : {}
-    const boxSt: React.CSSProperties = accent
-      ? { border: '1px dotted var(--green)', background: 'var(--green-lt)', borderRadius: 4, padding: '6px 8px' }
-      : {}
-    const controlSt: React.CSSProperties = { width: width ? Number(width) : '100%', ...roSt }
-    const displayVal = cfg.moneyUnit === 'B'
-      ? billionToMoney(editVal as string | number | undefined)
-      : money ? formatMoneyText(editVal) : String(editVal)
-    const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
-    const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
-    const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || 'Not Rated') : o.label
-    return (
-      <div className="form-group" style={{ ...colSt, ...boxSt, marginBottom: 0 }} key={label || editKey || ''}>
-        <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
-        {chk
-          ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer', marginTop: 4 }}>
-              <input type="checkbox" checked={!!form[editKey!]} onChange={set(editKey!)} disabled={disabled} /> Yes
-            </label>
-          : ta
-          ? <textarea style={{ width: '100%', height: 72, ...roSt }} value={displayVal} onChange={disabled ? undefined : set(editKey!)} disabled={disabled} maxLength={typeof maxLength === 'number' ? maxLength : undefined} />
-          : opts
-          ? <select style={controlSt} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled}>
-              {selectOptions.map(o => <option key={optionValue(o) || '__empty'} value={optionValue(o)}>{optionLabel(o)}</option>)}
-            </select>
-          : <input type="text" style={controlSt} value={displayVal} onChange={ro || disabled ? undefined : set(editKey!)} readOnly={!!ro} disabled={disabled} inputMode={typeof inputMode === 'string' ? inputMode as React.HTMLAttributes<HTMLInputElement>['inputMode'] : undefined} maxLength={typeof maxLength === 'number' ? maxLength : undefined} />
-        }
-        {caption}
-      </div>
-    )
-  }
-
-  const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '6px 16px' }
-
-  const renderDetail = () => {
-    // Effective record reflects live edits so calculated columns update as the user types.
-    const eff = applyLpSizeToRecord(lp, form)
-    const c = computeLPRecord(eff)
-    const capCommitM = parseM(eff.capCommit)
-    const ucM = parseM(eff.uc)
-    const calledCapM = capCommitM - ucM
-    const agentRateDec = parseRatePct(eff.agentRate)
-    // Formulas per pe-sub-docs/SHADOW_BB_ANALYSIS.md › "LP Record Columns".
-    const calledCapStr  = fmtM(calledCapM)                                               // Capital Commitment - Uncalled Capital
-    const pctCalledStr  = fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0)            // Called Capital ÷ Capital Commitments
-    const agentBBStr    = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'  // Uncalled Capital × Agent Advance Rate
-    const ubsExcessStr  = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
-    const agentExcessStr = eff.agentExcessConc || '—'
-    const agentClsValue = String(form.agentCls ?? '')
-    const agentClsOptions = agentClsValue && !AGENT_RATE_SCHEDULE_OPTS.some(o => o.value === agentClsValue)
-      ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...AGENT_RATE_SCHEDULE_OPTS]
-      : [{ value: '', label: 'Select classification' }, ...AGENT_RATE_SCHEDULE_OPTS]
-
-    // Read-only display of a value derived by formula (never hand-editable).
-    const calc = (label: string, val: unknown, cfg: Record<string, unknown> = {}) =>
-      f(label, val, null, { ro: true, editVal: val, ...cfg })
-
-    return (
-    <div style={COLS}>
-      {/* Manual-input fields are editable; calculated fields are read-only, badged ƒ,
-          and annotated with their formula. */}
-      {sec('Identification & Classification')}
-      {calc('Rank', rank ?? '—', { cols: 1, width: 64, formula: 'Ordinal rank in the current LP view' })}
-      {f('Investor Name', lp.name, 'name', { cols: 5 })}
-      {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
-      {f('Parent', lp.parent, 'parent', { cols: 5 })}
-      {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
-      {f('UBS LP Classification', lp.cls, 'cls', { opts: UBS_CLS_OPTS.filter(Boolean) })}
-      {f('Institutional vs HNW', lp.investorType ?? lp.type, 'type', { opts: TYPE_OPTS })}
-      {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-      {f('Region / Location', lp.region || '—', 'region', { opts: ['', ...REGION_OPTS], wide: true })}
-      {Boolean(form.cls && CLS_CRITERIA[form.cls as string]) && (
-        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
-          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
-        </div>
-      )}
-
-      {sec('Ratings')}
-      {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS, cols: 2 })}
-      {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS, cols: 2 })}
-      {f('Fitch', lp.fitch, 'fitch', { opts: FITCH_RATING_OPTS, cols: 2 })}
-
-      {sec('Capital Metrics')}
-      {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B' })}
-      {f('LP Size Criteria', form.lpSizeCriteria, 'lpSizeCriteria', { opts: LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
-      {f('Capital Commitment', lp.capCommit, 'capCommit', { money: true })}
-      {f('Uncalled Capital', lp.uc, 'uc', { money: true })}
-      {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
-      {calc('Called Capital', calledCapStr, { money: true, formula: 'Capital Commitment - Uncalled Capital' })}
-      {calc('% of Uncalled Capital', lp.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
-      {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
-
-      {sec('Borrowing Base Calculation')}
-      {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
-      {f('UBS Advance Rate', lp.rate, 'rate')}
-      {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
-      {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
-      {calc('Agent Excess Concentration', agentExcessStr, { money: true, formula: 'Excess uncalled above Agent concentration limit' })}
-      {calc('UBS Excess Concentration', ubsExcessStr, { money: true, formula: 'Excess uncalled above UBS concentration limit' })}
-      {calc('Agent Borrowing Base', agentBBStr, { money: true, formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
-      {calc('UBS Borrowing Base', c.ubb, { money: true, pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
-      {f('Included in BB', lp.inc ? 'Yes' : 'No', 'inc', { chk: true, wide: true, accent: true })}
-
-      {sec('Additional Details')}
-      <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
-        {fieldLabel('Notes', false)}
-        <textarea
-          style={{ width: '100%', height: 72, background: canEdit ? undefined : 'var(--tbl)', color: canEdit ? undefined : 'var(--muted)' }}
-          value={String(form.notes ?? '')}
-          onChange={canEdit ? set('notes') : undefined}
-          disabled={!canEdit}
-          maxLength={NOTES_MAX_LENGTH}
-        />
-        <div style={{ marginTop: 3, textAlign: 'right', fontSize: 10, color: 'var(--muted)' }}>
-          {String(form.notes ?? '').length}/{NOTES_MAX_LENGTH}
-        </div>
-      </div>
-    </div>
-    )
-  }
-
-  const renderHistory = () => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-      <thead>
-        <tr style={{ background: 'var(--tbl)' }}>
-          {['Timestamp', 'User', 'Field', 'Before', 'After', 'Note'].map(h => (
-            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {VERSION_HISTORY.map((r, i) => (
-          <tr key={i}>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>{r.ts}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{r.user}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--navy)' }}>{r.field}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>{r.before}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, color: 'var(--green)', fontFamily: 'monospace', fontSize: 11 }}>{r.after}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11 }}>{r.note}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-
-  const renderReclassify = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
-      <div className="form-group">
-        <label className="form-label">New Classification *</label>
-        <select style={{ width: '100%' }} value={newCls} onChange={e => setNewCls(e.target.value)}>
-          {UBS_CLS_OPTS.filter(Boolean).map(o => <option key={o} value={o}>{o} — {UBS_CLS_DEFAULT_RATE[o] ?? '?'} UBS</option>)}
-        </select>
-      </div>
-      {newCls && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px' }}>
-          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[newCls]}
-        </div>
-      )}
-      <div className="form-group">
-        <label className="form-label">Rationale / Supporting Evidence *</label>
-        <textarea
-          style={{ width: '100%', height: 80 }}
-          placeholder="Describe the basis for reclassification (rating agency action, fund size change, eligibility test result, etc.)"
-          value={rationale}
-          onChange={e => setRationale(e.target.value)}
-        />
-      </div>
-      {newCls !== lp.cls && (
-        <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', borderRadius: 4, fontSize: 12 }}>
-          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls]}</strong> to <strong>{UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
-        </div>
-      )}
-    </div>
-  )
-
-  const subviewTitle = subview === 'history' ? 'Version History' : subview === 'reclassify' ? 'Reclassify' : null
-
-  return (
-    <div style={{ height: '100%', maxHeight: 'calc(100vh - 150px)', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        <div className="lp-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.name}>
-                {lp.name}
-                {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.65, fontSize: 12 }}> / {subviewTitle}</span>}
-              </div>
-              <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
-                <Tag>{lp.cls}</Tag>
-                <span style={{ fontSize: 11, opacity: .7 }}>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls] || '—'} UBS · {lp.agentRate || '—'} Agent</span>
-                {lp.rcl && <span className="rcl-badge">Reclassified</span>}
-                {lp.tf  && <span className="tf-badge">Transferee</span>}
-              </div>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, lineHeight: 1, opacity: .7, padding: 0, marginTop: -2 }}>×</button>
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflow: 'auto', padding: '12px 18px' }}>
-          {subview === 'history'    ? renderHistory()    :
-           subview === 'reclassify' ? renderReclassify() :
-           renderDetail()}
-        </div>
-
-        <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          {subview === 'history' ? (
-            <>
-              <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            </>
-          ) : subview === 'reclassify' ? (
-            <>
-              <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button disabled={newCls === lp.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={() => setSubview('history')}>Version History</Button>
-                {canEdit && <Button variant="secondary" onClick={() => { setNewCls(lp.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave} disabled={!canEdit}>Save</Button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-  )
-}
-
-// ── Version History data ──────────────────────────────────────────────────────
-const VERSION_HISTORY = [
-  { ts: '2026-05-27 10:45', user: 'J. Smith',  field: 'Classification',     before: 'Unrated >2bn', after: 'Rated',   note: 'Received S&P BB+ rating — confirmed with Goldman' },
-  { ts: '2026-05-02 09:15', user: 'M. Patel',  field: 'Uncalled Capital',   before: '$31.2M',       after: '$28.4M',  note: 'Q1 2026 capital call processed' },
-  { ts: '2026-04-14 11:04', user: 'L. Torres', field: 'AUM',                before: '$3.9B',        after: '$4.2B',   note: 'Updated from Q1 2026 manager report' },
-  { ts: '2025-12-31 08:00', user: 'System',    field: 'Included Flag',      before: 'N',            after: 'Y',       note: 'ERISA test passed — auto re-included' },
-  { ts: '2025-11-18 16:30', user: 'J. Smith',  field: 'Concentration Limit',before: '7.5%',         after: '10.0%',   note: 'Agent confirmed higher concentration applies' },
 ]
 
 // Status colour mapping for facility cards
@@ -729,21 +316,49 @@ export default function LPMaster() {
   }, [lpData, search, clsFilter, typeFilter, incFilter, facFilter])
 
   const sortColumns = useMemo(() => [
-    { key: 'name', getValue: (lp: LPRecord) => lp.name },
-    { key: 'parent', getValue: (lp: LPRecord) => lp.parent ?? '' },
-    { key: 'type', getValue: (lp: LPRecord) => lp.investorType ?? lp.type ?? '' },
-    { key: 'cls', getValue: (lp: LPRecord) => lp.cls ?? '' },
-    { key: 'category', getValue: (lp: LPRecord) => LP_CATEGORY_LABEL[lp.cls] ?? '' },
-    { key: 'aum', getValue: (lp: LPRecord) => lp.aum ?? '' },
-    { key: 'uc', getValue: (lp: LPRecord) => lp.uc ?? '' },
-    { key: 'uec', getValue: (lp: LPRecord) => lp.uec ?? '' },
-    { key: 'rate', getValue: (lp: LPRecord) => lp.rate ?? '' },
-    { key: 'ubb', getValue: (lp: LPRecord) => lp.ubb ?? '' },
-    { key: 'abb', getValue: (lp: LPRecord) => lp.abb ?? '' },
-    { key: 'delta', getValue: (lp: LPRecord) => lp.delta ?? '' },
+    { key: 'name',         getValue: (lp: LPRecord) => lp.name },
+    { key: 'fundSleeve',   getValue: (lp: LPRecord) => lp.fundSleeve ?? '' },
+    { key: 'parent',       getValue: (lp: LPRecord) => lp.parent ?? '' },
+    { key: 'spv',          getValue: (lp: LPRecord) => lp.spv ? 'Yes' : 'No' },
+    { key: 'region',       getValue: (lp: LPRecord) => lp.region ?? '' },
+    { key: 'investorType', getValue: (lp: LPRecord) => lp.investorType ?? lp.type ?? '' },
+    { key: 'instHnw',      getValue: (lp: LPRecord) => lp.type === 'HNW' ? 'HNW' : 'Institutional' },
+    { key: 'agentCls',     getValue: (lp: LPRecord) => lp.agentCls ?? '' },
+    { key: 'cls',          getValue: (lp: LPRecord) => lp.cls ?? '' },
+    { key: 'inc',          getValue: (lp: LPRecord) => lp.inc ? 'Yes' : 'No' },
+    { key: 'ig',           getValue: (lp: LPRecord) => lp.ig ? 'Yes' : 'No' },
+    { key: 'sp',           getValue: (lp: LPRecord) => lp.sp ?? '' },
+    { key: 'mdy',          getValue: (lp: LPRecord) => lp.mdy ?? '' },
+    { key: 'fitch',        getValue: (lp: LPRecord) => lp.fitch ?? '' },
+    { key: 'lpSize',       getValue: (lp: LPRecord) => lp.aum || lp.nav || lp.pension || '' },
+    { key: 'sizeMeasure',  getValue: (lp: LPRecord) => lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : '' },
+    { key: 'capCommit',    getValue: (lp: LPRecord) => lp.capCommit ?? '' },
+    { key: 'pctCapCommit', getValue: (lp: LPRecord) => lp.pctCapCommit ?? '' },
+    { key: 'calledCap',    getValue: (lp: LPRecord) => lp.calledCap ?? '' },
+    { key: 'uc',           getValue: (lp: LPRecord) => lp.uc ?? '' },
+    { key: 'pctUncalled',  getValue: (lp: LPRecord) => lp.pctUncalled ?? '' },
+    { key: 'pctCalled',    getValue: (lp: LPRecord) => lp.pctCalled ?? '' },
+    { key: 'agentRate',    getValue: (lp: LPRecord) => lp.agentRate ?? '' },
+    { key: 'rate',         getValue: (lp: LPRecord) => lp.rate ?? '' },
+    { key: 'agentConc',    getValue: (lp: LPRecord) => lp.agentConc ?? '' },
+    { key: 'ubsConc',      getValue: (lp: LPRecord) => lp.ubsConc ?? '' },
+    { key: 'agentExcess',  getValue: (lp: LPRecord) => lp.agentExcessConc ?? '' },
+    { key: 'ubsExcess',    getValue: (lp: LPRecord) => lp.ubsExcessConc ?? '' },
+    { key: 'abb',          getValue: (lp: LPRecord) => lp.abb ?? '' },
+    { key: 'ubb',          getValue: (lp: LPRecord) => lp.ubb ?? '' },
+    { key: 'notes',        getValue: (lp: LPRecord) => lp.notes ?? '' },
   ], [])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
+    rank: 52, name: 220, fundSleeve: 140, parent: 160, spv: 54,
+    region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
+    inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
+    lpSize: 94, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
+    calledCap: 116, uc: 126, pctUncalled: 128, pctCalled: 104,
+    agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
+    agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
+  })
   const selectedRank = selected ? sortedRows.findIndex(lp => lp.name === selected.name) + 1 : undefined
 
   const handleSave = (updated: LPRecord) => {
@@ -909,44 +524,89 @@ export default function LPMaster() {
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <div style={{ height: '100%', minWidth: 0, overflowY: 'auto' }}>
             <div className="data-table-wrap">
-        <table className="data-table" style={{ tableLayout: 'fixed', minWidth: 1080 }}>
+        <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: tableWidth, width: tableWidth }}>
           <thead>
             <tr>
-              <SortableHeader sortKey="name" sort={sort} onSort={requestSort} style={{ width: '22%', maxWidth: 220 }}>Investor Name</SortableHeader>
-              <SortableHeader sortKey="parent" sort={sort} onSort={requestSort} style={{ width: '20%', maxWidth: 200 }}>Parent</SortableHeader>
-              <SortableHeader sortKey="type" sort={sort} onSort={requestSort} style={{ width: 115 }}>Investor Type</SortableHeader>
-              <SortableHeader sortKey="cls" sort={sort} onSort={requestSort} style={{ width: 110 }}>UBS Classification</SortableHeader>
-              <SortableHeader sortKey="category" sort={sort} onSort={requestSort} style={{ width: 115 }}>LP Category</SortableHeader>
-              <SortableHeader sortKey="aum" sort={sort} onSort={requestSort} className="num" style={{ width: 75 }}>AUM</SortableHeader>
-              <SortableHeader sortKey="uc" sort={sort} onSort={requestSort} className="num" style={{ width: 100 }}>Uncalled Cap.</SortableHeader>
-              <SortableHeader sortKey="uec" sort={sort} onSort={requestSort} className="num" style={{ width: 110 }}>UBS Elig. Uncalled</SortableHeader>
-              <SortableHeader sortKey="rate" sort={sort} onSort={requestSort} className="num" style={{ width: 65 }}>BUSA Rate</SortableHeader>
-              <SortableHeader sortKey="ubb" sort={sort} onSort={requestSort} className="num" style={{ width: 80 }}>UBS BB</SortableHeader>
-              <SortableHeader sortKey="abb" sort={sort} onSort={requestSort} className="num" style={{ width: 80 }}>Agent BB</SortableHeader>
-              <SortableHeader sortKey="delta" sort={sort} onSort={requestSort} className="num" style={{ width: 70 }}>Delta</SortableHeader>
+              <SortableHeader sortKey="rank"           sort={sort} onSort={requestSort} style={{ width: widths.rank }}                          onResizeStart={onResizeStart}>Rank</SortableHeader>
+              <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
+              <SortableHeader sortKey="fundSleeve"     sort={sort} onSort={requestSort} style={{ width: widths.fundSleeve }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
+              <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
+              <SortableHeader sortKey="spv"            sort={sort} onSort={requestSort} style={{ width: widths.spv }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
+              <SortableHeader sortKey="region"         sort={sort} onSort={requestSort} style={{ width: widths.region }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
+              <SortableHeader sortKey="investorType"   sort={sort} onSort={requestSort} style={{ width: widths.investorType }}                  onResizeStart={onResizeStart}>Investor Type</SortableHeader>
+              <SortableHeader sortKey="instHnw"        sort={sort} onSort={requestSort} style={{ width: widths.instHnw }}                       onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
+              <SortableHeader sortKey="agentCls"       sort={sort} onSort={requestSort} style={{ width: widths.agentCls }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
+              <SortableHeader sortKey="cls"            sort={sort} onSort={requestSort} style={{ width: widths.cls }}                           onResizeStart={onResizeStart}>UBS LP Classification</SortableHeader>
+              <SortableHeader sortKey="inc"            sort={sort} onSort={requestSort} style={{ width: widths.inc, textAlign: 'center' }}      onResizeStart={onResizeStart}>Eligible</SortableHeader>
+              <SortableHeader sortKey="ig"             sort={sort} onSort={requestSort} style={{ width: widths.ig }}                            onResizeStart={onResizeStart}>Investment Grade</SortableHeader>
+              <SortableHeader sortKey="sp"             sort={sort} onSort={requestSort} style={{ width: widths.sp }}                            onResizeStart={onResizeStart}>S&amp;P</SortableHeader>
+              <SortableHeader sortKey="mdy"            sort={sort} onSort={requestSort} style={{ width: widths.mdy }}                           onResizeStart={onResizeStart}>Moody's</SortableHeader>
+              <SortableHeader sortKey="fitch"          sort={sort} onSort={requestSort} style={{ width: widths.fitch }}                         onResizeStart={onResizeStart}>Fitch</SortableHeader>
+              <SortableHeader sortKey="lpSize"         sort={sort} onSort={requestSort} className="num" style={{ width: widths.lpSize }}        onResizeStart={onResizeStart}>LP Size</SortableHeader>
+              <SortableHeader sortKey="sizeMeasure"    sort={sort} onSort={requestSort} style={{ width: widths.sizeMeasure }}                   onResizeStart={onResizeStart}>Size Measure</SortableHeader>
+              <SortableHeader sortKey="capCommit"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.capCommit }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
+              <SortableHeader sortKey="pctCapCommit"   sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctCapCommit }}  onResizeStart={onResizeStart}>% of Commitments</SortableHeader>
+              <SortableHeader sortKey="calledCap"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.calledCap }}     onResizeStart={onResizeStart}>Called Capital</SortableHeader>
+              <SortableHeader sortKey="uc"             sort={sort} onSort={requestSort} className="num" style={{ width: widths.uc }}            onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
+              <SortableHeader sortKey="pctUncalled"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctUncalled }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
+              <SortableHeader sortKey="pctCalled"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctCalled }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
+              <SortableHeader sortKey="agentRate"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentRate }}     onResizeStart={onResizeStart}>Agent Advance Base</SortableHeader>
+              <SortableHeader sortKey="rate"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rate }}          onResizeStart={onResizeStart}>UBS Advance Base</SortableHeader>
+              <SortableHeader sortKey="agentConc"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentConc }}     onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
+              <SortableHeader sortKey="ubsConc"        sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsConc }}       onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
+              <SortableHeader sortKey="agentExcess"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentExcess }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>
+              <SortableHeader sortKey="ubsExcess"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsExcess }}     onResizeStart={onResizeStart}>UBS Excess Concentration</SortableHeader>
+              <SortableHeader sortKey="abb"            sort={sort} onSort={requestSort} className="num" style={{ width: widths.abb }}           onResizeStart={onResizeStart}>Agent Borrowing Base</SortableHeader>
+              <SortableHeader sortKey="ubb"            sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubb }}           onResizeStart={onResizeStart}>UBS Borrowing Base</SortableHeader>
+              <SortableHeader sortKey="notes"          sort={sort} onSort={requestSort} style={{ width: widths.notes }}                         onResizeStart={onResizeStart}>Notes</SortableHeader>
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((lp, i) => (
+            {pageItems.map((lp, i) => {
+              const sizeMeasure = lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : '—'
+              const lpSizeVal   = lp.aum || lp.nav || lp.pension || '—'
+              const instHnw     = (lp.type === 'HNW' ? 'HNW' : lp.type ? 'Institutional' : '—')
+              return (
               <tr key={lp.name ?? `lp-${i}`} className={selected?.name === lp.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
-                <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <strong title={lp.name}>{lp.name}</strong>
+                <td>{i + 1}</td>
+                <td title={lp.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <strong>{lp.name}</strong>
                   {lp.rcl && <span className="rcl-badge">R</span>}
                   {lp.tf  && <span className="tf-badge">T</span>}
                 </td>
-                <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }} title={lp.parent}>{lp.parent || '—'}</td>
-                <td style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType ?? lp.type}</td>
+                <td title={lp.fundSleeve || '—'}>{lp.fundSleeve || '—'}</td>
+                <td title={lp.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{lp.parent || '—'}</td>
+                <td>{lp.spv ? 'Yes' : 'No'}</td>
+                <td>{lp.region || '—'}</td>
+                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType ?? lp.type ?? '—'}</td>
+                <td>{instHnw}</td>
+                <td title={lp.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{lp.agentCls || '—'}</td>
                 <td><Tag>{lp.cls}</Tag></td>
-                <td style={{ fontSize: 11, color: 'var(--muted)' }}>{LP_CATEGORY_LABEL[lp.cls] ?? '—'}</td>
-                <td className="num">{tableMoney(lp.aum)}</td>
+                <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: lp.inc ? '#e6f4ea' : 'var(--tbl)', color: lp.inc ? 'var(--green)' : 'var(--muted)' }}>{lp.inc ? 'Yes' : 'No'}</span></td>
+                <td>{lp.ig ? 'Yes' : 'No'}</td>
+                <td>{lp.sp || '—'}</td>
+                <td>{lp.mdy || '—'}</td>
+                <td>{lp.fitch || '—'}</td>
+                <td className="num">{tableMoney(lpSizeVal)}</td>
+                <td>{sizeMeasure}</td>
+                <td className="num">{tableMoney(lp.capCommit)}</td>
+                <td className="num">{lp.pctCapCommit || '—'}</td>
+                <td className="num">{tableMoney(lp.calledCap)}</td>
                 <td className="num">{tableMoney(lp.uc)}</td>
-                <td className="num">{tableMoney(lp.uec)}</td>
-                <td>{lp.rate}</td>
-                <td className={`num ${lp.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.ubb)}</td>
+                <td className="num">{lp.pctUncalled || '—'}</td>
+                <td className="num">{lp.pctCalled || '—'}</td>
+                <td className="num">{lp.agentRate || '—'}</td>
+                <td className="num">{lp.rate || '—'}</td>
+                <td className="num">{lp.agentConc || '—'}</td>
+                <td className="num">{lp.ubsConc || '—'}</td>
+                <td className="num">{tableMoney(lp.agentExcessConc)}</td>
+                <td className="num">{tableMoney(lp.ubsExcessConc)}</td>
                 <td className={`num ${!lp.abb || lp.abb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.abb)}</td>
-                <td className={`num ${lp.delta?.startsWith('–') ? 'neg' : !lp.delta || lp.delta === '$0' ? 'zero' : ''}`}>{tableMoney(lp.delta)}</td>
+                <td className={`num ${lp.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.ubb)}</td>
+                <td title={lp.notes || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.notes || '—'}</td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
             </div>
@@ -976,7 +636,7 @@ export default function LPMaster() {
 
       {selected && (
         <DraggablePanel className="lp-detail-overlay" storageKey="lp-master-detail">
-          <LPDetailPanel
+          <LPRecordPanel
             lp={selected}
             open={!!selected}
             onClose={() => setSelected(null)}

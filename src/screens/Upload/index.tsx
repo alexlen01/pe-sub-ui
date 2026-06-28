@@ -11,6 +11,7 @@ import InfoTip            from '../../components/ui/InfoTip'
 import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
+import { initTemplateService, getTemplateProfiles, findDetectedTemplate, type TemplateProfile } from '../../services/templateService'
 import type { SubmissionRow } from '../../services/facilityService'
 
 const SUB_COLS = [
@@ -225,6 +226,10 @@ export default function Upload() {
   const [loadError,      setLoadError]      = useState<string | null>(null)
 
   useEffect(() => {
+    initTemplateService().then(() => setTemplates(getTemplateProfiles()))
+  }, [])
+
+  useEffect(() => {
     setLoadError(null)
     Promise.all([
       getSubmissions(),
@@ -247,12 +252,14 @@ export default function Upload() {
   const [newFacModal, setNewFacModal] = useState(false)
 
   const today = new Date().toISOString().slice(0, 10)
-  const [subDate,    setSubDate]    = useState(today)
-  const [agentBank,  setAgentBank]  = useState('')
-  const [file,       setFile]       = useState<File | null>(null)
-  const [notes,      setNotes]      = useState('')
-  const [processing, setProcessing] = useState(false)
-  const [error,      setError]      = useState('')
+  const [subDate,        setSubDate]        = useState(today)
+  const [agentBank,      setAgentBank]      = useState('')
+  const [file,           setFile]           = useState<File | null>(null)
+  const [forceTemplate,  setForceTemplate]  = useState('')
+  const [templates,      setTemplates]      = useState<TemplateProfile[]>([])
+  const [notes,          setNotes]          = useState('')
+  const [processing,     setProcessing]     = useState(false)
+  const [error,          setError]          = useState('')
   const [selectedSub,  setSelectedSub]  = useState<SubmissionRow | null>(null)
   const [abortOpen,    setAbortOpen]    = useState(false)
   const [abortTarget,  setAbortTarget]  = useState<SubmissionRow | null>(null)
@@ -288,6 +295,7 @@ export default function Upload() {
       setFacilityId(f?.id ?? null)
       setAgentBank(f?.agentBank ?? '')
       setIsNewFacility(false)
+      setForceTemplate('')
     }
   }
 
@@ -304,6 +312,10 @@ export default function Upload() {
   const handleFileSelected = (f: File) => {
     setFile(f)
     setError('')
+    // Auto-suggest a template from the filename so multi-tab workbooks (Audax VII etc.)
+    // are processed correctly on the first upload without requiring a manual re-extract.
+    const detected = findDetectedTemplate({ fileName: f.name, facility: facility })
+    setForceTemplate(detected?.fund ?? '')
   }
 
   const handleUpload = async () => {
@@ -319,7 +331,7 @@ export default function Upload() {
     setError('')
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
-      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes)
+      const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes, forceTemplate || undefined)
       if (sub.status === 'Error') {
         setProcessing(false)
         setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
@@ -404,7 +416,29 @@ export default function Upload() {
                   onChange={e => setNotes(e.target.value)}
                 />
               </div>
-              {/* Template detection runs and is sent with the upload, but the inline notice was removed. */}
+              <div className="form-group" style={{ marginTop: 14 }}>
+                <label className="form-label">
+                  Template
+                  <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 4 }}>(auto-detected · override if wrong)</span>
+                </label>
+                <select
+                  style={{ width: '100%' }}
+                  value={forceTemplate}
+                  onChange={e => setForceTemplate(e.target.value)}
+                >
+                  <option value="">Auto-detect</option>
+                  {templates.map(p => (
+                    <option key={p.id} value={p.fund}>{p.fund}</option>
+                  ))}
+                </select>
+                {forceTemplate && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                    {templates.find(p => p.fund === forceTemplate)?.workbook.tabs === 'multiple'
+                      ? 'Multi-tab template — all borrower sleeves will be extracted on upload.'
+                      : 'Single-tab template.'}
+                  </div>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <Button onClick={handleUpload} disabled={processing || !facility}>
                   {processing ? 'Processing…' : '↑ Upload and Process'}

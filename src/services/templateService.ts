@@ -1,12 +1,68 @@
-// Template recognition: identifies which Agent BB format a submission is and exposes
-// its structural profile (tabs, title anchor, header row, LP-category group sections,
-// column headers, legend) for the extraction preview. Mirrors the backend recognition
-// contract (pe-sub-extraction TemplateDetector → ClassificationRowDetector).
+// Template recognition: identifies which Agent-BB format a submission is.
+// Template profiles and field-alias mappings are fetched from the backend
+// (/api/bb-templates and /api/field-mapping/alias-groups) and cached
+// in module-level variables after the first call to initTemplateService().
 
-import { TEMPLATE_PROFILES, TEMPLATE_PROFILE_BY_ID, type TemplateProfile } from '../data/templateProfiles'
-import { ALIAS_GROUPS } from '../data/fieldMappingData'
+// ── Backend API response types ────────────────────────────────────────────────
 
-export type { TemplateProfile } from '../data/templateProfiles'
+interface BbGroupApi {
+  id: number
+  groupSort: number
+  headerText: string
+  classification: string
+}
+
+interface BbTabApi {
+  id: number
+  tabRole: string
+  tabSort: number
+  sheetName: string
+  headerRowIndex: number | null
+  headerRowSpan: number
+  skipRowKeywords: string[]
+  groups: BbGroupApi[]
+}
+
+interface BbTemplateApi {
+  id: number
+  templateName: string
+  templateClass: string
+  sheetName: string
+  headerRowIndex: number | null
+  autoLearned: boolean
+  trancheCount: number
+  hasGroupingRows: boolean
+  hasColorFlags: boolean
+  summaryRowsAboveHeader: number
+  createdAt: string
+  updatedAt: string
+  tabs: BbTabApi[]
+}
+
+interface AliasApi { id: number; text: string; tier: string; bank: string | null }
+interface FieldApi { id: number; canonical: string; lpMasterField: string; disambiguation: string | null; aliases: AliasApi[] }
+interface AliasGroupApi { group: string; fields: FieldApi[] }
+
+// ── UI-facing types ──────────────────────────────────────────────────────────
+
+export interface TemplateLegendRule {
+  style: string
+  meaning: string
+}
+
+export interface TemplateProfile {
+  id: string
+  fund: string
+  workbook: { tabs: 'single' | 'multiple'; tabLabel: string }
+  title: { row: number; text: string }
+  summaryRows: string | null
+  headerRow: number | string
+  groupHeaders: string[]
+  columns: string[]
+  legend: TemplateLegendRule[] | null
+  notes: string[]
+  detectKeys?: string[]
+}
 
 export interface DocRecognitionRow {
   label: string
@@ -26,13 +82,104 @@ export interface MappedColumn {
   mapping: ColumnMapping | null
 }
 
+// ── Module-level cache ────────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 25 * 60 * 1000   // 25 minutes — matches backend Caffeine TTL
+
+let _templates: TemplateProfile[] = []
+let _aliasGroups: AliasGroupApi[] = []
+let _initPromise: Promise<void> | null = null
+let _cacheExpiry: number | null = null
+
+const EMPTY_PROFILE: TemplateProfile = {
+  id: '', fund: '', workbook: { tabs: 'single', tabLabel: '' },
+  title: { row: 1, text: '' }, summaryRows: null, headerRow: 1,
+  groupHeaders: [], columns: [], legend: null, notes: [],
+}
+
+function adaptTemplate(dto: BbTemplateApi): TemplateProfile {
+  const mainTab = dto.tabs.find(t => t.tabSort === 1) ?? dto.tabs[0]
+  const isMulti = dto.trancheCount > 1 || dto.tabs.length > 1
+  const tabLabel = mainTab?.sheetName ?? dto.sheetName
+  const hRow = mainTab?.headerRowIndex ?? dto.headerRowIndex ?? 1
+  const span = mainTab?.headerRowSpan ?? 1
+  const headerRow: number | string = span > 1 ? `${hRow}-${hRow + span - 1}` : hRow
+  const groupHeaders = [...(mainTab?.groups ?? [])]
+    .sort((a, b) => a.groupSort - b.groupSort)
+    .map(g => g.headerText)
+  const summaryAbove = dto.summaryRowsAboveHeader
+  const summaryRows = summaryAbove > 0 ? `1-${summaryAbove}` : null
+  const legend: TemplateLegendRule[] | null = dto.hasColorFlags
+    ? [{ style: 'Cell formatting', meaning: 'Color-coded LP status flags — see template documentation' }]
+    : null
+
+  return {
+    id: String(dto.id),
+    fund: dto.templateName,
+    workbook: { tabs: isMulti ? 'multiple' : 'single', tabLabel },
+    title: { row: 1, text: dto.templateName },
+    summaryRows,
+    headerRow,
+    groupHeaders,
+    columns: [],
+    legend,
+    notes: [],
+  }
+}
+
+export async function initTemplateService(): Promise<void> {
+  // Evict expired cache so the next call re-fetches from the API.
+  if (_cacheExpiry !== null && Date.now() > _cacheExpiry) {
+    _templates = []
+    _aliasGroups = []
+    _initPromise = null
+    _cacheExpiry = null
+  }
+  if (_initPromise) return _initPromise
+  _initPromise = (async () => {
+    const [templateData, aliasData] = await Promise.all([
+      fetch('/api/bb-templates').then(r => r.json() as Promise<BbTemplateApi[]>),
+      fetch('/api/field-mapping/alias-groups').then(r => r.json() as Promise<AliasGroupApi[]>),
+    ])
+    _templates = templateData.map(adaptTemplate)
+    _aliasGroups = aliasData
+    _cacheExpiry = Date.now() + CACHE_TTL_MS
+  })()
+  return _initPromise
+}
+
+/**
+ * Force-evict the template cache and re-fetch immediately.
+ * Call this after any mutation in the BB Template registry so the Upload
+ * dropdown reflects the latest names without waiting for TTL expiry.
+ */
+export async function refreshTemplateService(): Promise<void> {
+  _templates = []
+  _aliasGroups = []
+  _initPromise = null
+  _cacheExpiry = null
+  return initTemplateService()
+}
+
+// Exposed only for test teardown — do not call in production code.
+export function _resetForTesting(): void {
+  _templates = []
+  _aliasGroups = []
+  _initPromise = null
+  _cacheExpiry = null
+}
+
+// ── Sync accessors (safe to call after initTemplateService resolves) ───────────
+
 export function getTemplateProfiles(): TemplateProfile[] {
-  return TEMPLATE_PROFILES
+  return _templates
 }
 
 export function getTemplateProfile(id: string): TemplateProfile | null {
-  return TEMPLATE_PROFILE_BY_ID[id] ?? null
+  return _templates.find(p => p.id === id) ?? null
 }
+
+// ── Jaro-Winkler alias matching ───────────────────────────────────────────────
 
 function normalize(s: string): string {
   return (s ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -75,15 +222,22 @@ function jaroWinkler(a: string, b: string): number {
   return jaro + prefix * 0.1 * (1 - jaro)
 }
 
-// Resolve a raw column header to its canonical LP Master field via the alias dictionary.
-// Mirrors the prototype templateService + backend HeaderMatcher. Returns null when unmatched.
+function hasPercentSignal(value: string): boolean {
+  const normalized = normalize(value)
+  return value.includes('%') || /\b(percent|percentage|pct)\b/.test(normalized)
+}
+
+function isPercentField(canonical: string, aliases: string[]): boolean {
+  return hasPercentSignal(canonical) || aliases.some(hasPercentSignal)
+}
+
 export function resolveColumn(header: string): ColumnMapping | null {
   const target = normalize(header)
   if (!target) return null
   const headerHasPercentSignal = hasPercentSignal(header)
   let best: ColumnMapping | null = null
   let bestScore = 0
-  for (const grp of ALIAS_GROUPS) {
+  for (const grp of _aliasGroups) {
     for (const field of grp.fields) {
       if (!headerHasPercentSignal && isPercentField(field.canonical, field.aliases.map(a => a.text))) continue
       for (const alias of field.aliases) {
@@ -104,29 +258,14 @@ export function resolveColumn(header: string): ColumnMapping | null {
   return bestScore >= 0.900 ? best : null
 }
 
-function hasPercentSignal(value: string): boolean {
-  const normalized = normalize(value)
-  return value.includes('%') || /\b(percent|percentage|pct)\b/.test(normalized)
-}
-
-function isPercentField(canonical: string, aliases: string[]): boolean {
-  return hasPercentSignal(canonical) || aliases.some(hasPercentSignal)
-}
-
-// Annotate a profile's columns with their canonical mapping (or null when unmatched), so
-// the Template Recognition card can accent recognised vs. unrecognised headers.
 export function mapColumns(profile: TemplateProfile | null): MappedColumn[] {
   if (!profile) return []
   return profile.columns.map(header => ({ header, mapping: resolveColumn(header) }))
 }
 
-// Heuristic format recognition from submission metadata. The backend keys off workbook
-// content (title-anchor + tab pattern); here we match the fund label, title anchor, or any
-// extra recognition keys (agent bank / file-name fragments). Falls back to the first profile
-// so the preview always has a format to show.
 export function findDetectedTemplate(meta: { fileName?: string; facility?: string; fund?: string }): TemplateProfile | null {
   const hay = normalize(`${meta.fileName ?? ''} ${meta.facility ?? ''} ${meta.fund ?? ''}`)
-  return TEMPLATE_PROFILES.find(p => {
+  return _templates.find(p => {
     const fund = normalize(p.fund)
     const title = normalize(p.title.text)
     const keys = (p.detectKeys ?? []).map(normalize)
@@ -137,11 +276,9 @@ export function findDetectedTemplate(meta: { fileName?: string; facility?: strin
 }
 
 export function detectTemplate(meta: { fileName?: string; facility?: string; fund?: string }): TemplateProfile {
-  return findDetectedTemplate(meta) ?? TEMPLATE_PROFILES[0]
+  return findDetectedTemplate(meta) ?? _templates[0] ?? EMPTY_PROFILE
 }
 
-// Build the structural recognition rows (label/value) for a detected profile. Row set and
-// order mirror the pe-sub-platform prototype so the Document Recognition grid matches it.
 export function buildDocRecognition(
   profile: TemplateProfile,
   opts: { fileName?: string; columnsMatched?: number; columnsTotal?: number } = {},
@@ -155,8 +292,6 @@ export function buildDocRecognition(
   const grouping = profile.groupHeaders.length > 0
     ? `${profile.groupHeaders.length} LP-category sections (subtotal row excluded per section)`
     : 'Flat list — no LP-category sections'
-  // Prefer the live extraction's column counts when supplied; fall back to the static
-  // profile only in prototype mode (no submission to extract from).
   const matched = opts.columnsMatched ?? mapColumns(profile).filter(c => c.mapping).length
   const total   = opts.columnsTotal ?? profile.columns.length
 

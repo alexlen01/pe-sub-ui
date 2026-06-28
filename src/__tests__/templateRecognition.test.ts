@@ -1,108 +1,243 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  getTemplateProfiles, getTemplateProfile, detectTemplate, buildDocRecognition,
+  initTemplateService, getTemplateProfiles, getTemplateProfile,
+  detectTemplate, buildDocRecognition, _resetForTesting,
 } from '../services/templateService'
-import { TEMPLATE_PROFILES, ALL_GROUP_HEADERS } from '../data/templateProfiles'
 
-describe('template registry', () => {
-  it('holds the sampled Agent BB formats plus both Blue Owl templates (WF current, GS legacy)', () => {
-    expect(TEMPLATE_PROFILES).toHaveLength(7)
-    expect(getTemplateProfiles().map(p => p.id)).toEqual([
-      'kkr-ascendant', 'audax-vii', 'ccp-vii-lev', 'aep-vii', 'cp-vii', 'wf-blue-owl', 'gs-blue-owl',
-    ])
+const MOCK_TEMPLATES = [
+  {
+    id: 1,
+    templateName: 'KKR Ascendant Fund',
+    templateClass: 'STANDARD',
+    sheetName: 'Borrowing Base',
+    headerRowIndex: 10,
+    autoLearned: false,
+    trancheCount: 1,
+    hasGroupingRows: true,
+    hasColorFlags: false,
+    summaryRowsAboveHeader: 0,
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:00:00',
+    tabs: [
+      {
+        id: 1, tabRole: 'MAIN', tabSort: 1, sheetName: 'Borrowing Base',
+        headerRowIndex: 10, headerRowSpan: 1, skipRowKeywords: [],
+        groups: [
+          { id: 1, groupSort: 1, headerText: 'Rated Included Investors',     classification: 'RATED_INCLUDED' },
+          { id: 2, groupSort: 2, headerText: 'Non-Rated Included Investors',  classification: 'NON_RATED_INCLUDED' },
+          { id: 3, groupSort: 3, headerText: 'Designated Investors',          classification: 'DESIGNATED' },
+          { id: 4, groupSort: 4, headerText: 'Borrowing Base Investors',      classification: 'BB' },
+          { id: 5, groupSort: 5, headerText: 'Hurdle Investors',              classification: 'HURDLE' },
+          { id: 6, groupSort: 6, headerText: 'Excluded Investors',            classification: 'EXCLUDED' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 2,
+    templateName: 'Audax Fund VII',
+    templateClass: 'MULTI_TAB',
+    sheetName: 'Investor List',
+    headerRowIndex: 13,
+    autoLearned: false,
+    trancheCount: 3,
+    hasGroupingRows: false,
+    hasColorFlags: false,
+    summaryRowsAboveHeader: 0,
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:00:00',
+    tabs: [
+      { id: 2, tabRole: 'MAIN', tabSort: 1, sheetName: 'Investor List', headerRowIndex: 13, headerRowSpan: 1, skipRowKeywords: [], groups: [] },
+    ],
+  },
+  {
+    id: 3,
+    templateName: 'Carlyle Partners VII',
+    templateClass: 'STACKED_HEADER',
+    sheetName: 'BB',
+    headerRowIndex: 84,
+    autoLearned: false,
+    trancheCount: 1,
+    hasGroupingRows: false,
+    hasColorFlags: false,
+    summaryRowsAboveHeader: 0,
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:00:00',
+    tabs: [
+      { id: 3, tabRole: 'MAIN', tabSort: 1, sheetName: 'BB', headerRowIndex: 84, headerRowSpan: 2, skipRowKeywords: [], groups: [] },
+    ],
+  },
+  {
+    id: 4,
+    templateName: 'AEP VII',
+    templateClass: 'STANDARD',
+    sheetName: 'BB',
+    headerRowIndex: 11,
+    autoLearned: false,
+    trancheCount: 1,
+    hasGroupingRows: true,
+    hasColorFlags: true,
+    summaryRowsAboveHeader: 9,
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:00:00',
+    tabs: [
+      {
+        id: 4, tabRole: 'MAIN', tabSort: 1, sheetName: 'BB',
+        headerRowIndex: 11, headerRowSpan: 1, skipRowKeywords: [],
+        groups: [
+          { id: 7, groupSort: 1, headerText: 'Rated Included Investors',    classification: 'RATED_INCLUDED' },
+          { id: 8, groupSort: 2, headerText: 'Non-Rated Included Investors', classification: 'NON_RATED_INCLUDED' },
+          { id: 9, groupSort: 3, headerText: 'Designated Investors',         classification: 'DESIGNATED' },
+          { id: 10, groupSort: 4, headerText: 'Excluded Investors',          classification: 'EXCLUDED' },
+        ],
+      },
+    ],
+  },
+]
+
+const MOCK_ALIAS_GROUPS = [
+  {
+    group: 'Identity & Core Hierarchy',
+    fields: [
+      { id: 1, canonical: 'Investor Name', lpMasterField: 'Identity & Core Hierarchy - Investor Name', disambiguation: null,
+        aliases: [{ id: 1, text: 'Investor Name', tier: 'Core', bank: null }] },
+    ],
+  },
+]
+
+beforeEach(() => {
+  _resetForTesting()
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    const body = url.includes('field-mapping') ? MOCK_ALIAS_GROUPS : MOCK_TEMPLATES
+    return Promise.resolve({ json: () => Promise.resolve(body) })
+  }))
+})
+
+describe('initTemplateService / cache', () => {
+  it('populates the profile cache from the API response', async () => {
+    await initTemplateService()
+    expect(getTemplateProfiles()).toHaveLength(4)
+    expect(getTemplateProfiles().map(p => p.fund)).toContain('KKR Ascendant Fund')
   })
 
-  it('exposes the new group-header superset that extends the standard values', () => {
-    expect(ALL_GROUP_HEADERS).toContain('Borrowing Base Investors')
-    expect(ALL_GROUP_HEADERS).toContain('Hurdle Investors')
-    expect(ALL_GROUP_HEADERS).toContain('Levered (Delaware) Feeder')
+  it('is idempotent — second call reuses the cached promise', async () => {
+    await initTemplateService()
+    await initTemplateService()
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2) // only the initial two fetches
   })
+})
 
-  it('captures KKR Ascendant structure: single tab, 6 sections, 13 columns', () => {
-    const kkr = getTemplateProfile('kkr-ascendant')
+describe('adaptTemplate mapping', () => {
+  beforeEach(() => initTemplateService())
+
+  it('maps id as string, fund as templateName', () => {
+    const kkr = getTemplateProfile('1')
     expect(kkr).not.toBeNull()
-    expect(kkr!.workbook.tabs).toBe('single')
-    expect(kkr!.headerRow).toBe(10)
-    expect(kkr!.groupHeaders).toHaveLength(6)
-    expect(kkr!.columns).toHaveLength(13)
+    expect(kkr!.fund).toBe('KKR Ascendant Fund')
   })
 
-  it('captures CP VII stacked header and flat (no-section) layout', () => {
-    const cp = getTemplateProfile('cp-vii')!
-    expect(cp.headerRow).toBe('84-85')
+  it('maps a single-tranche template as single-tab', () => {
+    const kkr = getTemplateProfile('1')!
+    expect(kkr.workbook.tabs).toBe('single')
+    expect(kkr.workbook.tabLabel).toBe('Borrowing Base')
+  })
+
+  it('maps a multi-tranche template as multiple-tab', () => {
+    const audax = getTemplateProfile('2')!
+    expect(audax.workbook.tabs).toBe('multiple')
+  })
+
+  it('maps group headers in sort order', () => {
+    const kkr = getTemplateProfile('1')!
+    expect(kkr.groupHeaders).toHaveLength(6)
+    expect(kkr.groupHeaders[0]).toBe('Rated Included Investors')
+    expect(kkr.groupHeaders[3]).toBe('Borrowing Base Investors')
+  })
+
+  it('derives flat-list (no groups) for Carlyle Partners VII', () => {
+    const cp = getTemplateProfile('3')!
     expect(cp.groupHeaders).toHaveLength(0)
   })
 
-  it('captures the Wells Fargo Blue Owl format: 4 LP-category sections, 18 columns, row 18 header', () => {
-    const wf = getTemplateProfile('wf-blue-owl')!
-    expect(wf.fund).toBe('Blue Owl GP Stakes V')
-    expect(wf.headerRow).toBe(18)
-    expect(wf.groupHeaders).toHaveLength(4)
-    expect(wf.groupHeaders[0]).toBe('A. Rated Investors')
-    expect(wf.columns).toHaveLength(18)
-    expect(wf.columns[0]).toBe('Investor')
-    expect(wf.legend).toHaveLength(2)
+  it('maps stacked header row as "N-M" string when headerRowSpan > 1', () => {
+    const cp = getTemplateProfile('3')!
+    expect(String(cp.headerRow)).toBe('84-85')
   })
 
-  it('captures the legacy Goldman Sachs Blue Owl as a flat list (no LP-category sections)', () => {
-    const gs = getTemplateProfile('gs-blue-owl')!
-    expect(gs.fund).toBe('Blue Owl GP Stakes V (May 2026)')
-    expect(gs.headerRow).toBe(7)
-    expect(gs.groupHeaders).toHaveLength(0)
-    expect(gs.columns[0]).toBe('Investor Name (Agent Records)')
-  })
-
-  it('captures the AEP VII cell-format legend', () => {
-    const aep = getTemplateProfile('aep-vii')!
+  it('maps hasColorFlags to a single legend rule', () => {
+    const aep = getTemplateProfile('4')!
     expect(aep.legend).not.toBeNull()
-    expect(aep.legend!.map(r => r.style)).toContain('Green shading')
+    expect(aep.legend!.length).toBeGreaterThan(0)
+  })
+
+  it('maps summaryRowsAboveHeader > 0 to a summaryRows string', () => {
+    const aep = getTemplateProfile('4')!
+    expect(aep.summaryRows).toBe('1-9')
+  })
+
+  it('maps hasColorFlags=false to null legend', () => {
+    const kkr = getTemplateProfile('1')!
+    expect(kkr.legend).toBeNull()
+  })
+
+  it('maps summaryRowsAboveHeader=0 to null summaryRows', () => {
+    const kkr = getTemplateProfile('1')!
+    expect(kkr.summaryRows).toBeNull()
   })
 })
 
 describe('detectTemplate', () => {
-  it('matches a format by fund label in the file name', () => {
-    expect(detectTemplate({ fileName: 'Agent-BB-KKR-Ascendant-May-2026.xlsx' }).id).toBe('kkr-ascendant')
+  beforeEach(() => initTemplateService())
+
+  it('matches a template by fund name in the file name', () => {
+    expect(detectTemplate({ fileName: 'Agent-BB-KKR-Ascendant-Fund-May-2026.xlsx' }).fund).toBe('KKR Ascendant Fund')
   })
-  it('matches by facility text', () => {
-    expect(detectTemplate({ facility: 'Carlyle CP VII Facility' }).id).toBe('cp-vii')
+
+  it('matches by facility name', () => {
+    expect(detectTemplate({ facility: 'Carlyle Partners VII Facility' }).fund).toBe('Carlyle Partners VII')
   })
-  it('recognises Blue Owl GP Stakes V as the Wells Fargo format (current agent)', () => {
-    expect(detectTemplate({ facility: 'Blue Owl GP Stakes V' }).id).toBe('wf-blue-owl')
-    expect(detectTemplate({ fileName: 'Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx' }).id).toBe('wf-blue-owl')
-  })
-  it('recognises the legacy Goldman Sachs Blue Owl format when agent bank is in the metadata', () => {
-    expect(detectTemplate({ fileName: 'Goldman-Sachs-Agent-BB.xlsx' }).id).toBe('gs-blue-owl')
-  })
-  it('falls back to the first profile when nothing matches', () => {
-    expect(detectTemplate({ fileName: 'unknown.xlsx' }).id).toBe('kkr-ascendant')
+
+  it('falls back to the first template when nothing matches', () => {
+    expect(detectTemplate({ fileName: 'unknown.xlsx' }).id).toBe('1')
   })
 })
 
 describe('buildDocRecognition', () => {
-  it('renders stacked-header and grouping detail for CP VII', () => {
-    const rows = buildDocRecognition(getTemplateProfile('cp-vii')!)
+  beforeEach(() => initTemplateService())
+
+  it('renders flat list for Carlyle Partners VII (no groups)', () => {
+    const rows = buildDocRecognition(getTemplateProfile('3')!)
+    const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
+    expect(byLabel['LP grouping']).toMatch(/Flat list/i)
+  })
+
+  it('renders stacked-header row label for Carlyle Partners VII', () => {
+    const rows = buildDocRecognition(getTemplateProfile('3')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
     expect(byLabel['Column header row']).toMatch(/stacked/i)
-    expect(byLabel['LP grouping']).toMatch(/Flat list/i)
   })
 
-  it('reports the section count and legend for AEP VII', () => {
-    const rows = buildDocRecognition(getTemplateProfile('aep-vii')!)
+  it('renders 4 LP-category sections for AEP VII', () => {
+    const rows = buildDocRecognition(getTemplateProfile('4')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
     expect(byLabel['LP grouping']).toMatch(/4 LP-category sections/)
-    expect(byLabel['Legend']).toMatch(/4 cell-format rules/)
   })
 
-  it('renders the Wells Fargo Blue Owl as 4 LP-category sections', () => {
-    const rows = buildDocRecognition(getTemplateProfile('wf-blue-owl')!)
+  it('renders legend count when hasColorFlags is true', () => {
+    const rows = buildDocRecognition(getTemplateProfile('4')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
-    expect(byLabel['LP grouping']).toMatch(/4 LP-category sections/)
-    expect(byLabel['Legend']).toMatch(/2 cell-format rules/)
+    expect(byLabel['Legend']).toMatch(/cell-format rules/)
   })
 
-  it('renders the legacy Goldman Sachs / Blue Owl pilot as a flat list', () => {
-    const rows = buildDocRecognition(getTemplateProfile('gs-blue-owl')!)
+  it('renders summary block when summaryRowsAboveHeader > 0', () => {
+    const rows = buildDocRecognition(getTemplateProfile('4')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
-    expect(byLabel['LP grouping']).toMatch(/Flat list/i)
+    expect(byLabel['Summary block']).toMatch(/Rows 1-9/)
+  })
+
+  it('honours live columnsMatched / columnsTotal overrides', () => {
+    const rows = buildDocRecognition(getTemplateProfile('1')!, { columnsMatched: 11, columnsTotal: 13 })
+    const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
+    expect(byLabel['Columns matched']).toBe('11 of 13 mapped to canonical LP fields')
   })
 })

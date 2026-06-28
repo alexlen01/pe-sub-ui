@@ -52,6 +52,8 @@ export interface LP {
   // `rate` carries the UBS Advance Rate; `agentRate` the Agent Advance Rate.
   agentExcessConc?: string   // Agent Excess Concentration Base (calculated)
   ubsExcessConc?: string     // UBS Excess Concentration Base (calculated)
+  // Fund sleeve (multi-tab BB extraction)
+  fundSleeve?: string
   // Status
   inc: boolean
   rcl: boolean

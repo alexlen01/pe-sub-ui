@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
-import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { SortableHeader, useSortableRows, type SortSpec } from '../../hooks/useTableSort'
+import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import { useApp } from '../../context/AppContext'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
@@ -8,9 +9,10 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import DraggablePanel from '../../components/ui/DraggablePanel'
+import LPRecordPanel  from '../../components/ui/LPRecordPanel'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 import {
-  UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE, ubsClassFromAgentRate,
+  UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE, ubsClassFromAgentRate, ubsClassFromAgentCls,
   SP_RATING_OPTS, MDY_RATING_OPTS,
 } from '../../config/classificationConfig'
 import { AGENT_TIERS } from '../../config/eligibilityConfig'
@@ -25,7 +27,69 @@ const DEFAULT_CL_PCT = 7.5
 const TYPE_OPTS = ['', 'Institutional', 'HNW'] as const
 const LP_SIZE_CRITERIA_OPTS = ['', 'AUM', 'NAV', 'Assets'] as const
 const AGENT_RATE_SCHEDULE_VALUES = AGENT_TIERS.map(({ cls }) => cls)
-export const SHADOW_BB_TABLE_WIDTH = 3335
+export const SHADOW_BB_TABLE_WIDTH = 4145
+
+export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
+  rank: 52, name: 220, fundSleeve: 140, parent: 160, spv: 54,
+  region: 140, investorType: 140, type: 122, agentCls: 166, cls: 174,
+  included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
+  lpSizeBil: 84, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
+  calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
+  agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
+  concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
+  agentBBCalc: 138, pctAgentBB: 110, ubsBBCalc: 128, pctUbsBB: 110, notes: 180,
+}
+
+interface ShadowBBTableHeadProps {
+  sort: SortSpec | null
+  onSort: (key: string) => void
+  widths?: ColWidths
+  onResizeStart?: (col: string, e: React.MouseEvent) => void
+}
+
+export function ShadowBBTableHead({ sort, onSort, widths, onResizeStart }: ShadowBBTableHeadProps) {
+  const w = (key: keyof typeof SHADOW_BB_INITIAL_WIDTHS) => widths?.[key] ?? SHADOW_BB_INITIAL_WIDTHS[key]
+  return (
+    <thead>
+      <tr>
+        <SortableHeader sortKey="rank"              sort={sort} onSort={onSort} style={{ width: w('rank') }}                          onResizeStart={onResizeStart}>Rank</SortableHeader>
+        <SortableHeader sortKey="name"              sort={sort} onSort={onSort} style={{ width: w('name') }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
+        <SortableHeader sortKey="fundSleeve"        sort={sort} onSort={onSort} style={{ width: w('fundSleeve') }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
+        <SortableHeader sortKey="parent"            sort={sort} onSort={onSort} style={{ width: w('parent') }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
+        <SortableHeader sortKey="spv"               sort={sort} onSort={onSort} style={{ width: w('spv') }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
+        <SortableHeader sortKey="region"            sort={sort} onSort={onSort} style={{ width: w('region') }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
+        <SortableHeader sortKey="investorType"      sort={sort} onSort={onSort} style={{ width: w('investorType') }}                  onResizeStart={onResizeStart}>Investor Type</SortableHeader>
+        <SortableHeader sortKey="type"              sort={sort} onSort={onSort} style={{ width: w('type') }}                          onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
+        <SortableHeader sortKey="agentCls"          sort={sort} onSort={onSort} style={{ width: w('agentCls') }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
+        <SortableHeader sortKey="cls"               sort={sort} onSort={onSort} style={{ width: w('cls') }}                           onResizeStart={onResizeStart}>UBS LP Classification</SortableHeader>
+        <SortableHeader sortKey="included"          sort={sort} onSort={onSort} style={{ width: w('included'), textAlign: 'center' }} onResizeStart={onResizeStart}>Eligible</SortableHeader>
+        <SortableHeader sortKey="ig"                sort={sort} onSort={onSort} style={{ width: w('ig') }}                            onResizeStart={onResizeStart}>Investment Grade</SortableHeader>
+        <SortableHeader sortKey="sp"                sort={sort} onSort={onSort} style={{ width: w('sp') }}                            onResizeStart={onResizeStart}>S&amp;P</SortableHeader>
+        <SortableHeader sortKey="mdy"               sort={sort} onSort={onSort} style={{ width: w('mdy') }}                           onResizeStart={onResizeStart}>Moody's</SortableHeader>
+        <SortableHeader sortKey="fitch"             sort={sort} onSort={onSort} style={{ width: w('fitch') }}                         onResizeStart={onResizeStart}>Fitch</SortableHeader>
+        <SortableHeader sortKey="lpSizeBil"         sort={sort} onSort={onSort} className="num" style={{ width: w('lpSizeBil') }}     onResizeStart={onResizeStart}>LP Size</SortableHeader>
+        <SortableHeader sortKey="lpSizeCriteria"    sort={sort} onSort={onSort} style={{ width: w('lpSizeCriteria') }}                onResizeStart={onResizeStart}>Size Measure</SortableHeader>
+        <SortableHeader sortKey="capCommit"         sort={sort} onSort={onSort} className="num" style={{ width: w('capCommit') }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
+        <SortableHeader sortKey="cmtPct"            sort={sort} onSort={onSort} className="num" style={{ width: w('cmtPct') }}        onResizeStart={onResizeStart}>% of Capital Commitments</SortableHeader>
+        <SortableHeader sortKey="calledM"           sort={sort} onSort={onSort} className="num" style={{ width: w('calledM') }}       onResizeStart={onResizeStart}>Called Capital</SortableHeader>
+        <SortableHeader sortKey="ucM"               sort={sort} onSort={onSort} className="num" style={{ width: w('ucM') }}           onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
+        <SortableHeader sortKey="pctUncalled"       sort={sort} onSort={onSort} className="num" style={{ width: w('pctUncalled') }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
+        <SortableHeader sortKey="pctCalled"         sort={sort} onSort={onSort} className="num" style={{ width: w('pctCalled') }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
+        <SortableHeader sortKey="agentRatePct"      sort={sort} onSort={onSort} className="num" style={{ width: w('agentRatePct') }}  onResizeStart={onResizeStart}>Agent Advance Base</SortableHeader>
+        <SortableHeader sortKey="ubsAdvRatePct"     sort={sort} onSort={onSort} className="num" style={{ width: w('ubsAdvRatePct') }} onResizeStart={onResizeStart}>UBS Advance Base</SortableHeader>
+        <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={onSort} className="num" style={{ width: w('agentConcLimitPct') }} onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
+        <SortableHeader sortKey="concLimitPct"      sort={sort} onSort={onSort} className="num" style={{ width: w('concLimitPct') }}  onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
+        <SortableHeader sortKey="agentExcess"       sort={sort} onSort={onSort} className="num" style={{ width: w('agentExcess') }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>
+        <SortableHeader sortKey="ubsExcess"         sort={sort} onSort={onSort} className="num" style={{ width: w('ubsExcess') }}     onResizeStart={onResizeStart}>UBS Excess Concentration</SortableHeader>
+        <SortableHeader sortKey="agentBBCalc"       sort={sort} onSort={onSort} className="num" style={{ width: w('agentBBCalc') }}   onResizeStart={onResizeStart}>Agent Borrowing Base</SortableHeader>
+        <SortableHeader sortKey="pctAgentBB"        sort={sort} onSort={onSort} className="num" style={{ width: w('pctAgentBB') }}    onResizeStart={onResizeStart}>% of Agent BB</SortableHeader>
+        <SortableHeader sortKey="ubsBBCalc"         sort={sort} onSort={onSort} className="num" style={{ width: w('ubsBBCalc') }}     onResizeStart={onResizeStart}>UBS Borrowing Base</SortableHeader>
+        <SortableHeader sortKey="pctUbsBB"          sort={sort} onSort={onSort} className="num" style={{ width: w('pctUbsBB') }}      onResizeStart={onResizeStart}>% of UBS BB</SortableHeader>
+        <SortableHeader sortKey="notes"             sort={sort} onSort={onSort} style={{ width: w('notes') }}                         onResizeStart={onResizeStart}>Notes</SortableHeader>
+      </tr>
+    </thead>
+  )
+}
 
 export function parsePct(str: string | undefined | null): number | '' {
   if (!str || str === '—') return ''
@@ -94,7 +158,7 @@ export function calcRow(ov: Override, totalCommitM: number, totalUncalledM: numb
   const pctUncalled     = totalUncalledM > 0 ? uc / totalUncalledM : 0
   const pctCalled       = commitM > 0 ? calledM / commitM : 0
   const ubsEligUncalled = Math.min(uc, totalUncalledM * ubsClPct)
-  const agentEligUncl   = Math.min(uc, totalUncalledM * agClPct)
+  const agentEligUncl   = agClPct > 0 ? Math.min(uc, totalUncalledM * agClPct) : uc
   const ubsBBCalc       = included ? ubsEligUncalled * advRate : 0
   const agentBBCalc     = included ? agentEligUncl   * agRate  : 0
   const ubsExcess       = included ? Math.max(uc - ubsEligUncalled, 0) : 0
@@ -120,6 +184,7 @@ export type Override = {
   name: string
   parent: string; spv: boolean; type: string; ig: boolean
   cls: string; agentCls: string
+  region?: string; fundSleeve?: string
   sp: string; mdy: string; fitch: string
   lpSizeBil: string; lpSizeCriteria: string
   capCommit: string; ucM: string
@@ -200,6 +265,13 @@ export default function RunShadowBB() {
         setMatchQueue(q)
         const map: Record<string, AgentExtractedRow> = {}
         for (const r of rows) { if (r.name) map[r.name.toLowerCase()] = r }
+        // Also index by LP Master name so buildOverride finds extracted data when raw names differ
+        for (const mq of q) {
+          if (mq.masterName && !map[mq.masterName.toLowerCase()]) {
+            const byAgent = map[mq.agentName.toLowerCase()]
+            if (byAgent) map[mq.masterName.toLowerCase()] = byAgent
+          }
+        }
         setExtractedMap(map)
       })
       .catch(e => setLoadError(String(e)))
@@ -251,8 +323,11 @@ export default function RunShadowBB() {
       return v !== 'NR' ? v : ''
     }
     const agentRatePct = parsePct(ext?.agentRate || lp.agentRate)
+    const agentClsText = ext?.agentClass || lp.agentCls || ''
     const isUbsCls = (UBS_CLS_OPTS as readonly string[]).includes(lp.cls ?? '')
-    const cls = isUbsCls ? (lp.cls as string) : ubsClassFromAgentRate(agentRatePct)
+    const cls = isUbsCls
+      ? (lp.cls as string)
+      : (ubsClassFromAgentCls(agentClsText) || ubsClassFromAgentRate(agentRatePct))
     return {
       name:              lp.name ?? lp._agentName ?? '',
       parent:            lp.parent ?? '',
@@ -260,7 +335,7 @@ export default function RunShadowBB() {
       type:              lp.type ?? 'Institutional',
       ig:                !!lp.ig,
       cls,
-      agentCls:          ext?.agentClass || lp.agentCls || '',
+      agentCls:          agentClsText,
       sp:                toRating(ext?.sp,     lp.sp),
       mdy:               toRating(ext?.moodys, lp.mdy),
       fitch:             toRating(ext?.fitch,  lp.fitch),
@@ -276,6 +351,8 @@ export default function RunShadowBB() {
       agentConcLimitPct: parsePct(ext?.agentConc || lp.agentConc),
       inc:               deriveInc(cls, lp._isNew, lp.inc),
       notes:             lp.notes ?? '',
+      region:            lp.region ?? '',
+      fundSleeve:        (lp as LPRecord).fundSleeve ?? ext?.fundSleeve ?? '',
     }
   }
 
@@ -380,10 +457,63 @@ export default function RunShadowBB() {
     await saveRow(key, next, nextOverrides)
   }
 
-  const resetOverrides = () => {
-    setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
-    setFlashKeys({})
-  }
+  const ovToLP = (lp: SubmissionLP, ov: Override): LPRecord => ({
+    ...(lp as LPRecord),
+    name:        ov.name || lp.name || lp._agentName || '',
+    parent:      ov.parent ?? '',
+    spv:         ov.spv,
+    type:        ov.type as LPRecord['type'],
+    ig:          ov.ig,
+    cls:         (ov.cls || 'Eligible') as LPRecord['cls'],
+    clsTag:      lp.clsTag ?? '',
+    agentCls:    ov.agentCls,
+    region:      (ov.region || lp.region || '') as LPRecord['region'],
+    fundSleeve:  ov.fundSleeve ?? lp.fundSleeve,
+    sp:          ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
+    aum:         ov.lpSizeCriteria === 'AUM' ? (ov.lpSizeBil || '') : (lp.aum ?? ''),
+    nav:         ov.lpSizeCriteria === 'NAV' ? (ov.lpSizeBil || '') : (lp.nav ?? ''),
+    pension:     lp.pension ?? '',
+    pensionFunded: lp.pensionFunded ?? '',
+    capCommit:   ov.capCommit ?? '',
+    uc:          ov.ucM != null ? String(ov.ucM) : (lp.uc ?? ''),
+    rate:        typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? ''),
+    agentRate:   typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct}%`  : (lp.agentRate ?? ''),
+    agentConc:   typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (lp.agentConc ?? ''),
+    ubsConc:     typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : (lp.ubsConc ?? ''),
+    inc:         ov.inc,
+    notes:       ov.notes ?? '',
+    rcl:         lp.rcl ?? false,
+    tf:          lp.tf ?? false,
+    hq:          lp.hq ?? false,
+    abb:         lp.abb ?? '', ubb: lp.ubb ?? '', delta: lp.delta ?? '', uec: lp.uec ?? '',
+    pctCapCommit: lp.pctCapCommit ?? '', calledCap: lp.calledCap ?? '',
+    pctUncalled: lp.pctUncalled ?? '', pctCalled: lp.pctCalled ?? '',
+    agentExcessConc: lp.agentExcessConc, ubsExcessConc: lp.ubsExcessConc,
+  })
+
+  const lpToOv = (saved: LPRecord, prev: Override): Override => ({
+    ...prev,
+    name:              saved.name,
+    parent:            saved.parent ?? '',
+    spv:               saved.spv,
+    type:              saved.type,
+    ig:                saved.ig,
+    cls:               saved.cls ?? '',
+    agentCls:          saved.agentCls ?? '',
+    region:            saved.region ?? '',
+    fundSleeve:        saved.fundSleeve ?? '',
+    sp:                saved.sp ?? '', mdy: saved.mdy ?? '', fitch: saved.fitch ?? '',
+    lpSizeBil:         saved.aum || saved.nav || saved.pension || '',
+    lpSizeCriteria:    saved.aum ? 'AUM' : saved.nav ? 'NAV' : saved.pension ? 'Assets' : prev.lpSizeCriteria || '',
+    capCommit:         saved.capCommit ?? '',
+    ucM:               saved.uc ?? prev.ucM,
+    ubsAdvRatePct:     parsePct(saved.rate) !== '' ? parsePct(saved.rate) : prev.ubsAdvRatePct,
+    agentRatePct:      parsePct(saved.agentRate) !== '' ? parsePct(saved.agentRate) : prev.agentRatePct,
+    concLimitPct:      parsePct(saved.ubsConc) !== '' ? parsePct(saved.ubsConc) : prev.concLimitPct,
+    agentConcLimitPct: parsePct(saved.agentConc) !== '' ? parsePct(saved.agentConc) : prev.agentConcLimitPct,
+    inc:               saved.inc,
+    notes:             saved.notes ?? '',
+  })
 
   const savedOverridesApplied = useRef(false)
 
@@ -436,9 +566,8 @@ export default function RunShadowBB() {
     ]
   }, [submissionDetails, activeSubmission, matchQueue, overrides])
 
-  const newLPs        = submissionLPs.filter(lp => lp._isNew)
-  const overrideCount = submissionLPs.filter(lp => !lp._isNew && overrides[lp._key]?.cls !== lp.cls).length
-  const unclassified  = submissionLPs.filter(lp => !overrides[lp._key]?.cls).length
+  const newLPs       = submissionLPs.filter(lp => lp._isNew)
+  const unclassified = submissionLPs.filter(lp => !overrides[lp._key]?.cls).length
 
   const [unclassifiedOnly, setUnclassifiedOnly] = useState(false)
   const displayLPs = useMemo(() => {
@@ -456,6 +585,14 @@ export default function RunShadowBB() {
     Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.ucM), 0)
   , [overrides])
 
+  const totalAgentBBCalc = useMemo(() =>
+    Object.values(overrides).reduce((s, ov) => s + calcRow(ov, totalCommitM, totalUncalledM).agentBBCalc, 0)
+  , [overrides, totalCommitM, totalUncalledM])
+
+  const totalUbsBBCalc = useMemo(() =>
+    Object.values(overrides).reduce((s, ov) => s + calcRow(ov, totalCommitM, totalUncalledM).ubsBBCalc, 0)
+  , [overrides, totalCommitM, totalUncalledM])
+
   const rankByKey = useMemo(() => {
     const ranked = [...submissionLPs].sort((a, b) =>
       parseMoneyM(overrides[b._key]?.ucM) - parseMoneyM(overrides[a._key]?.ucM)
@@ -472,8 +609,11 @@ export default function RunShadowBB() {
     return [
       { key: 'rank', getValue: (lp: SubmissionLP) => rankByKey[lp._key] ?? '' },
       { key: 'name', getValue: (lp: SubmissionLP) => getOverride(lp)?.name || lp.name || lp._agentName || '' },
+      { key: 'fundSleeve', getValue: (lp: SubmissionLP) => getOverride(lp)?.fundSleeve ?? '' },
       { key: 'parent', getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
       { key: 'spv', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
+      { key: 'region', getValue: (lp: SubmissionLP) => getOverride(lp)?.region ?? lp.region ?? '' },
+      { key: 'investorType', getValue: (lp: SubmissionLP) => lp.investorType ?? lp.type ?? '' },
       { key: 'cls', getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
       { key: 'type', getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
       { key: 'ig', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
@@ -496,14 +636,17 @@ export default function RunShadowBB() {
       { key: 'agentExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentExcess ?? '' },
       { key: 'ubsExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsExcess ?? '' },
       { key: 'agentBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentBBCalc ?? '' },
+      { key: 'pctAgentBB', getValue: (lp: SubmissionLP) => totalAgentBBCalc > 0 ? (getComputed(lp)?.agentBBCalc ?? 0) / totalAgentBBCalc : 0 },
       { key: 'ubsBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsBBCalc ?? '' },
+      { key: 'pctUbsBB', getValue: (lp: SubmissionLP) => totalUbsBBCalc > 0 ? (getComputed(lp)?.ubsBBCalc ?? 0) / totalUbsBBCalc : 0 },
       { key: 'included', getValue: (lp: SubmissionLP) => !!getComputed(lp)?.included },
       { key: 'notes', getValue: (lp: SubmissionLP) => getOverride(lp)?.notes ?? '' },
     ]
-  }, [overrides, rankByKey, totalCommitM, totalUncalledM])
+  }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc])
 
   const { sort, sortedRows: sortedDisplayLPs, requestSort } = useSortableRows(displayLPs, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedDisplayLPs)
+  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('run-shadow-bb', SHADOW_BB_INITIAL_WIDTHS)
 
   // Deselect if the selected row leaves the current page or the BB result replaces the table.
   useEffect(() => {
@@ -626,17 +769,17 @@ export default function RunShadowBB() {
   }
 
   const resultRows = result ? [
-    { label: 'UBS Borrowing Base',            value: fmtFull(result.summary.totalUBB),        hi: true },
-    { label: 'Agent Borrowing Base',           value: fmtFull(result.summary.totalABB)                  },
-    { label: 'BB Delta',                       value: fmtFull(result.summary.bbDelta),          neg: result.summary.bbDelta < 0 },
-    { label: 'Effective Advance Rate (UBS)',   value: fmtPct(result.summary.ear)                     },
-    { label: 'Effective Advance Rate (Agent)', value: fmtPct(result.summary.agentEar)                },
-    { label: 'EAR Delta',                      value: fmtPct(result.summary.earDelta),       neg: result.summary.earDelta < 0 },
-    { label: 'Included LPs',                   value: result.summary.includedCount                   },
-    { label: 'Excluded LPs',                   value: result.summary.excludedCount                   },
-    { label: 'Reclassified LPs',               value: result.summary.reclassCount                    },
-    { label: 'UBS Elig. Uncalled',             value: fmtFull(result.summary.totalUEC)                  },
-    { label: 'Conc. Excess (total)',            value: fmtFull(result.summary.totalConcExcess), neg: result.summary.totalConcExcess > 0 },
+    { label: 'UBS Borrowing Base',    value: fmtFull(result.summary.totalUBB),        hi: true },
+    { label: 'Agent Borrowing Base',  value: fmtFull(result.summary.totalABB)                   },
+    { label: 'BB Delta',              value: fmtFull(result.summary.bbDelta),          neg: result.summary.bbDelta < 0 },
+    { label: 'Included LPs',         value: result.summary.includedCount,                         right: true },
+    { label: 'UBS Advance Rate',      value: fmtPct(result.summary.ear)                         },
+    { label: 'Agent Advance Rate',    value: fmtPct(result.summary.agentEar)                    },
+    { label: 'EAR Delta',             value: fmtPct(result.summary.earDelta),         neg: result.summary.earDelta < 0 },
+    { label: 'Excluded LPs',         value: result.summary.excludedCount,                         right: true },
+    { label: 'UBS Elig. Uncalled',   value: fmtFull(result.summary.totalUEC)                     },
+    { label: 'Conc. Excess (total)', value: fmtFull(result.summary.totalConcExcess),  neg: result.summary.totalConcExcess > 0 },
+    { label: 'Reclassified LPs',     value: result.summary.reclassCount,                          right: true },
   ] : []
 
   const selectedLp = submissionLPs.find(lp => lp._key === selectedKey) ?? null
@@ -665,9 +808,8 @@ export default function RunShadowBB() {
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
-                {overrideCount > 0 && <button onClick={resetOverrides} style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>Reset {overrideCount} override{overrideCount !== 1 ? 's' : ''}</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
-                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
+                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null || unclassified > 0} title={unclassified > 0 ? `Resolve ${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} before running` : undefined}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
           >
@@ -676,40 +818,8 @@ export default function RunShadowBB() {
 
               <div style={{ minWidth: 0 }}>
                 <div className="data-table-wrap">
-                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: SHADOW_BB_TABLE_WIDTH, minWidth: SHADOW_BB_TABLE_WIDTH }}>
-                    <thead>
-                      <tr>
-                        <SortableHeader sortKey="rank" sort={sort} onSort={requestSort} style={{ width: 52 }}>Rank</SortableHeader>
-                        <SortableHeader sortKey="name" sort={sort} onSort={requestSort} style={{ width: 220 }}>Investor Name</SortableHeader>
-                        <SortableHeader sortKey="parent" sort={sort} onSort={requestSort} style={{ width: 160 }}>Parent</SortableHeader>
-                        <SortableHeader sortKey="spv" sort={sort} onSort={requestSort} style={{ width: 54 }}>SPV</SortableHeader>
-                        <SortableHeader sortKey="cls" sort={sort} onSort={requestSort} style={{ width: 174 }}>UBS LP Classification</SortableHeader>
-                        <SortableHeader sortKey="type" sort={sort} onSort={requestSort} style={{ width: 122 }}>Institutional vs HNW</SortableHeader>
-                        <SortableHeader sortKey="ig" sort={sort} onSort={requestSort} style={{ width: 114 }}>Investment Grade?</SortableHeader>
-                        <SortableHeader sortKey="agentCls" sort={sort} onSort={requestSort} style={{ width: 166 }}>Agent LP Classification</SortableHeader>
-                        <SortableHeader sortKey="sp" sort={sort} onSort={requestSort} style={{ width: 76 }}>S&P</SortableHeader>
-                        <SortableHeader sortKey="mdy" sort={sort} onSort={requestSort} style={{ width: 84 }}>Moody's</SortableHeader>
-                        <SortableHeader sortKey="fitch" sort={sort} onSort={requestSort} style={{ width: 76 }}>Fitch</SortableHeader>
-                        <SortableHeader sortKey="lpSizeBil" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>LP Size ($ Bil)</SortableHeader>
-                        <SortableHeader sortKey="lpSizeCriteria" sort={sort} onSort={requestSort} style={{ width: 127 }}>LP Size Criteria</SortableHeader>
-                        <SortableHeader sortKey="capCommit" sort={sort} onSort={requestSort} className="num" style={{ width: 138 }}>Capital Commitment</SortableHeader>
-                        <SortableHeader sortKey="ucM" sort={sort} onSort={requestSort} className="num" style={{ width: 126 }}>Uncalled Capital</SortableHeader>
-                        <SortableHeader sortKey="ubsAdvRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 114 }}>UBS Advance Rate</SortableHeader>
-                        <SortableHeader sortKey="agentRatePct" sort={sort} onSort={requestSort} className="num" style={{ width: 120 }}>Agent Advance Rate</SortableHeader>
-                        <SortableHeader sortKey="concLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Conc. Limit</SortableHeader>
-                        <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>Agent Conc. Limit</SortableHeader>
-                        <SortableHeader sortKey="cmtPct" sort={sort} onSort={requestSort} className="num" style={{ width: 132 }}>% of Commitments</SortableHeader>
-                        <SortableHeader sortKey="calledM" sort={sort} onSort={requestSort} className="num" style={{ width: 116 }}>Called Capital</SortableHeader>
-                        <SortableHeader sortKey="pctUncalled" sort={sort} onSort={requestSort} className="num" style={{ width: 128 }}>% of Uncalled</SortableHeader>
-                        <SortableHeader sortKey="pctCalled" sort={sort} onSort={requestSort} className="num" style={{ width: 104 }}>% of LP Called</SortableHeader>
-                        <SortableHeader sortKey="agentExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 134 }}>Agent Excess Conc.</SortableHeader>
-                        <SortableHeader sortKey="ubsExcess" sort={sort} onSort={requestSort} className="num" style={{ width: 124 }}>UBS Excess Conc.</SortableHeader>
-                        <SortableHeader sortKey="agentBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>Agent BB</SortableHeader>
-                        <SortableHeader sortKey="ubsBBCalc" sort={sort} onSort={requestSort} className="num" style={{ width: 118 }}>UBS BB</SortableHeader>
-                        <SortableHeader sortKey="included" sort={sort} onSort={requestSort} style={{ width: 72, textAlign: 'center' }}>Included</SortableHeader>
-                        <SortableHeader sortKey="notes" sort={sort} onSort={requestSort} style={{ width: 180 }}>Notes</SortableHeader>
-                      </tr>
-                    </thead>
+                  <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>
+                    <ShadowBBTableHead sort={sort} onSort={requestSort} widths={bbWidths} onResizeStart={bbResizeStart} />
                     <tbody>
                       {pageItems.map(lp => {
                         const key      = lp._key
@@ -732,32 +842,37 @@ export default function RunShadowBB() {
                                 {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>Error</span>}
                               </div>
                             </td>
+                            <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
-                            <td>{ov.spv ? 'Y' : 'N'}</td>
-                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td>{ov.spv ? 'Yes' : 'No'}</td>
+                            <td>{ov.region || lp.region || '—'}</td>
+                            <td title={lp.investorType || '—'}>{lp.investorType || '—'}</td>
                             <td>{ov.type || '—'}</td>
-                            <td>{ov.ig ? 'Yes' : 'No'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
+                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
+                            <td>{ov.ig ? 'Yes' : 'No'}</td>
                             <td>{ov.sp || '—'}</td>
                             <td>{ov.mdy || '—'}</td>
                             <td>{ov.fitch || '—'}</td>
                             <td className="num" title={ov.lpSizeBil || '—'}>{fmtBillionDisplay(ov.lpSizeBil)}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
                             <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
-                            <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
-                            <td>{pctStr(ov.ubsAdvRatePct)}</td>
-                            <td>{pctStr(ov.agentRatePct)}</td>
-                            <td>{pctStr(ov.concLimitPct)}</td>
-                            <td>{pctStr(ov.agentConcLimitPct)}</td>
-                            <td>{fmtPct(c.cmtPct)}</td>
+                            <td className="num">{fmtPct(c.cmtPct)}</td>
                             <td className="num">{fmtFull(c.calledM)}</td>
-                            <td>{fmtPct(c.pctUncalled)}</td>
-                            <td>{fmtPct(c.pctCalled)}</td>
+                            <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
+                            <td className="num">{fmtPct(c.pctUncalled)}</td>
+                            <td className="num">{fmtPct(c.pctCalled)}</td>
+                            <td className="num">{pctStr(ov.agentRatePct)}</td>
+                            <td className="num">{pctStr(ov.ubsAdvRatePct)}</td>
+                            <td className="num">{pctStr(ov.agentConcLimitPct)}</td>
+                            <td className="num">{pctStr(ov.concLimitPct)}</td>
                             <td className={`num ${c.agentExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.agentExcess)}</td>
                             <td className={`num ${c.ubsExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsExcess)}</td>
                             <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
+                            <td className="num">{totalAgentBBCalc > 0 && c.agentBBCalc > 0 ? fmtPct(c.agentBBCalc / totalAgentBBCalc) : '—'}</td>
                             <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
-                            <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
+                            <td className="num">{totalUbsBBCalc > 0 && c.ubsBBCalc > 0 ? fmtPct(c.ubsBBCalc / totalUbsBBCalc) : '—'}</td>
                             <td title={ov.notes || '—'}>{ov.notes || '—'}</td>
                           </tr>
                         )
@@ -776,16 +891,16 @@ export default function RunShadowBB() {
 
               {selectedLp && selectedKey && overrides[selectedKey] && (
                 <DraggablePanel className="lp-detail-overlay" storageKey="run-shadow-bb-lp-record">
-                  <LPRecordCard
-                    lp={selectedLp}
-                    ov={overrides[selectedKey]}
+                  <LPRecordPanel
+                    lp={ovToLP(selectedLp, overrides[selectedKey])}
+                    open={true}
                     rank={rankByKey[selectedKey]}
-                    totalCommitM={totalCommitM}
-                    totalUncalledM={totalUncalledM}
-                    saveStatus={saveState[selectedKey]}
                     running={running || !lpRatesLoaded || loadError != null}
-                    onDeselect={() => setSelectedKey(null)}
-                    onSave={saveDraft}
+                    canEdit={!running && lpRatesLoaded && loadError == null}
+                    onClose={() => setSelectedKey(null)}
+                    onSave={saved => saveDraft(lpToOv(saved, overrides[selectedKey]))}
+                    totalAgentBB={totalAgentBBCalc}
+                    totalUbsBB={totalUbsBBCalc}
                   />
                 </DraggablePanel>
               )}
@@ -799,7 +914,7 @@ export default function RunShadowBB() {
           <Card title="Calculation Results" subtitle={`${submissionLPs.length} LP records processed`}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px 24px', padding: '4px 18px 18px' }}>
               {resultRows.map(r => (
-                <div key={r.label}><div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{r.label}</div><div style={{ fontSize: 13, fontWeight: (r as { hi?: boolean }).hi ? 700 : 600, color: (r as { neg?: boolean }).neg ? 'var(--danger)' : (r as { hi?: boolean }).hi ? 'var(--navy)' : 'var(--text)' }}>{String(r.value)}</div></div>
+                <div key={r.label} style={(r as { right?: boolean }).right ? { gridColumn: 4 } : undefined}><div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{r.label}</div><div style={{ fontSize: 13, fontWeight: (r as { hi?: boolean }).hi ? 700 : 600, color: (r as { neg?: boolean }).neg ? 'var(--danger)' : (r as { hi?: boolean }).hi ? 'var(--navy)' : 'var(--text)' }}>{String(r.value)}</div></div>
               ))}
             </div>
           </Card>
@@ -952,7 +1067,7 @@ export function LPRecordCard({ lp, ov, rank, totalCommitM, totalUncalledM, onSav
           {sel('Institutional vs HNW', 'type', TYPE_OPTS)}
           {chk('Investment Grade?', 'ig')}
           
-          {sec('Ratings')}
+          {sec('Credit Ratings')}
           {sel('S&P', 'sp', SP_RATING_OPTS, 2)}
           {sel("Moody's", 'mdy', MDY_RATING_OPTS, 2)}
           {sel('Fitch', 'fitch', SP_RATING_OPTS, 2)}

@@ -37,9 +37,10 @@ navigated away.
 ### Service contract
 
 - Service functions take no `live`/mode parameter — they always call the API.
-- The only client-resident datasets that remain are `src/data/templateProfiles.ts` and
-  `src/data/fieldMappingData.ts`, used by `templateService` for client-side Agent-BB format
-  recognition (no UI-reachable backend endpoint exists yet — migrate when one does).
+- `templateService` fetches Agent-BB template profiles from `/api/bb-templates` and the field-alias
+  dictionary from `/api/field-mapping/alias-groups`. Both are cached after the first call to
+  `initTemplateService()`. Screens that use template data must call `initTemplateService()` in a
+  `useEffect` and store results in local state via `getTemplateProfiles()`.
 
 ---
 

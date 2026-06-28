@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, startTransition } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { useColumnResize } from '../../hooks/useColumnResize'
 import { useApp } from '../../context/AppContext'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
@@ -9,7 +10,7 @@ import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields, type DocRecognitionRow, type UnrecognizedColumn } from '../../services/extractionService'
-import { getTemplateProfiles, getTemplateProfile, detectTemplate, findDetectedTemplate, buildDocRecognition, type MappedColumn } from '../../services/templateService'
+import { initTemplateService, getTemplateProfiles, getTemplateProfile, detectTemplate, findDetectedTemplate, buildDocRecognition, type MappedColumn, type TemplateProfile } from '../../services/templateService'
 import { api } from '../../services/api'
 import { WIZARD_STEPS } from '../../config/wizardConfig'
 
@@ -47,12 +48,16 @@ interface ExtractedRow {
   eligibleCommitmentFmt?: string
   agentBBFmt?: string
   pctBBFmt?: string
+  fundSleeve?: string
+  investorType?: string
+  notes?: string
 }
 type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: boolean }
 
 type ExtractedGridColumn = {
   key: string
   canonical: string
+  label?: string
   group?: string
   width: number
   align?: React.CSSProperties['textAlign']
@@ -71,6 +76,7 @@ type LPField = {
 
 type CanonicalMeta = {
   key?: keyof ExtractedRow
+  label?: string
   width: number
   align?: React.CSSProperties['textAlign']
   money?: boolean
@@ -84,41 +90,59 @@ const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   Transferee:                  { key: 'transferee', width: 84 },
   'Parent / Sponsor':          { key: 'parent', width: 150 },
   'Eligibility Flag':          { width: 104 },
-  'Capital Commitments':       { key: 'commit', width: 126, align: 'right', money: true },
-  '% of Capital Commitments':  { width: 112, align: 'right' },
-  'Called Capital':            { key: 'calledCap', width: 116, align: 'right', money: true },
-  'Recallable Distributions':  { width: 132, align: 'right', money: true },
-  'Uncalled Capital':          { key: 'uncalled', width: 138, align: 'right', money: true },
-  '% of Uncalled Capital':     { key: 'pctUnfundedFmt', width: 118, align: 'right' },
-  '% of LP Called':            { key: 'pctCalledFmt', width: 104, align: 'right' },
-  'Size Metric Type':          { key: 'sizeMetricType', width: 118 },
-  'Size Value / Tier':         { key: 'sizeValueTier', width: 112, align: 'right' },
-  AUM:                         { key: 'aum', width: 104, align: 'right', money: true },
-  NAV:                         { key: 'nav', width: 104, align: 'right', money: true },
-  'Net Worth':                 { width: 112, align: 'right', money: true },
-  'Pension Assets':            { width: 118, align: 'right', money: true },
-  'Pension Funded %':          { width: 112, align: 'right' },
-  'Advance Rate':              { key: 'agentRate', width: 84, align: 'right', strong: true },
-  'Eligible Commitment':       { key: 'eligibleCommitmentFmt', width: 126, align: 'right', money: true },
-  '% of Eligible Uncalled':    { key: 'pctEligibleUnfundedFmt', width: 126, align: 'right' },
-  '% of Borrowing Base':       { key: 'pctBBFmt', width: 116, align: 'right' },
-  'Borrowing Base':            { key: 'agentBBFmt', width: 136, align: 'right', money: true },
-  'Concentration Limit':       { key: 'agentConc', width: 108, align: 'right' },
-  'Concentration (%)':         { width: 112, align: 'right' },
-  'Excess Concentration':      { key: 'excessConcFmt', width: 126, align: 'right', money: true },
-  'Excess Concentration (%)':  { width: 126, align: 'right' },
+  'Capital Commitments':       { key: 'commit', width: 165, align: 'right', money: true },
+  '% of Capital Commitments':  { width: 132, align: 'right' },
+  'Called Capital':            { key: 'calledCap', width: 122, align: 'right', money: true },
+  'Recallable Distributions':  { width: 148, align: 'right', money: true },
+  'Uncalled Capital':          { key: 'uncalled', width: 140, align: 'right', money: true },
+  '% of Uncalled Capital':     { key: 'pctUnfundedFmt', width: 148, align: 'right' },
+  '% of LP Called':            { key: 'pctCalledFmt', width: 120, align: 'right' },
+  'Size Metric Type':          { key: 'sizeMetricType', width: 130 },
+  'Size Value / Tier':         { key: 'sizeValueTier', width: 120, align: 'right' },
+  AUM:                         { key: 'aum', width: 110, align: 'right', money: true },
+  NAV:                         { key: 'nav', width: 110, align: 'right', money: true },
+  'Net Worth':                 { width: 120, align: 'right', money: true },
+  'Pension Assets':            { width: 140, align: 'right', money: true },
+  'Pension Funded %':          { width: 130, align: 'right' },
+  'Advance Rate':              { key: 'agentRate', width: 110, align: 'right', strong: true },
+  'Eligible Commitment':       { key: 'eligibleCommitmentFmt', width: 158, align: 'right', money: true },
+  '% of Eligible Uncalled':    { key: 'pctEligibleUnfundedFmt', width: 157, align: 'right' },
+  '% of Borrowing Base':       { key: 'pctBBFmt', width: 148, align: 'right' },
+  'Borrowing Base':            { key: 'agentBBFmt', width: 135, align: 'right', money: true },
+  'Concentration Limit':       { key: 'agentConc', label: 'Concentration Limit (%)', width: 170, align: 'right' },
+  'Concentration (%)':         { width: 133, align: 'right' },
+  'Excess Concentration':      { key: 'excessConcFmt', width: 150, align: 'right', money: true },
+  'Excess Concentration (%)':  { width: 173, align: 'right' },
   'S&P Rating':                { key: 'sp', width: 72, rating: true },
   "Moody's Rating":            { key: 'moodys', width: 84, rating: true },
   'Fitch Rating':              { key: 'fitch', width: 78, rating: true },
+  // Aliases used by the standard grid layout
+  'LP Size':                   { key: 'lpSize', width: 90, align: 'right' as const },
+  'Fund Sleeve':               { key: 'fundSleeve', width: 140 },
+  'Investor Type':             { key: 'investorType', width: 140 },
+  'Parent':                    { key: 'parent', width: 165 },
+  'Classification':            { key: 'agentClass', width: 158 },
+  'S&P':                       { key: 'sp', width: 78, align: 'left' as const, rating: true },
+  "Moody's":                   { key: 'moodys', width: 90, align: 'left' as const, rating: true },
+  'Fitch':                     { key: 'fitch', width: 82, rating: true },
+  'Size Measure':              { key: 'sizeMetricType', width: 115 },
+  '% of Commitments':          { width: 145, align: 'right' as const },
+  'Pension Funded (%)':        { width: 145, align: 'right' as const },
+  'Notes':                     { key: 'notes', width: 175 },
 }
 
 const FALLBACK_GRID_COLUMNS: ExtractedGridColumn[] = [
-  'Investor Name', 'LP Category', 'S&P Rating', "Moody's Rating", 'Size Value / Tier',
-  'Size Metric Type', 'Capital Commitments', 'Uncalled Capital', 'Concentration Limit',
-  'Excess Concentration', 'Eligible Commitment', 'Advance Rate', 'Borrowing Base',
+  'Investor Name', 'Fund Sleeve', 'Parent', 'Investor Type', 'Classification',
+  'S&P', "Moody's", 'Fitch', 'Size Measure', 'LP Size',
+  'Pension Assets', 'Pension Funded (%)', 'Capital Commitments', '% of Commitments',
+  'Called Capital', 'Uncalled Capital', '% of Uncalled Capital', '% of LP Called',
+  'Advance Rate', 'Eligible Commitment', '% of Eligible Uncalled',
+  'Borrowing Base', '% of Borrowing Base',
+  'Concentration Limit', 'Concentration (%)', 'Excess Concentration', 'Excess Concentration (%)',
+  'Notes',
 ].map(canonical => {
   const meta = CANONICAL_GRID_META[canonical]
-  return { key: canonical, canonical, width: meta.width, align: meta.align, money: meta.money, rating: meta.rating, strong: meta.strong }
+  return { key: canonical, canonical, label: meta.label, width: meta.width, align: meta.align, money: meta.money, rating: meta.rating, strong: meta.strong }
 })
 
 const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' | 'label'>> = {
@@ -145,6 +169,17 @@ const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' 
   'S&P Rating':                 { key: 'sp' },
   "Moody's Rating":             { key: 'moodys' },
   'Fitch Rating':               { key: 'fitch' },
+  // Aliases for standard grid layout
+  'Classification':             { key: 'agentClass' },
+  'Parent':                     { key: 'parent' },
+  'Fund Sleeve':                { key: 'fundSleeve' },
+  'Investor Type':              { key: 'investorType' },
+  'S&P':                        { key: 'sp' },
+  "Moody's":                    { key: 'moodys' },
+  'Fitch':                      { key: 'fitch' },
+  'Size Measure':               { key: 'sizeMetricType' },
+  'Called Capital':             { key: 'calledCap', money: true },
+  'Notes':                      { key: 'notes' },
 }
 
 const EXTRACTED_TO_CANONICAL: Record<string, string> = {
@@ -209,9 +244,7 @@ const CHIP: Record<string, React.CSSProperties> = {
   User: { background: 'var(--amber-lt)', color: 'var(--amber)', fontWeight: 600      },
 }
 
-// Extracted LP Data header cells wrap onto two lines (the global `.data-table th`
-// rule forces nowrap, so each th overrides it inline via HDR).
-const HDR: React.CSSProperties = { whiteSpace: 'normal', verticalAlign: 'middle', lineHeight: 1.25 }
+const HDR: React.CSSProperties = { whiteSpace: 'nowrap', verticalAlign: 'middle', overflow: 'hidden', textOverflow: 'ellipsis' }
 
 
 function LPDetailPanel({
@@ -228,16 +261,17 @@ function LPDetailPanel({
   const detailFields = lpFields.length ? lpFields : FALLBACK_DETAIL_FIELDS
   return (
     <div
-      className={overlay ? 'lp-detail-overlay extraction-detail-overlay' : undefined}
-      style={overlay ? undefined : {
-        width: 360, flexShrink: 0,
-        alignSelf: 'flex-start',
-        position: 'sticky', top: 0,
-        maxHeight: 'calc(100vh - 130px)',
-        overflow: 'hidden',
-        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-        display: 'flex', flexDirection: 'column', background: 'var(--card)',
-      }}
+      style={overlay
+        ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }
+        : {
+          width: 360, flexShrink: 0,
+          alignSelf: 'flex-start',
+          position: 'sticky', top: 0,
+          maxHeight: 'calc(100vh - 130px)',
+          overflow: 'hidden',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          display: 'flex', flexDirection: 'column', background: 'var(--card)',
+        }}
     >
       <div className="lp-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -402,26 +436,8 @@ function lpSizeValue(row: ExtractedRow): string {
   return [size, criteria].filter(Boolean).join(' ')
 }
 
-function canonicalGroup(field: CanonicalField): string {
-  return String(field.label ?? '').split(/\s›\s/)[0] || ''
-}
-
-function columnsFromCanonicals(canonicals: CanonicalField[]): ExtractedGridColumn[] {
-  if (!canonicals.length) return FALLBACK_GRID_COLUMNS
-  return canonicals.map(field => {
-    const canonical = field.value
-    const meta = CANONICAL_GRID_META[canonical] ?? { width: 116 }
-    return {
-      key: canonical,
-      canonical,
-      group: canonicalGroup(field),
-      width: meta.width,
-      align: meta.align,
-      money: meta.money,
-      rating: meta.rating,
-      strong: meta.strong,
-    }
-  })
+function columnsFromCanonicals(_canonicals: CanonicalField[]): ExtractedGridColumn[] {
+  return FALLBACK_GRID_COLUMNS
 }
 
 function rawCanonicalValue(row: ExtractedRow, col: ExtractedGridColumn): unknown {
@@ -431,8 +447,9 @@ function rawCanonicalValue(row: ExtractedRow, col: ExtractedGridColumn): unknown
   }
 
   const meta = CANONICAL_GRID_META[col.canonical]
+  if (col.canonical === 'LP Size') return lpSizeParts(row).size
   if (col.canonical === 'Size Value / Tier') return lpSizeParts(row).size
-  if (col.canonical === 'Size Metric Type') return lpSizeParts(row).criteria
+  if (col.canonical === 'Size Metric Type' || col.canonical === 'Size Measure') return lpSizeParts(row).criteria
   if (meta?.key) return (row as unknown as Record<string, unknown>)[meta.key]
   return (row as unknown as Record<string, unknown>)[col.canonical]
 }
@@ -483,11 +500,17 @@ export default function ExtractionPreview() {
   const [reextracting,   setReextracting] = useState(false)
   const [containerWidth, setContainerWidth] = useState(0)
   const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
-  const detectedProfileId = detectTemplate({ facility: activeSubmission ?? undefined }).id
-  const [profileId,      setProfileId]    = useState(detectedProfileId)
+  const [profileId,      setProfileId]    = useState('')
+  const [templates,      setTemplates]    = useState<TemplateProfile[]>([])
+
+  useEffect(() => {
+    initTemplateService().then(() => setTemplates(getTemplateProfiles()))
+  }, [])
 
   const loadData = async (sid: number) => {
     try {
+      await initTemplateService()
+      setTemplates(getTemplateProfiles())
       const [rows, cf, cols, fm, dr] = await Promise.all([
         getExtractedLPs(sid),
         getAllCanonicalFields(),
@@ -509,7 +532,7 @@ export default function ExtractionPreview() {
       setDocRec(dr)
       const profileHint = dr.find(r => r.label === 'Forced format')?.value ?? dr.find(r => r.label === 'Format')?.value
       const recognizedProfile = profileHint ? findDetectedTemplate({ fund: profileHint }) : null
-      if (recognizedProfile) setProfileId(recognizedProfile.id)
+      setProfileId((recognizedProfile ?? detectTemplate({ facility: activeSubmission ?? undefined })).id)
     } catch (e) {
       setLoadError(String(e))
     }
@@ -520,7 +543,6 @@ export default function ExtractionPreview() {
       setLoadError('No active submission — please start from the upload step.')
       return
     }
-    setProfileId(detectTemplate({ facility: activeSubmission ?? undefined }).id)
     setLoadError(null)
     loadData(activeSubmissionId)
   }, [activeSubmission, activeSubmissionId])
@@ -534,22 +556,41 @@ export default function ExtractionPreview() {
   }, [])
 
   const gridColumns = useMemo(() => columnsFromCanonicals(canonicals), [canonicals])
-  const gridMinWidth = useMemo(
-    () => Math.max(1582, gridColumns.reduce((sum, col) => sum + col.width, 0)),
-    [gridColumns],
+  const mappedCanonicals = useMemo(
+    () => new Set(fieldMap.map(m => EXTRACTED_TO_CANONICAL[m.extracted] ?? canonicalName(m.canonical))),
+    [fieldMap],
   )
-  const sortColumns = useMemo(() => gridColumns.map(col => ({
+  const visibleGridColumns = useMemo(() => gridColumns.filter(col => {
+    if (col.canonical === 'Fund Sleeve') return extracted.some(r => r.fundSleeve)
+    if (col.canonical === 'Parent') return extracted.some(r => r.parent)
+    if (col.canonical === 'Investor Type') return mappedCanonicals.has('Investor Type')
+    if (col.canonical === 'Pension Assets') return mappedCanonicals.has('Pension Assets')
+    if (col.canonical === 'Pension Funded (%)') return mappedCanonicals.has('Pension Assets')
+    if (col.canonical === 'Fitch') return mappedCanonicals.has('Fitch Rating') || mappedCanonicals.has('Fitch')
+    return true
+  }), [gridColumns, extracted, mappedCanonicals])
+  const sortColumns = useMemo(() => visibleGridColumns.map(col => ({
     key: col.key,
     getValue: (row: ExtractedRow) => gridValue(row, col, false),
   })), [gridColumns])
   const { sort, sortedRows, requestSort } = useSortableRows(extracted, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
 
+  const epInitialWidths = useMemo(
+    () => Object.fromEntries(Object.entries(CANONICAL_GRID_META).map(([k, v]) => [k, v.width ?? 120])),
+    [],
+  )
+  const { widths: epWidths, onResizeStart: epResizeStart } = useColumnResize('extraction-preview', epInitialWidths)
+  const gridMinWidth = useMemo(
+    () => Math.max(1582, visibleGridColumns.reduce((sum, col) => sum + (epWidths[col.key] ?? col.width), 0)),
+    [visibleGridColumns, epWidths],
+  )
+
   const selectedLP    = selectedLPId ? extracted.find(r => r.id === selectedLPId) ?? null : null
   const activeUnrecog = unrecog.filter(c => !c.dismissed)
   const compact       = containerWidth < 1500
 
-  const profile     = getTemplateProfile(profileId) ?? getTemplateProfiles()[0]
+  const profile     = getTemplateProfile(profileId) ?? templates[0] ?? null
 
   // The authoritative column set is the actual extraction result — matched fieldMap entries
   // plus columns the engine could not map. This keeps the Document Recognition counts in
@@ -564,9 +605,9 @@ export default function ExtractionPreview() {
   // per-document detection; the remaining structural rows are profile-driven, while the
   // column-match counts track the live extraction.
   const docFileName = docRec.find(r => r.label === 'Document')?.value
-  const docRows     = buildDocRecognition(profile, { fileName: docFileName, columnsMatched: colsMatched, columnsTotal: displayCols.length })
+  const docRows     = profile ? buildDocRecognition(profile, { fileName: docFileName, columnsMatched: colsMatched, columnsTotal: displayCols.length }) : []
 
-  useEffect(() => { if (activeUnrecog.length === 0) setMapCollapsed(true) }, [activeUnrecog.length])
+  useEffect(() => { setMapCollapsed(activeUnrecog.length === 0) }, [activeUnrecog.length])
 
   useEffect(() => {
     if (sortedRows.length === 0) return
@@ -626,16 +667,16 @@ export default function ExtractionPreview() {
 
   const handleReextract = async () => {
     if (activeSubmissionId == null) {
-      toast(`Format set to ${profile.fund}.`)
+      toast(`Format set to ${profile?.fund ?? 'selected format'}.`)
       return
     }
     setReextracting(true)
     try {
-      await api.extraction.reextract(activeSubmissionId, profile.fund)
+      await api.extraction.reextract(activeSubmissionId, profile?.fund ?? '')
       setSelectedLPId(null)
       setPage(1)
       await loadData(activeSubmissionId)
-      toast(`Re-extracted using ${profile.fund} format.`)
+      toast(`Re-extracted using ${profile?.fund ?? 'selected format'} format.`)
     } catch (e) {
       toast(`Re-extraction failed: ${String(e)}`)
     } finally {
@@ -704,7 +745,7 @@ export default function ExtractionPreview() {
 
         <Card
           title="Document Recognition"
-          subtitle={`Borrowing-base tables identified by the extraction engine · ${profile.fund}`}
+          subtitle={`Borrowing-base tables identified by the extraction engine · ${profile?.fund ?? ''}`}
           action={
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <label style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Format</label>
@@ -715,7 +756,7 @@ export default function ExtractionPreview() {
                 title="Override recognized Agent BB format"
                 style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', background: 'var(--card)', color: 'var(--text)' }}
               >
-                {getTemplateProfiles().map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
+                {templates.map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
               </select>
               <Button variant="secondary" size="sm" onClick={handleReextract} disabled={reextracting}>
                 {reextracting ? 'Re-extracting...' : 'Re-extract'}
@@ -724,7 +765,7 @@ export default function ExtractionPreview() {
             </div>
           }
         >
-          {!docCollapsed && (
+          {!docCollapsed && profile && (
           <div style={{ padding: '4px 18px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px 24px' }}>
               {docRows.map(({ label, value, wide }) => (
@@ -755,6 +796,7 @@ export default function ExtractionPreview() {
         </Card>
 
         <Card
+          style={activeUnrecog.length > 0 ? { borderLeft: '3px solid var(--danger)' } : undefined}
           title="Canonical Field Mapping"
           subtitle={`${fieldMap.length} columns matched · ${activeUnrecog.length > 0 ? `${activeUnrecog.length} unmatched — action required` : 'all matched'}`}
           action={<div style={{ display: 'flex', gap: 8 }}><Button variant="secondary" size="sm" onClick={() => navigate('field-mapping')}>⚙ Field Mapping Dictionary</Button><CollapseBtn collapsed={mapCollapsed} onToggle={() => setMapCollapsed(v => !v)} /></div>}
@@ -786,7 +828,13 @@ export default function ExtractionPreview() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead><tr style={{ background: '#fff5f5' }}>{['Extracted Column','Reason','Map To',''].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--danger)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {activeUnrecog.map(col => (
+                  {activeUnrecog.map(col => {
+                    const siblingMapped = new Set(
+                      activeUnrecog
+                        .filter(c => c.extracted !== col.extracted && c.suggestedCanonical)
+                        .map(c => c.suggestedCanonical),
+                    )
+                    return (
                     <tr key={col.extracted} style={{ background: '#fff8f8' }}>
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{col.extracted}</td>
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11 }}>{col.reason}</td>
@@ -798,6 +846,7 @@ export default function ExtractionPreview() {
                               which the agent reports for display/cross-check. The remap endpoint
                               handles derived targets, so they must not be filtered out here. */}
                           {(canonicals as Array<{ value: string; label: string; extractable?: boolean }>)
+                            .filter(f => !mappedCanonicals.has(f.value) && !siblingMapped.has(f.value))
                             .map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                         </select>
                       </td>
@@ -808,12 +857,23 @@ export default function ExtractionPreview() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </Card>
+
+        {activeUnrecog.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: 'var(--danger-lt)', border: '1px solid rgba(185,28,28,.25)', borderRadius: 6, fontSize: 12, color: 'var(--danger)' }}>
+            <span style={{ fontSize: 16, lineHeight: 1.3, flexShrink: 0 }}>⚠</span>
+            <span>
+              <strong>{activeUnrecog.length} unmatched column{activeUnrecog.length !== 1 ? 's' : ''}</strong> must be mapped to a canonical field or discarded before LP matching can run.
+              Use the <strong>Canonical Field Mapping</strong> section above to resolve each one.
+            </span>
+          </div>
+        )}
 
         {/* LP data table + Field Detail overlay */}
         <div>
@@ -824,25 +884,26 @@ export default function ExtractionPreview() {
                 ? `Row #${selectedLP.id} selected`
                 : 'Click any row to review extracted fields'
             }
-            action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
+            action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0} title={activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
           >
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
             <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
-              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: gridMinWidth }}>
+              <table className="data-table" style={{ tableLayout: 'fixed', minWidth: gridMinWidth, width: gridMinWidth }}>
                 <thead>
                   <tr>
-                    {gridColumns.map(col => (
+                    {visibleGridColumns.map(col => (
                       <SortableHeader
                         key={col.key}
                         sortKey={col.key}
                         sort={sort}
                         onSort={requestSort}
                         className={col.align === 'right' ? 'num' : ''}
-                        style={{ ...HDR, width: col.width, textAlign: col.align }}
-                        title={col.group ? `${col.group} - ${col.canonical}` : col.canonical}
+                        style={{ ...HDR, width: epWidths[col.key] ?? col.width, textAlign: col.align }}
+                        title={col.canonical}
+                        onResizeStart={epResizeStart}
                       >
-                        {col.canonical}
+                        {col.label ?? col.canonical}
                       </SortableHeader>
                     ))}
                   </tr>
@@ -855,12 +916,14 @@ export default function ExtractionPreview() {
                       onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {gridColumns.map(col => (
+                      {visibleGridColumns.map(col => (
                         <td key={col.key} style={gridCellStyle(r, col)}>
                           {col.canonical === 'Investor Name' ? (
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>
                               {r.name}{r.transferee ? <TransfereeMark /> : null}
                             </div>
+                          ) : col.canonical === 'Parent' ? (
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.parent ?? ''}>{r.parent ?? '—'}</div>
                           ) : gridValue(r, col, compact)}
                         </td>
                       ))}
@@ -877,6 +940,7 @@ export default function ExtractionPreview() {
                     onClose={() => setSelectedLPId(null)}
                     onDiscard={id => setDiscardConfirmId(id)}
                     fieldMap={fieldMap}
+                    overlay
                     compact={compact}
                   />
                 </DraggablePanel>
@@ -890,7 +954,10 @@ export default function ExtractionPreview() {
                   {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
                 </select>
                 {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
-                <Button size="sm" onClick={handleConfirm} disabled={confirmed}>{confirmed ? 'Running...' : 'Confirm & Run LP Matching'}</Button>
+                {activeUnrecog.length > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>⚠ {activeUnrecog.length} unmatched — resolve above</span>
+                )}
+                <Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0} title={activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running...' : 'Confirm & Run LP Matching'}</Button>
               </div>
             </div>
           </Card>

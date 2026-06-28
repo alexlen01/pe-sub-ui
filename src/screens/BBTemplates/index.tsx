@@ -5,6 +5,7 @@ import Modal   from '../../components/ui/Modal'
 import { useApp } from '../../context/AppContext'
 import { api } from '../../services/api'
 import type { BbTemplate, BbTemplateInput, BbTemplateTabInput } from '../../services/api'
+import { refreshTemplateService } from '../../services/templateService'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ function TemplateFormModal({
             <div style={row}>
               <div style={field()}>
                 <span style={label}>Template Name *</span>
-                <input style={inp()} value={form.templateName} onChange={e => set('templateName', e.target.value)} placeholder="e.g. Blue Owl GP Stakes V / Wells Fargo" />
+                <input style={inp()} value={form.templateName} onChange={e => set('templateName', e.target.value)} placeholder="e.g. Wells Fargo (Blue Owl GP Stakes V)" />
               </div>
               <div style={field('110px')}>
                 <span style={label}>Class</span>
@@ -420,6 +421,7 @@ export default function BBTemplates() {
     const created = await api.bbTemplates.create(toRequest(form))
     setTemplates(prev => [...prev, created])
     toast(`Template "${created.templateName}" (Class ${created.templateClass}) registered.`)
+    refreshTemplateService()
   }
 
   const handleEdit = async (form: FormState) => {
@@ -427,6 +429,7 @@ export default function BBTemplates() {
     const updated = await api.bbTemplates.update(editTarget.id, toRequest(form))
     setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t))
     toast(`Template "${updated.templateName}" updated.`)
+    refreshTemplateService()
   }
 
   const handleDelete = async () => {
@@ -434,6 +437,7 @@ export default function BBTemplates() {
     await api.bbTemplates.remove(deleteTarget.id)
     setTemplates(prev => prev.filter(t => t.id !== deleteTarget.id))
     toast(`Template "${deleteTarget.templateName}" removed.`)
+    refreshTemplateService()
   }
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -445,6 +449,7 @@ export default function BBTemplates() {
       const imported = await api.bbTemplates.import(file)
       setTemplates(prev => [...prev, imported])
       toast(`Template "${imported.templateName}" (Class ${imported.templateClass}) imported from Excel.`)
+      refreshTemplateService()
     } catch (err) {
       toast(`Import failed: ${String(err)}`)
     } finally {

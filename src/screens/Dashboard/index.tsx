@@ -45,6 +45,7 @@ const CLS_COLORS: Record<string, string> = {
   'Unrated NAV > $1Bn':        '#767676',
   'Corp Pension > $5Bn Assets': '#005BBB',
   'Other Institutional':        '#007A38',
+  'Included (PWM)':             '#7B2D8B',
   'Excluded':                   '#C8C8C8',
   // Legacy LP classification (CLS_OPTS) — still present in LP Master records
   // that haven't been run through the Shadow BB workflow
@@ -55,7 +56,7 @@ const CLS_COLORS: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, screen } = useApp()
+  const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility, screen } = useApp()
   const [facilities,       setFacilities]       = useState<FacilityRow[]>([])
   const [selectedFacility, setSelectedFacility] = useState<FacilityRow | null>(null)
   const [statusFilter,     setStatusFilter]     = useState('All')
@@ -230,7 +231,7 @@ export default function Dashboard() {
               ) : null
 
               const cta = f?.status === 'Active' ? (
-                <Button size="sm" variant="action" onClick={() => navigate('shadow-bb')}>View Shadow BB ›</Button>
+                <Button size="sm" variant="action" onClick={() => { setTargetFacility(f.name); navigate('shadow-bb') }}>View Shadow BB ›</Button>
               ) : f?.status === 'Needs Review' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)
