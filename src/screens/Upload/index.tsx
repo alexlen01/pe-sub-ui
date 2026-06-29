@@ -40,6 +40,18 @@ const SUBMISSION_STATUS_ITEMS = [
   { label: 'Error',      desc: 'Extraction failed — pe-sub-extraction was unreachable. Re-upload to retry.' },
 ]
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+async function waitForExtraction(submissionId: number, timeoutMs = 120_000) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    const sub = await api.submissions.get(submissionId)
+    if (sub.status === 'Review' || sub.status === 'Processed' || sub.status === 'Error') return sub
+    await sleep(1_500)
+  }
+  throw new Error('Extraction is still processing. Please open the submission from history in a moment.')
+}
+
 // ── Submission Detail Panel ───────────────────────────────────────────────────
 
 function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: SubmissionRow; onClose: () => void; navigate: (screen: string) => void; onAbort: (sub: SubmissionRow) => void }) {
@@ -187,7 +199,7 @@ function NewFacilityModal({ open, onClose, onSave, existingNames, defaultAgentBa
           <input
             type="text"
             style={{ width: '100%' }}
-            placeholder="e.g. Goldman Sachs Bank USA"
+            placeholder="Enter the agent bank name"
             value={agentBank}
             onChange={e => { setAgentBank(e.target.value); setError('') }}
           />
@@ -339,19 +351,23 @@ export default function Upload() {
     toast(`Uploading ${file.name} for ${facility}…`)
     try {
       const sub = await api.submissions.create(facilityId, agentBank, subDate, file, notes, forceTemplate || undefined)
-      if (sub.status === 'Error') {
+      toast('Upload accepted. Extracting LP records…')
+      const ready = sub.status === 'Review' || sub.status === 'Processed' || sub.status === 'Error'
+        ? sub
+        : await waitForExtraction(sub.id)
+      if (ready.status === 'Error') {
         setProcessing(false)
         setError('Extraction failed — ensure pe-sub-extraction is running and try again.')
         return
       }
       setActiveSubmission(facility)
-      setActiveSubmissionId(sub.id)
+      setActiveSubmissionId(ready.id)
       setActiveFacilityId(facilityId)
       toast('Upload complete. Please review extracted records before matching.')
       navigate('extraction-preview')
-    } catch {
+    } catch (e) {
       setProcessing(false)
-      setError('Upload failed — ensure pe-sub-api is running and try again.')
+      setError(e instanceof Error ? e.message : 'Upload failed — ensure pe-sub-api is running and try again.')
     }
   }
 

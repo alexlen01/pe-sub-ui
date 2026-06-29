@@ -17,15 +17,19 @@ interface BbTabApi {
   tabRole: string
   tabSort: number
   sheetName: string
+  sleeveName: string | null
   headerRowIndex: number | null
   headerRowSpan: number
   skipRowKeywords: string[]
+  columns: string[]
   groups: BbGroupApi[]
 }
 
 interface BbTemplateApi {
   id: number
+  templateSlug: string | null
   templateName: string
+  agentName: string | null
   templateClass: string
   sheetName: string
   headerRowIndex: number | null
@@ -33,7 +37,14 @@ interface BbTemplateApi {
   trancheCount: number
   hasGroupingRows: boolean
   hasColorFlags: boolean
+  autoDiscoverTabs: boolean
   summaryRowsAboveHeader: number
+  summaryRowRange: string | null
+  titleRow: number | null
+  titleText: string | null
+  detectKeys: string[]
+  legend: TemplateLegendRule[]
+  notes: string[]
   createdAt: string
   updatedAt: string
   tabs: BbTabApi[]
@@ -99,7 +110,7 @@ const EMPTY_PROFILE: TemplateProfile = {
 
 function adaptTemplate(dto: BbTemplateApi): TemplateProfile {
   const mainTab = dto.tabs.find(t => t.tabSort === 1) ?? dto.tabs[0]
-  const isMulti = dto.trancheCount > 1 || dto.tabs.length > 1
+  const isMulti = dto.autoDiscoverTabs || dto.trancheCount > 1 || dto.tabs.length > 1
   const tabLabel = mainTab?.sheetName ?? dto.sheetName
   const hRow = mainTab?.headerRowIndex ?? dto.headerRowIndex ?? 1
   const span = mainTab?.headerRowSpan ?? 1
@@ -107,23 +118,22 @@ function adaptTemplate(dto: BbTemplateApi): TemplateProfile {
   const groupHeaders = [...(mainTab?.groups ?? [])]
     .sort((a, b) => a.groupSort - b.groupSort)
     .map(g => g.headerText)
-  const summaryAbove = dto.summaryRowsAboveHeader
-  const summaryRows = summaryAbove > 0 ? `1-${summaryAbove}` : null
-  const legend: TemplateLegendRule[] | null = dto.hasColorFlags
-    ? [{ style: 'Cell formatting', meaning: 'Color-coded LP status flags — see template documentation' }]
-    : null
+  const summaryRows = dto.summaryRowRange
+    ?? (dto.summaryRowsAboveHeader > 0 ? `1-${dto.summaryRowsAboveHeader}` : null)
+  const legend: TemplateLegendRule[] | null = dto.legend.length > 0 ? dto.legend : null
 
   return {
     id: String(dto.id),
     fund: dto.templateName,
     workbook: { tabs: isMulti ? 'multiple' : 'single', tabLabel },
-    title: { row: 1, text: dto.templateName },
+    title: { row: dto.titleRow ?? 1, text: dto.titleText ?? dto.templateName },
     summaryRows,
     headerRow,
     groupHeaders,
-    columns: [],
+    columns: mainTab?.columns ?? [],
     legend,
-    notes: [],
+    notes: dto.notes,
+    detectKeys: dto.detectKeys,
   }
 }
 

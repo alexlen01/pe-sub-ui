@@ -26,15 +26,17 @@ const LP_CLASSIFICATIONS = [
 
 const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 'Sum', 'Net Total']
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+const SAMPLE_TEMPLATE_LINKS = [
+  ['KKR Ascendant', '/samples/bb-templates/BB-Template-Import-kkr-ascendant.xlsx'],
+  ['GS Blue Owl', '/samples/bb-templates/BB-Template-Import-gs-blue-owl.xlsx'],
+  ['Audax VII', '/samples/bb-templates/BB-Template-Import-audax-vii.xlsx'],
+  ['CCP VII Lev', '/samples/bb-templates/BB-Template-Import-ccp-vii-lev.xlsx'],
+  ['Carlyle CP VII', '/samples/bb-templates/BB-Template-Import-cp-vii.xlsx'],
+  ['AEP VII', '/samples/bb-templates/BB-Template-Import-aep-vii.xlsx'],
+  ['Petershill IV', '/samples/bb-templates/BB-Template-Import-petershill-iv.xlsx'],
+] as const
 
-const TH: React.CSSProperties = {
-  padding: '6px 10px', color: 'var(--navy)', borderBottom: '1px solid var(--border)',
-  fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em',
-}
-const TD: React.CSSProperties = {
-  padding: '7px 10px', borderBottom: '1px solid var(--border)', fontSize: 12, verticalAlign: 'middle',
-}
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const inp = (w?: number | string): React.CSSProperties => ({
   width: w ?? '100%', border: '1px solid var(--border)', borderRadius: 4,
@@ -49,12 +51,27 @@ const field = (w?: string): React.CSSProperties => ({
 })
 const row: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-end' }
 
+const detailHeading: React.CSSProperties = {
+  fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: 11,
+  textTransform: 'uppercase', letterSpacing: '0.04em',
+}
+const detailSubHeading: React.CSSProperties = {
+  fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
+  letterSpacing: '0.04em', marginBottom: 4,
+}
+const chip: React.CSSProperties = {
+  background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 10,
+  padding: '1px 8px', fontSize: 10, fontFamily: 'monospace',
+}
+
 // ── Form state ────────────────────────────────────────────────────────────────
 
 interface GroupRow { groupSort: number; headerText: string; classification: string }
 
 interface FormState {
+  templateSlug:           string
   templateName:           string
+  agentName:              string
   templateClass:          string
   sheetName:              string
   headerRowIndex:         string
@@ -62,22 +79,25 @@ interface FormState {
   trancheCount:           string
   hasGroupingRows:        boolean
   hasColorFlags:          boolean
+  autoDiscoverTabs:       boolean
   summaryRowsAboveHeader: string
+  detectKeys:             string   // comma-separated
   // single LP_GRID tab
   tabSheetName:       string
   tabHeaderRowIndex:  string
   tabHeaderRowSpan:   string
   tabSkipKeywords:    string
+  tabColumns:         string       // comma-separated
   groups:             GroupRow[]
 }
 
 function emptyForm(): FormState {
   return {
-    templateName: '', templateClass: 'A', sheetName: '', headerRowIndex: '',
-    autoLearned: false, trancheCount: '1', hasGroupingRows: false, hasColorFlags: false,
-    summaryRowsAboveHeader: '0',
+    templateSlug: '', templateName: '', agentName: '', templateClass: 'A', sheetName: '', headerRowIndex: '',
+    autoLearned: false, trancheCount: '1', hasGroupingRows: false, hasColorFlags: false, autoDiscoverTabs: false,
+    summaryRowsAboveHeader: '0', detectKeys: '',
     tabSheetName: '', tabHeaderRowIndex: '', tabHeaderRowSpan: '1',
-    tabSkipKeywords: DEFAULT_SKIP_KEYWORDS.join(','),
+    tabSkipKeywords: DEFAULT_SKIP_KEYWORDS.join(','), tabColumns: '',
     groups: [],
   }
 }
@@ -85,7 +105,9 @@ function emptyForm(): FormState {
 function fromTemplate(t: BbTemplate): FormState {
   const lpGrid = t.tabs.find(tb => tb.tabRole === 'LP_GRID')
   return {
+    templateSlug:           t.templateSlug ?? '',
     templateName:           t.templateName,
+    agentName:              t.agentName ?? '',
     templateClass:          t.templateClass,
     sheetName:              t.sheetName ?? '',
     headerRowIndex:         t.headerRowIndex != null ? String(t.headerRowIndex) : '',
@@ -93,31 +115,39 @@ function fromTemplate(t: BbTemplate): FormState {
     trancheCount:           String(t.trancheCount),
     hasGroupingRows:        t.hasGroupingRows,
     hasColorFlags:          t.hasColorFlags,
+    autoDiscoverTabs:       t.autoDiscoverTabs,
     summaryRowsAboveHeader: String(t.summaryRowsAboveHeader),
+    detectKeys:             t.detectKeys.join(', '),
     tabSheetName:       lpGrid?.sheetName ?? '',
     tabHeaderRowIndex:  lpGrid?.headerRowIndex != null ? String(lpGrid.headerRowIndex) : '',
     tabHeaderRowSpan:   String(lpGrid?.headerRowSpan ?? 1),
     tabSkipKeywords:    lpGrid?.skipRowKeywords?.join(',') ?? '',
-    groups:             (lpGrid?.groups ?? []).map(g => ({ ...g })),
+    tabColumns:         lpGrid?.columns?.join(', ') ?? '',
+    groups:             (lpGrid?.groups ?? []).map(g => ({ groupSort: g.groupSort, headerText: g.headerText, classification: g.classification })),
   }
 }
 
-function toRequest(f: FormState): BbTemplateInput {
-  const skipKeywords = f.tabSkipKeywords
-    .split(',').map(s => s.trim()).filter(Boolean)
+function splitList(raw: string): string[] {
+  return raw.split(',').map(s => s.trim()).filter(Boolean)
+}
 
+function toRequest(f: FormState): BbTemplateInput {
   const tab: BbTemplateTabInput = {
     tabRole:        'LP_GRID',
     tabSort:        1,
     sheetName:      f.tabSheetName.trim() || null,
+    sleeveName:     null,
     headerRowIndex: f.tabHeaderRowIndex ? parseInt(f.tabHeaderRowIndex) : null,
     headerRowSpan:  parseInt(f.tabHeaderRowSpan) || 1,
-    skipRowKeywords: skipKeywords,
+    skipRowKeywords: splitList(f.tabSkipKeywords),
+    columns:        splitList(f.tabColumns),
     groups: f.groups.map(g => ({ groupSort: g.groupSort, headerText: g.headerText, classification: g.classification })),
   }
 
   return {
+    templateSlug:           f.templateSlug.trim() || null,
     templateName:           f.templateName.trim(),
+    agentName:              f.agentName.trim() || null,
     templateClass:          f.templateClass,
     sheetName:              f.sheetName.trim() || null,
     headerRowIndex:         f.headerRowIndex ? parseInt(f.headerRowIndex) : null,
@@ -125,7 +155,14 @@ function toRequest(f: FormState): BbTemplateInput {
     trancheCount:           parseInt(f.trancheCount) || 1,
     hasGroupingRows:        f.hasGroupingRows,
     hasColorFlags:          f.hasColorFlags,
+    autoDiscoverTabs:       f.autoDiscoverTabs,
     summaryRowsAboveHeader: parseInt(f.summaryRowsAboveHeader) || 0,
+    summaryRowRange:        null,
+    titleRow:               null,
+    titleText:              null,
+    detectKeys:             splitList(f.detectKeys),
+    legend:                 [],
+    notes:                  [],
     tabs:                   [tab],
   }
 }
@@ -201,7 +238,7 @@ function TemplateFormModal({
             <div style={row}>
               <div style={field()}>
                 <span style={label}>Template Name *</span>
-                <input style={inp()} value={form.templateName} onChange={e => set('templateName', e.target.value)} placeholder="e.g. Wells Fargo (Blue Owl GP Stakes V)" />
+                <input style={inp()} value={form.templateName} onChange={e => set('templateName', e.target.value)} placeholder="Template ID (e.g. agent-fund-slug)" />
               </div>
               <div style={field('110px')}>
                 <span style={label}>Class</span>
@@ -212,6 +249,22 @@ function TemplateFormModal({
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -6 }}>
               {CLASS_OPTIONS.find(o => o.value === form.templateClass)?.label}
+            </div>
+
+            <div style={row}>
+              <div style={field()}>
+                <span style={label}>Template ID (slug)</span>
+                <input style={inp()} value={form.templateSlug} onChange={e => set('templateSlug', e.target.value)} placeholder="e.g. agent-fund-slug (auto-versioned if taken)" />
+              </div>
+              <div style={field()}>
+                <span style={label}>Agent Bank</span>
+                <input style={inp()} value={form.agentName} onChange={e => set('agentName', e.target.value)} placeholder="agent bank name" />
+              </div>
+            </div>
+
+            <div style={field()}>
+              <span style={label}>Detect Keys (comma-separated)</span>
+              <input style={inp()} value={form.detectKeys} onChange={e => set('detectKeys', e.target.value)} placeholder="filename / fund keywords used for recognition" />
             </div>
 
             <div style={row}>
@@ -247,6 +300,10 @@ function TemplateFormModal({
                   <input type="checkbox" checked={form.autoLearned} onChange={e => set('autoLearned', e.target.checked)} />
                   Auto-Learned
                 </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.autoDiscoverTabs} onChange={e => set('autoDiscoverTabs', e.target.checked)} />
+                  Auto-Discover Tabs
+                </label>
               </div>
             </div>
           </div>
@@ -275,6 +332,10 @@ function TemplateFormModal({
             <div style={field()}>
               <span style={label}>Skip Row Keywords (comma-separated)</span>
               <input style={inp()} value={form.tabSkipKeywords} onChange={e => set('tabSkipKeywords', e.target.value)} />
+            </div>
+            <div style={field()}>
+              <span style={label}>Expected Columns (comma-separated, in order)</span>
+              <input style={inp()} value={form.tabColumns} onChange={e => set('tabColumns', e.target.value)} placeholder="Investor, Commitment, Unfunded Commitment, …" />
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>For multi-tab workbooks (e.g. multiple tranches), configure via Excel Upload — this form creates one LP_GRID tab.</div>
           </div>
@@ -379,10 +440,44 @@ function DeleteModal({ template, onClose, onConfirm }: {
   )
 }
 
-// ── Date formatter ────────────────────────────────────────────────────────────
+function lpGridTabs(t: BbTemplate) {
+  return t.tabs.filter(tab => tab.tabRole === 'LP_GRID')
+}
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+function primaryLpGrid(t: BbTemplate) {
+  return lpGridTabs(t)[0]
+}
+
+function workbookTabsLabel(t: BbTemplate): string {
+  const tabs = lpGridTabs(t)
+  if (t.autoDiscoverTabs || tabs.length > 1) return 'multiple'
+  return 'single'
+}
+
+function tabLabel(t: BbTemplate): string {
+  const tabs = lpGridTabs(t)
+  if (t.autoDiscoverTabs) return 'Auto-discover'
+  if (tabs.length > 1) {
+    return tabs.map(tab => tab.sheetName ?? tab.sleeveName).filter(Boolean).join(', ') || 'Multiple LP tabs'
+  }
+  return tabs[0]?.sheetName ?? t.sheetName ?? '—'
+}
+
+function headerRowLabel(t: BbTemplate): string {
+  const row = primaryLpGrid(t)?.headerRowIndex ?? t.headerRowIndex
+  return row != null ? String(row) : '—'
+}
+
+function headerCount(t: BbTemplate): number {
+  return primaryLpGrid(t)?.columns.length ?? 0
+}
+
+function groupCount(t: BbTemplate): number {
+  return lpGridTabs(t).reduce((total, tab) => total + tab.groups.length, 0)
+}
+
+function firstNote(t: BbTemplate): string {
+  return t.notes.find(n => n.trim()) ?? '—'
 }
 
 // ── Class badge ───────────────────────────────────────────────────────────────
@@ -505,77 +600,98 @@ export default function BBTemplates() {
       >
         {templates.length === 0 ? (
           <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            No templates registered. Add one using the buttons above, or run the Flyway migrations to seed the bundled templates.
+            No templates registered. Use “↑ Upload Template” to import a BB-Template-Import workbook, or “+ Add Template” to define one manually.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--tbl)' }}>
-                <th style={{ ...TH, textAlign: 'left' }}>Template Name</th>
-                <th style={{ ...TH, textAlign: 'center', width: 180 }}>Class</th>
-                <th style={{ ...TH, textAlign: 'left', width: 180 }}>Sheet Name</th>
-                <th style={{ ...TH, textAlign: 'right', width: 100 }}>Header Row</th>
-                <th style={{ ...TH, textAlign: 'right', width: 105 }}>Tranches</th>
-                <th style={{ ...TH, textAlign: 'center', width: 85 }}>Groups</th>
-                <th style={{ ...TH, textAlign: 'center', width: 95 }}>Colours</th>
-                <th style={{ ...TH, textAlign: 'left', width: 120 }}>Created</th>
-                <th style={{ ...TH, textAlign: 'left', width: 120 }}>Updated</th>
-                <th style={{ ...TH, width: 110 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {templates.map(t => {
-                const lpGrid = t.tabs.find(tb => tb.tabRole === 'LP_GRID')
-                const groupCount = lpGrid?.groups.length ?? 0
-                const isOpen = expanded === t.id
+          <>
+            <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--border)', background: 'var(--tbl)', fontSize: 11, color: 'var(--muted)' }}>
+              <span style={{ fontWeight: 600, color: 'var(--navy)', marginRight: 8 }}>Sample templates:</span>
+              {SAMPLE_TEMPLATE_LINKS.map(([label, href], i) => (
+                <React.Fragment key={href}>
+                  {i > 0 && <span style={{ margin: '0 6px', color: 'var(--border)' }}>|</span>}
+                  <a href={href} download style={{ color: 'var(--red)', fontWeight: 600, textDecoration: 'none' }}>{label}</a>
+                </React.Fragment>
+              ))}
+            </div>
+            <div className="data-table-wrap" style={{ padding: '0 0 4px', scrollbarGutter: 'stable' }}>
+              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 1120 }}>
+                <colgroup>
+                  <col style={{ width: 150 }} />
+                  <col style={{ width: 160 }} />
+                  <col style={{ width: 70 }} />
+                  <col style={{ width: 95 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 100 }} />
+                  <col style={{ width: 70 }} />
+                  <col style={{ width: 80 }} />
+                  <col />
+                  <col style={{ width: 150 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Template ID</th>
+                    <th>Agent / Fund</th>
+                    <th>Class</th>
+                    <th>Workbook Tabs</th>
+                    <th>Tab Label</th>
+                    <th>Header Row</th>
+                    <th style={{ textAlign: 'right' }}># Hdrs</th>
+                    <th style={{ textAlign: 'right' }}>Groups</th>
+                    <th>Notes</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {templates.map(t => {
+                    const isOpen = expanded === t.id
+                    const groups = groupCount(t)
+                    return (
+                      <React.Fragment key={t.id}>
+                        <tr
+                          className={isOpen ? 'data-table-row-selected' : undefined}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setExpanded(prev => prev === t.id ? null : t.id)}
+                        >
+                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ marginRight: 6, fontSize: 10, color: 'var(--muted)', userSelect: 'none' }}>
+                              {isOpen ? '▾' : '▸'}
+                            </span>
+                            <strong style={{ fontFamily: 'monospace' }}>{t.templateSlug ?? t.templateName}</strong>
+                          </td>
+                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.agentName ?? t.templateName}</td>
+                          <td><ClassBadge cls={t.templateClass} /></td>
+                          <td>{workbookTabsLabel(t)}</td>
+                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(t)}</td>
+                          <td style={{ fontFamily: 'monospace' }}>{headerRowLabel(t)}</td>
+                          <td style={{ textAlign: 'right' }}>{headerCount(t) || '—'}</td>
+                          <td style={{ textAlign: 'right', color: groups > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groups > 0 ? 600 : 400 }}>
+                            {groups || '—'}
+                          </td>
+                          <td style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {firstNote(t)}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                              <Button size="sm" variant="secondary" disabled={mutationDisabled} onClick={() => setEditTarget(t)}>Edit</Button>
+                              <Button size="sm" variant="danger" disabled={mutationDisabled} onClick={() => setDeleteTarget(t)}>Delete</Button>
+                            </div>
+                          </td>
+                        </tr>
 
-                return (
-                  <React.Fragment key={t.id}>
-                    <tr
-                      className={isOpen ? 'data-table-row-selected' : undefined}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => setExpanded(prev => prev === t.id ? null : t.id)}
-                    >
-                      <td style={{ ...TD, fontWeight: 600 }}>
-                        <span style={{ marginRight: 6, fontSize: 10, color: 'var(--muted)', userSelect: 'none' }}>
-                          {isOpen ? '▾' : '▸'}
-                        </span>
-                        {t.templateName}
-                      </td>
-                      <td style={{ ...TD, textAlign: 'center' }}>
-                        <ClassBadge cls={t.templateClass} />
-                      </td>
-                      <td style={{ ...TD, fontFamily: 'monospace', fontSize: 11 }}>{t.sheetName ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                      <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace' }}>{t.headerRowIndex ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{t.trancheCount}</td>
-                      <td style={{ ...TD, textAlign: 'center', color: groupCount > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groupCount > 0 ? 600 : 400 }}>
-                        {groupCount > 0 ? groupCount : '—'}
-                      </td>
-                      <td style={{ ...TD, textAlign: 'center' }}>
-                        {t.hasColorFlags ? <span style={{ color: '#e65100', fontSize: 11, fontWeight: 700 }}>Yes</span> : <span style={{ color: 'var(--muted)' }}>—</span>}
-                      </td>
-                      <td style={{ ...TD, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(t.createdAt)}</td>
-                      <td style={{ ...TD, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(t.updatedAt)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-                          <Button size="sm" variant="secondary" disabled={mutationDisabled} onClick={() => setEditTarget(t)}>Edit</Button>
-                          <Button size="sm" variant="danger" disabled={mutationDisabled} onClick={() => setDeleteTarget(t)}>Remove</Button>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={10} style={{ background: 'var(--hover)', padding: '10px 24px 14px 36px', borderBottom: '1px solid var(--border)' }}>
-                          <TemplateDetail template={t} />
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </tbody>
-          </table>
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={10} style={{ background: 'var(--hover)', padding: '10px 24px 14px 36px', borderBottom: '1px solid var(--border)' }}>
+                              <TemplateDetail template={t} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
@@ -612,22 +728,52 @@ export default function BBTemplates() {
 // ── Expanded row detail panel ─────────────────────────────────────────────────
 
 function TemplateDetail({ template }: { template: BbTemplate }) {
+  const summary = template.summaryRowRange
+    ?? (template.summaryRowsAboveHeader > 0 ? `1-${template.summaryRowsAboveHeader}` : '—')
+  const recognition: ReadonlyArray<readonly [string, string]> = [
+    ['Template ID',  template.templateSlug ?? '—'],
+    ['Agent Bank',   template.agentName ?? '—'],
+    ['Title',        template.titleText ? `Row ${template.titleRow ?? '?'} · "${template.titleText}"` : '—'],
+    ['Auto-Discover', template.autoDiscoverTabs ? 'Yes' : 'No'],
+    ['Summary Rows', summary],
+  ]
+  const flags: ReadonlyArray<readonly [string, boolean | number]> = [
+    ['Has Grouping Rows', template.hasGroupingRows],
+    ['Has Colour Flags',  template.hasColorFlags],
+    ['Auto-Learned',      template.autoLearned],
+    ['Tranche Count',     template.trancheCount],
+  ]
   return (
     <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 12 }}>
 
+      {/* Recognition */}
+      <div>
+        <div style={detailHeading}>Recognition</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px' }}>
+          {recognition.map(([k, v]) => (
+            <React.Fragment key={k}>
+              <span style={{ color: 'var(--muted)' }}>{k}</span>
+              <span style={{ fontWeight: 600 }}>{v}</span>
+            </React.Fragment>
+          ))}
+        </div>
+        {template.detectKeys.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={detailSubHeading}>Detect Keys</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 240 }}>
+              {template.detectKeys.map(k => <span key={k} style={chip}>{k}</span>)}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Flags */}
       <div>
-        <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Flags</div>
+        <div style={detailHeading}>Flags</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px' }}>
-          {[
-            ['Has Grouping Rows', template.hasGroupingRows],
-            ['Has Colour Flags', template.hasColorFlags],
-            ['Auto-Learned',     template.autoLearned],
-            ['Tranche Count',    template.trancheCount],
-            ['Summary Rows',     template.summaryRowsAboveHeader],
-          ].map(([k, v]) => (
-            <React.Fragment key={k as string}>
-              <span style={{ color: 'var(--muted)' }}>{k as string}</span>
+          {flags.map(([k, v]) => (
+            <React.Fragment key={k}>
+              <span style={{ color: 'var(--muted)' }}>{k}</span>
               <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
                 {typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v)}
               </span>
@@ -639,25 +785,32 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
       {/* Tabs */}
       {template.tabs.map(tab => (
         <div key={tab.id}>
-          <div style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            {tab.tabRole} Tab
-          </div>
+          <div style={detailHeading}>{tab.tabRole} Tab{tab.sleeveName ? ` · ${tab.sleeveName}` : ''}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px', marginBottom: 8 }}>
-            {[
+            {([
               ['Sheet',       tab.sheetName ?? '—'],
               ['Header Row',  tab.headerRowIndex ?? '—'],
               ['Header Span', tab.headerRowSpan],
-            ].map(([k, v]) => (
-              <React.Fragment key={k as string}>
-                <span style={{ color: 'var(--muted)' }}>{k as string}</span>
+            ] as ReadonlyArray<readonly [string, string | number]>).map(([k, v]) => (
+              <React.Fragment key={k}>
+                <span style={{ color: 'var(--muted)' }}>{k}</span>
                 <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{String(v)}</span>
               </React.Fragment>
             ))}
           </div>
 
+          {tab.columns.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={detailSubHeading}>Columns Extracted ({tab.columns.length})</div>
+              <ol style={{ margin: 0, paddingLeft: 18 }}>
+                {tab.columns.map((c, i) => <li key={`${c}-${i}`} style={{ fontSize: 11, padding: '1px 0' }}>{c}</li>)}
+              </ol>
+            </div>
+          )}
+
           {tab.groups.length > 0 && (
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>LP Category Groups</div>
+              <div style={detailSubHeading}>LP Category Groups</div>
               {tab.groups.map(g => (
                 <div key={g.id} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
                   <span style={{ color: 'var(--muted)', minWidth: 16, textAlign: 'right' }}>{g.groupSort}.</span>
@@ -669,6 +822,29 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
           )}
         </div>
       ))}
+
+      {/* Legend */}
+      {template.legend.length > 0 && (
+        <div>
+          <div style={detailHeading}>Cell Format Legend</div>
+          {template.legend.map((l, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
+              <span style={{ fontWeight: 600, minWidth: 90 }}>{l.style}</span>
+              <span style={{ color: 'var(--muted)' }}>{l.meaning}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Notes */}
+      {template.notes.length > 0 && (
+        <div style={{ maxWidth: 320 }}>
+          <div style={detailHeading}>Notes</div>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {template.notes.map((n, i) => <li key={i} style={{ fontSize: 11, padding: '1px 0', color: 'var(--muted)' }}>{n}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

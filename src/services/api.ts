@@ -214,29 +214,40 @@ export interface LpRate {
 export interface BbTemplateGroup {
   id: number; groupSort: number; headerText: string; classification: string
 }
+export interface TemplateLegendRule { style: string; meaning: string }
 export interface BbTemplateTab {
-  id: number; tabRole: string; tabSort: number; sheetName: string | null
+  id: number; tabRole: string; tabSort: number
+  sheetName: string | null; sleeveName: string | null
   headerRowIndex: number | null; headerRowSpan: number
-  skipRowKeywords: string[]; groups: BbTemplateGroup[]
+  skipRowKeywords: string[]; columns: string[]; groups: BbTemplateGroup[]
 }
 export interface BbTemplate {
-  id: number; templateName: string; templateClass: string
+  id: number; templateSlug: string | null; templateName: string; agentName: string | null
+  templateClass: string
   sheetName: string | null; headerRowIndex: number | null
   autoLearned: boolean; trancheCount: number
-  hasGroupingRows: boolean; hasColorFlags: boolean
-  summaryRowsAboveHeader: number; createdAt: string; updatedAt: string
+  hasGroupingRows: boolean; hasColorFlags: boolean; autoDiscoverTabs: boolean
+  summaryRowsAboveHeader: number; summaryRowRange: string | null
+  titleRow: number | null; titleText: string | null
+  detectKeys: string[]; legend: TemplateLegendRule[]; notes: string[]
+  createdAt: string; updatedAt: string
   tabs: BbTemplateTab[]
 }
 export interface BbTemplateGroupInput { groupSort: number; headerText: string; classification: string }
 export interface BbTemplateTabInput {
-  tabRole: string; tabSort: number; sheetName: string | null
+  tabRole: string; tabSort: number
+  sheetName: string | null; sleeveName: string | null
   headerRowIndex: number | null; headerRowSpan: number
-  skipRowKeywords: string[]; groups: BbTemplateGroupInput[]
+  skipRowKeywords: string[]; columns: string[]; groups: BbTemplateGroupInput[]
 }
 export interface BbTemplateInput {
-  templateName: string; templateClass: string; sheetName: string | null
+  templateSlug: string | null; templateName: string; agentName: string | null
+  templateClass: string; sheetName: string | null
   headerRowIndex: number | null; autoLearned: boolean; trancheCount: number
-  hasGroupingRows: boolean; hasColorFlags: boolean; summaryRowsAboveHeader: number
+  hasGroupingRows: boolean; hasColorFlags: boolean; autoDiscoverTabs: boolean
+  summaryRowsAboveHeader: number; summaryRowRange: string | null
+  titleRow: number | null; titleText: string | null
+  detectKeys: string[]; legend: TemplateLegendRule[]; notes: string[]
   tabs: BbTemplateTabInput[]
 }
 

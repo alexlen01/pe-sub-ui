@@ -83,7 +83,7 @@ function formatMoneyText(value: unknown): string {
 }
 
 const VERSION_HISTORY = [
-  { ts: '2026-05-27 10:45', user: 'J. Smith',  field: 'Classification',      before: 'Unrated >2bn', after: 'Rated',   note: 'Received S&P BB+ rating — confirmed with Goldman' },
+  { ts: '2026-05-27 10:45', user: 'J. Smith',  field: 'Classification',      before: 'Unrated >2bn', after: 'Rated',   note: 'Received S&P BB+ rating — confirmed with agent bank' },
   { ts: '2026-05-02 09:15', user: 'M. Patel',  field: 'Uncalled Capital',    before: '$31.2M',       after: '$28.4M',  note: 'Q1 2026 capital call processed' },
   { ts: '2026-04-14 11:04', user: 'L. Torres', field: 'AUM',                 before: '$3.9B',        after: '$4.2B',   note: 'Updated from Q1 2026 manager report' },
   { ts: '2025-12-31 08:00', user: 'System',    field: 'Included Flag',       before: 'N',            after: 'Y',       note: 'ERISA test passed — auto re-included' },
