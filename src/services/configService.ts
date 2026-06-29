@@ -1,31 +1,68 @@
-import { EVENT_TYPES, EVENT_TYPE_VARIANT, AUDIT_RETENTION_LABEL, DEFAULT_DATE_FROM, DEFAULT_DATE_TO } from '../config/auditConfig'
-import { WIZARD_STEPS, SNAPSHOT_OPTIONS, CALC_MODES } from '../config/wizardConfig'
-import { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS } from '../config/eligibilityConfig'
-import { REPORT_TABS, REPORT_SCHEDULES, CONCENTRATION_TESTS } from '../config/reportConfig'
 import { api } from './api'
+import type {
+  AuditConfig,
+  ClassificationConfig,
+  EligibilityConfig,
+  MatchingConfig,
+  ReportConfig,
+  WizardConfig,
+} from './api'
 
-const _localAuditCfg = { EVENT_TYPES, EVENT_TYPE_VARIANT, AUDIT_RETENTION_LABEL, DEFAULT_DATE_FROM, DEFAULT_DATE_TO }
+export type {
+  AuditConfig,
+  ClassificationConfig,
+  EligibilityConfig,
+  MatchingConfig,
+  ReportConfig,
+  WizardConfig,
+  RateTier,
+  EligRule,
+  ConcLimit,
+  GlobalSetting,
+} from './api'
 
-export async function getAuditConfig() {
-  return (await api.config.audit()) as typeof _localAuditCfg
+export const getAuditConfig = (): Promise<AuditConfig> => api.config.audit()
+export const getWizardConfig = (): Promise<WizardConfig> => api.config.wizard()
+export const getWizardSteps = async (): Promise<string[]> => (await getWizardConfig()).WIZARD_STEPS
+export const getEligibilityConfig = (): Promise<EligibilityConfig> => api.config.eligibility()
+export const getReportConfig = (): Promise<ReportConfig> => api.config.reports()
+export const getClassificationConfig = (): Promise<ClassificationConfig> => api.config.classification()
+export const getMatchingConfig = (): Promise<MatchingConfig> => api.config.matching()
+
+export function ubsClassFromAgentRate(
+  cfg: ClassificationConfig,
+  agentRatePct: number | '' | undefined,
+): string {
+  if (typeof agentRatePct !== 'number') return ''
+  if (agentRatePct <= 0) return 'Excluded'
+  const tiers = [...cfg.AGENT_RATE_UBS_TIERS].sort((a, b) => b.min - a.min)
+  return tiers.find(t => agentRatePct >= t.min)?.cls ?? 'Other Institutional'
 }
 
-export function getWizardSteps() { return WIZARD_STEPS }
-
-const _localWizardCfg = { WIZARD_STEPS, SNAPSHOT_OPTIONS, CALC_MODES }
-
-export async function getWizardConfig() {
-  return (await api.config.wizard()) as typeof _localWizardCfg
+export function ubsClassFromAgentCls(
+  cfg: ClassificationConfig,
+  agentCls: string | undefined,
+): string {
+  if (!agentCls) return ''
+  return cfg.AGENT_CLS_UBS_MAP[agentCls] ?? ''
 }
 
-const _localEligCfg = { BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS }
-
-export async function getEligibilityConfig(): Promise<typeof _localEligCfg> {
-  return (await api.config.eligibility()) as typeof _localEligCfg
+export function parseRatePct(raw: string | undefined | null): number {
+  if (!raw) return NaN
+  const n = parseFloat(String(raw).replace('%', '').trim())
+  if (!Number.isFinite(n)) return NaN
+  return n > 1 ? n / 100 : n
 }
 
-const _localRptCfg = { REPORT_TABS, REPORT_SCHEDULES, CONCENTRATION_TESTS }
-
-export async function getReportConfig() {
-  return (await api.config.reports()) as typeof _localRptCfg
+export function buildBusaRateFractions(cfg: ClassificationConfig): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [cls, pct] of Object.entries(cfg.BUSA_RATE_MAP)) {
+    const rate = parseRatePct(pct)
+    if (Number.isFinite(rate)) out[cls] = rate
+  }
+  for (const [cls, pct] of Object.entries(cfg.UBS_CLS_DEFAULT_RATE)) {
+    const rate = parseRatePct(pct)
+    if (Number.isFinite(rate)) out[cls] = rate
+  }
+  return out
 }

@@ -1,4 +1,3 @@
-import { LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, ABBREV_REGEX_MAP } from '../config/matchingConfig'
 import { api } from './api'
 
 export async function getMatchQueue(submissionId: number) {
@@ -12,9 +11,17 @@ export async function getMatchQueue(submissionId: number) {
 }
 
 export async function getMatchThresholds() {
-  return await api.matching.getThresholds()
+  return await api.config.matching()
 }
 
-export function getLegalSuffixes()      { return LEGAL_SUFFIXES }
-export function getKnownAbbreviations() { return KNOWN_ABBREVIATIONS }
-export function getAbbrevRegexMap()     { return ABBREV_REGEX_MAP }
+export async function getLegalSuffixes() {
+  return (await api.config.matching()).legalSuffixes
+}
+
+export async function getKnownAbbreviations() {
+  return (await api.config.matching()).knownAbbreviations
+}
+
+export async function getAbbrevRegexMap() {
+  return (await api.config.matching()).abbrevRegexMap ?? {}
+}

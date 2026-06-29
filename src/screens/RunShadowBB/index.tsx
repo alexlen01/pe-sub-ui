@@ -10,12 +10,16 @@ import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import DraggablePanel from '../../components/ui/DraggablePanel'
 import LPRecordPanel  from '../../components/ui/LPRecordPanel'
-import { WIZARD_STEPS } from '../../config/wizardConfig'
 import {
-  UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE, ubsClassFromAgentRate, ubsClassFromAgentCls,
-  SP_RATING_OPTS, MDY_RATING_OPTS,
-} from '../../config/classificationConfig'
-import { AGENT_TIERS } from '../../config/eligibilityConfig'
+  buildBusaRateFractions,
+  getClassificationConfig,
+  getEligibilityConfig,
+  getWizardConfig,
+  ubsClassFromAgentCls,
+  ubsClassFromAgentRate,
+  type ClassificationConfig,
+  type EligibilityConfig,
+} from '../../services/configService'
 import { computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
@@ -24,9 +28,6 @@ import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificati
 
 const DEFAULT_CL_M   = 25
 const DEFAULT_CL_PCT = 7.5
-const TYPE_OPTS = ['', 'Institutional', 'HNW'] as const
-const LP_SIZE_CRITERIA_OPTS = ['', 'AUM', 'NAV', 'Assets'] as const
-const AGENT_RATE_SCHEDULE_VALUES = AGENT_TIERS.map(({ cls }) => cls)
 export const SHADOW_BB_TABLE_WIDTH = 4145
 
 export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
@@ -75,8 +76,8 @@ export function ShadowBBTableHead({ sort, onSort, widths, onResizeStart }: Shado
         <SortableHeader sortKey="ucM"               sort={sort} onSort={onSort} className="num" style={{ width: w('ucM') }}           onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
         <SortableHeader sortKey="pctUncalled"       sort={sort} onSort={onSort} className="num" style={{ width: w('pctUncalled') }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
         <SortableHeader sortKey="pctCalled"         sort={sort} onSort={onSort} className="num" style={{ width: w('pctCalled') }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
-        <SortableHeader sortKey="agentRatePct"      sort={sort} onSort={onSort} className="num" style={{ width: w('agentRatePct') }}  onResizeStart={onResizeStart}>Agent Advance Base</SortableHeader>
-        <SortableHeader sortKey="ubsAdvRatePct"     sort={sort} onSort={onSort} className="num" style={{ width: w('ubsAdvRatePct') }} onResizeStart={onResizeStart}>UBS Advance Base</SortableHeader>
+        <SortableHeader sortKey="agentRatePct"      sort={sort} onSort={onSort} className="num" style={{ width: w('agentRatePct') }}  onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
+        <SortableHeader sortKey="ubsAdvRatePct"     sort={sort} onSort={onSort} className="num" style={{ width: w('ubsAdvRatePct') }} onResizeStart={onResizeStart}>UBS Advance Rate</SortableHeader>
         <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={onSort} className="num" style={{ width: w('agentConcLimitPct') }} onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
         <SortableHeader sortKey="concLimitPct"      sort={sort} onSort={onSort} className="num" style={{ width: w('concLimitPct') }}  onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
         <SortableHeader sortKey="agentExcess"       sort={sort} onSort={onSort} className="num" style={{ width: w('agentExcess') }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>
@@ -231,6 +232,9 @@ export default function RunShadowBB() {
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [containerWidth, setContainerWidth] = useState(Infinity)
+  const [wizardSteps, setWizardSteps] = useState<string[]>([])
+  const [classCfg, setClassCfg] = useState<ClassificationConfig | null>(null)
+  const [eligCfg, setEligCfg] = useState<EligibilityConfig | null>(null)
 
   useEffect(() => {
     const el = document.querySelector('.content') as HTMLElement | null
@@ -241,6 +245,17 @@ export default function RunShadowBB() {
   }, [])
 
   const compact = containerWidth < 1500
+  const busaRates = useMemo(() => classCfg ? buildBusaRateFractions(classCfg) : {}, [classCfg])
+
+  useEffect(() => {
+    Promise.all([getWizardConfig(), getClassificationConfig(), getEligibilityConfig()])
+      .then(([wizard, classification, eligibility]) => {
+        setWizardSteps(wizard.WIZARD_STEPS)
+        setClassCfg(classification)
+        setEligCfg(eligibility)
+      })
+      .catch(e => setLoadError(String(e)))
+  }, [])
 
   const handleAbort = async () => {
     if (activeSubmissionId != null) {
@@ -324,10 +339,36 @@ export default function RunShadowBB() {
     }
     const agentRatePct = parsePct(ext?.agentRate || lp.agentRate)
     const agentClsText = ext?.agentClass || lp.agentCls || ''
-    const isUbsCls = (UBS_CLS_OPTS as readonly string[]).includes(lp.cls ?? '')
+    if (!classCfg) {
+      return {
+        name: lp.name ?? lp._agentName ?? '',
+        parent: lp.parent ?? '',
+        spv: !!lp.spv,
+        type: lp.type ?? 'Institutional',
+        ig: !!lp.ig,
+        cls: '',
+        agentCls: agentClsText,
+        sp: toRating(ext?.sp, lp.sp),
+        mdy: toRating(ext?.moodys, lp.mdy),
+        fitch: toRating(ext?.fitch, lp.fitch),
+        lpSizeBil: ext?.lpSizeBil || lp.aum || lp.nav || lp.pension || ext?.aum || ext?.nav || '',
+        lpSizeCriteria: ext?.lpSizeCriteria || (lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : ''),
+        capCommit: ext?.commit || lp.capCommit || '',
+        ucM: ext?.uncalled || lp.uc || '',
+        ubsAdvRatePct: parsePct(lp.rate),
+        agentRatePct,
+        concLimitPct: parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
+        agentConcLimitPct: parsePct(ext?.agentConc || lp.agentConc),
+        inc: false,
+        notes: lp.notes ?? '',
+        region: lp.region ?? '',
+        fundSleeve: (lp as LPRecord).fundSleeve ?? ext?.fundSleeve ?? '',
+      }
+    }
+    const isUbsCls = classCfg.UBS_CLS_OPTS.includes(lp.cls ?? '')
     const cls = isUbsCls
       ? (lp.cls as string)
-      : (ubsClassFromAgentCls(agentClsText) || ubsClassFromAgentRate(agentRatePct))
+      : (ubsClassFromAgentCls(classCfg, agentClsText) || ubsClassFromAgentRate(classCfg, agentRatePct))
     return {
       name:              lp.name ?? lp._agentName ?? '',
       parent:            lp.parent ?? '',
@@ -344,7 +385,7 @@ export default function RunShadowBB() {
       capCommit:         ext?.commit || lp.capCommit || '',
       ucM:               ext?.uncalled || lp.uc || '',
       ubsAdvRatePct:     rate ? rate.ubsAdvRatePct * 100
-                              : (cls ? parsePct(UBS_CLS_DEFAULT_RATE[cls]) : '') || parsePct(lp.rate),
+                              : (cls ? parsePct(classCfg.UBS_CLS_DEFAULT_RATE[cls]) : '') || parsePct(lp.rate),
       agentRatePct,
       concLimitPct:      rate ? rate.ubsConcLimitPct * 100
                               : parsePct(lp.ubsConc) || DEFAULT_CL_PCT,
@@ -356,9 +397,7 @@ export default function RunShadowBB() {
     }
   }
 
-  const [overrides, setOverrides] = useState<Record<string, Override>>(() =>
-    Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)]))
-  )
+  const [overrides, setOverrides] = useState<Record<string, Override>>({})
 
   type FlashCol = 'highQuality' | 'ubsIncluded' | 'ubsBBCalc'
   type FlashTracker = Record<string, Partial<Record<FlashCol, number>>>
@@ -379,6 +418,7 @@ export default function RunShadowBB() {
       parent:            ov.parent || undefined,
       spv:               ov.spv,
       type:              ov.type || undefined,
+      region:            ov.region || undefined,
       ig:                ov.ig,
       cls:               ov.cls || undefined,
       agentCls:          ov.agentCls || undefined,
@@ -393,7 +433,7 @@ export default function RunShadowBB() {
       ubsConcLimitPct:   typeof ov.concLimitPct      === 'number' ? ov.concLimitPct      : undefined,
       agentConcLimitPct: typeof ov.agentConcLimitPct === 'number' ? ov.agentConcLimitPct : undefined,
       inc:               ov.inc,
-      notes:             ov.notes || undefined,
+      notes:             ov.notes ?? '',
     }
   }
 
@@ -519,9 +559,10 @@ export default function RunShadowBB() {
 
   useEffect(() => {
     if (savedOverridesApplied.current) return
+    if (!classCfg || !eligCfg) return
     setOverrides(Object.fromEntries(submissionLPs.map(lp => [lp._key, buildOverride(lp)])))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submissionLPs, lpRates])
+  }, [submissionLPs, lpRates, classCfg, eligCfg])
 
   useEffect(() => {
     if (savedOverridesApplied.current) return
@@ -679,7 +720,7 @@ export default function RunShadowBB() {
     }
     setRunning(true)
     setLoadError(null)
-    if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`)
+    if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`, 4000, 'warning')
     toast('Shadow BB calculation started…')
 
     const overriddenLPs = submissionLPs.map(lp => {
@@ -698,7 +739,7 @@ export default function RunShadowBB() {
       return {
         ...lp,
         name: ov.name || lp.name || lp._agentName,
-        parent: ov.parent, spv: ov.spv, region: lp.region as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
+        parent: ov.parent, spv: ov.spv, region: (ov.region || lp.region || '') as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
         cls: ov.cls || 'Excluded', agentCls: ov.agentCls,
         sp: ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
         aum: sizeAum, nav: sizeNav, pension: sizeAssets, pensionFunded: '',
@@ -710,7 +751,7 @@ export default function RunShadowBB() {
       }
     })
 
-    const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams)
+    const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams, busaRates)
     const { summary } = computed
 
     {
@@ -788,7 +829,7 @@ export default function RunShadowBB() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
       {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
-      <StepBar steps={WIZARD_STEPS} current={4} />
+      <StepBar steps={wizardSteps} current={4} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         <Card title="Submission Summary" subtitle="Committed match decisions ready for Shadow BB recalculation"
@@ -946,22 +987,38 @@ export function LPRecordCard({ lp, ov, rank, totalCommitM, totalUncalledM, onSav
 }) {
   const [draft, setDraft] = useState<Override>(ov)
   const [saving, setSaving] = useState(false)
+  const [classCfg, setClassCfg] = useState<ClassificationConfig | null>(null)
+  const [eligCfg, setEligCfg] = useState<EligibilityConfig | null>(null)
 
   useEffect(() => {
     setDraft(ov)
   }, [ov])
 
+  useEffect(() => {
+    Promise.all([getClassificationConfig(), getEligibilityConfig()])
+      .then(([classification, eligibility]) => {
+        setClassCfg(classification)
+        setEligCfg(eligibility)
+      })
+      .catch(() => {})
+  }, [])
+
   const calc = useMemo(() => calcRow(draft, totalCommitM, totalUncalledM), [draft, totalCommitM, totalUncalledM])
   const name = draft.name || lp.name || lp._agentName || '—'
   const dirty = JSON.stringify(draft) !== JSON.stringify(ov)
+
+  if (!classCfg || !eligCfg) {
+    return <div style={{ padding: 16, color: 'var(--muted)', fontSize: 12 }}>Loading LP configuration...</div>
+  }
 
   const inputSt: React.CSSProperties = { width: '100%', fontSize: 12, padding: '3px 6px', borderRadius: 3, border: '1px solid var(--border)', background: 'var(--card)' }
   const roSt:    React.CSSProperties = { ...inputSt, background: 'var(--tbl)', color: 'var(--muted)' }
   const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px 16px', padding: '12px 16px' }
   const notesMax = 250
-  const agentClsOptions = draft.agentCls && !AGENT_RATE_SCHEDULE_VALUES.includes(draft.agentCls)
-    ? ['', draft.agentCls, ...AGENT_RATE_SCHEDULE_VALUES]
-    : ['', ...AGENT_RATE_SCHEDULE_VALUES]
+  const agentRateScheduleValues = eligCfg.AGENT_TIERS.map(({ cls }) => cls)
+  const agentClsOptions = draft.agentCls && !agentRateScheduleValues.includes(draft.agentCls)
+    ? ['', draft.agentCls, ...agentRateScheduleValues]
+    : ['', ...agentRateScheduleValues]
 
   const sec = (t: string) => (
     <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 10, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
@@ -991,10 +1048,10 @@ export function LPRecordCard({ lp, ov, rank, totalCommitM, totalUncalledM, onSav
       const nextValue = field === 'notes' && typeof value === 'string' ? value.slice(0, notesMax) : value
       const next = { ...prev, [field]: nextValue } as Override
       if (field === 'cls') {
-        next.ubsAdvRatePct = parsePct(UBS_CLS_DEFAULT_RATE[value as string])
+        next.ubsAdvRatePct = parsePct(classCfg.UBS_CLS_DEFAULT_RATE[value as string])
       }
       if (field === 'agentCls') {
-        const tier = AGENT_TIERS.find(t => t.cls === value)
+        const tier = eligCfg.AGENT_TIERS.find(t => t.cls === value)
         if (tier) next.agentRatePct = tier.rate
       }
       return next
@@ -1063,18 +1120,18 @@ export function LPRecordCard({ lp, ov, rank, totalCommitM, totalUncalledM, onSav
           {chk('SPV?', 'spv', 1)}
           {txt('Parent', 'parent', 5)}
           {sel('Agent LP Classification', 'agentCls', agentClsOptions)}
-          {sel('UBS LP Classification', 'cls', ['', ...UBS_CLS_OPTS])}
-          {sel('Institutional vs HNW', 'type', TYPE_OPTS)}
+          {sel('UBS LP Classification', 'cls', classCfg.UBS_CLS_OPTS)}
+          {sel('Institutional vs HNW', 'type', ['', ...classCfg.TYPE_OPTS])}
           {chk('Investment Grade?', 'ig')}
           
           {sec('Credit Ratings')}
-          {sel('S&P', 'sp', SP_RATING_OPTS, 2)}
-          {sel("Moody's", 'mdy', MDY_RATING_OPTS, 2)}
-          {sel('Fitch', 'fitch', SP_RATING_OPTS, 2)}
+          {sel('S&P', 'sp', classCfg.SP_RATING_OPTS, 2)}
+          {sel("Moody's", 'mdy', classCfg.MDY_RATING_OPTS, 2)}
+          {sel('Fitch', 'fitch', classCfg.FITCH_RATING_OPTS, 2)}
 
           {sec('Capital Metrics')}
           {billionTxt('LP Size ($ Bil)', 'lpSizeBil')}
-          {sel('LP Size Criteria', 'lpSizeCriteria', LP_SIZE_CRITERIA_OPTS)}
+          {sel('LP Size Criteria', 'lpSizeCriteria', classCfg.LP_SIZE_CRITERIA_OPTS)}
           {amountTxt('Capital Commitment', 'capCommit')}
           {amountTxt('Uncalled Capital', 'ucM')}
           {ro('% of Capital Commitments', fmtPct(calc.cmtPct), false, 'LP commitment ÷ total fund commitments')}

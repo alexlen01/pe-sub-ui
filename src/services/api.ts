@@ -177,6 +177,7 @@ export interface LpClassificationRequest {
     parent?: string
     spv?: boolean
     type?: string             // Investor Type
+    region?: string
     ig?: boolean              // Investment Grade?
     cls?: string              // UBS LP Category
     agentCls?: string         // Agent LP Category
@@ -265,6 +266,74 @@ export interface MatchingConfig {
   thresholds:         MatchingThresholds
   legalSuffixes:      LegalSuffix[]
   knownAbbreviations: KnownAbbreviation[]
+  abbrevRegexMap?:    Record<string, string>
+}
+
+export interface RateTier {
+  cls: string
+  rate: number
+}
+export interface EligRule {
+  id: string
+  rule: string
+  value: string | number
+  unit?: '%' | '$'
+  active: boolean
+}
+export interface ConcLimit {
+  label: string
+  value: number
+  basis: string
+}
+export interface GlobalSetting {
+  id: string
+  label: string
+  value: string | number
+}
+export interface EligibilityConfig {
+  BUSA_TIERS: RateTier[]
+  AGENT_TIERS: RateTier[]
+  AGENT_RATE_PARAMS: Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }>
+  ELIG_RULES: EligRule[]
+  CONC_LIMITS: ConcLimit[]
+  GLOBAL_SETTINGS: GlobalSetting[]
+}
+export interface ClassificationConfig {
+  CLS_OPTS: string[]
+  AGENT_CLS_OPTS: string[]
+  UBS_CLS_OPTS: string[]
+  UBS_CLS_DEFAULT_RATE: Record<string, string>
+  AGENT_RATE_UBS_TIERS: Array<{ min: number; cls: string }>
+  AGENT_CLS_UBS_MAP: Record<string, string>
+  LP_SIZE_CRITERIA_OPTS: string[]
+  REGION_OPTS: string[]
+  TYPE_OPTS: string[]
+  SP_RATING_OPTS: string[]
+  MDY_RATING_OPTS: string[]
+  FITCH_RATING_OPTS: string[]
+  BUSA_RATE_MAP: Record<string, string>
+  AGENT_RATE_MAP: Record<string, string>
+  CLS_TAG_MAP: Record<string, string>
+  CLS_CRITERIA: Record<string, string>
+  INVESTOR_TYPE_OPTS: string[]
+  LP_CATEGORY_LABEL: Record<string, string>
+}
+export interface WizardConfig {
+  WIZARD_STEPS: string[]
+  SNAPSHOT_OPTIONS: string[]
+  CALC_MODES: Array<{ id: string; title: string; desc: string; recommended: boolean }>
+}
+export interface AuditConfig {
+  EVENT_TYPES: string[]
+  EVENT_TYPE_VARIANT: Record<string, string>
+  AUDIT_RETENTION_LABEL: string
+  DEFAULT_DATE_FROM: string
+  DEFAULT_DATE_TO: string
+}
+export interface ReportConfig {
+  REPORT_TABS: Array<{ id: string; label: string }>
+  CONCENTRATION_TESTS: string[]
+  REPORT_SCHEDULES: Array<{ name: string; freq: string; next: string }>
 }
 
 // ── API client ────────────────────────────────────────────────────────────────
@@ -411,9 +480,9 @@ export const api = {
     discard: (id: number) =>
       del(`/api/matching/queue/${id}`),
     getThresholds: () =>
-      get<MatchingConfig>('/api/matching/thresholds'),
+      get<MatchingConfig>('/api/config/matching'),
     setThresholds: (t: MatchingConfig) =>
-      patch<MatchingConfig>('/api/matching/thresholds', t),
+      put<MatchingConfig>('/api/config/matching?section=thresholds', t),
   },
 
   // ── Health ────────────────────────────────────────────────────────────────────
@@ -451,20 +520,20 @@ export const api = {
   // ── Config ────────────────────────────────────────────────────────────────────
   config: {
     classification: () =>
-      get('/api/config/classification'),
+      get<ClassificationConfig>('/api/config/classification'),
     eligibility: () =>
-      get('/api/config/eligibility'),
+      get<EligibilityConfig>('/api/config/eligibility'),
     setEligibility: (section: string, data: unknown) =>
       put<unknown>(`/api/config/eligibility?section=${encodeURIComponent(section)}`, data),
     wizard: () =>
-      get('/api/config/wizard'),
+      get<WizardConfig>('/api/config/wizard'),
     audit: () =>
-      get('/api/config/audit'),
+      get<AuditConfig>('/api/config/audit'),
     matching: () =>
       get<MatchingConfig>('/api/config/matching'),
     setMatching: (data: MatchingConfig, section: string) =>
       put<MatchingConfig>(`/api/config/matching?section=${encodeURIComponent(section)}`, data),
     reports: () =>
-      get('/api/config/reports'),
+      get<ReportConfig>('/api/config/reports'),
   },
 }

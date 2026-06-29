@@ -5,7 +5,7 @@ import { useApp }  from '../../context/AppContext'
 import Button       from '../../components/ui/Button'
 import Tag          from '../../components/ui/Tag'
 import { getAuditLog } from '../../services/facilityService'
-import { EVENT_TYPES, EVENT_TYPE_VARIANT, AUDIT_RETENTION_LABEL, DEFAULT_DATE_FROM, DEFAULT_DATE_TO } from '../../config/auditConfig'
+import { getAuditConfig, type AuditConfig } from '../../services/configService'
 import type { AuditRow } from '../../services/facilityService'
 
 export default function AuditTrail() {
@@ -15,6 +15,7 @@ export default function AuditTrail() {
   const [evtFilter,  setEvtFilter]  = useState('')
   const [userFilter, setUserFilter] = useState('')
   const [loadError,  setLoadError]  = useState<string | null>(null)
+  const [auditCfg,   setAuditCfg]   = useState<AuditConfig | null>(null)
 
   useEffect(() => {
     setLoadError(null)
@@ -22,6 +23,12 @@ export default function AuditTrail() {
     load()
     const interval = setInterval(load, 10_000)
     return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    getAuditConfig()
+      .then(setAuditCfg)
+      .catch(e => setLoadError(String(e)))
   }, [])
 
   const rows = useMemo(() => {
@@ -52,7 +59,7 @@ export default function AuditTrail() {
       <div className="filter-bar">
         <input type="text" placeholder="Search event detail, facility..." style={{ width: 280 }} value={search} onChange={e => setSearch(e.target.value)} />
         <select style={{ width: 180 }} value={evtFilter} onChange={e => setEvtFilter(e.target.value)}>
-          {EVENT_TYPES.map(o => <option key={o} value={o}>{o || 'Event Type: All'}</option>)}
+          {(auditCfg?.EVENT_TYPES ?? []).map(o => <option key={o} value={o}>{o || 'Event Type: All'}</option>)}
         </select>
         <select style={{ width: 160 }} value={userFilter} onChange={e => setUserFilter(e.target.value)}>
           <option value="">User: All</option>
@@ -60,9 +67,9 @@ export default function AuditTrail() {
         </select>
         <div className="form-group" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>From</label>
-          <input type="date" defaultValue={DEFAULT_DATE_FROM} style={{ width: 140 }} />
+          <input type="date" defaultValue={auditCfg?.DEFAULT_DATE_FROM ?? ''} style={{ width: 140 }} />
           <label className="form-label" style={{ marginBottom: 0, marginLeft: 6, whiteSpace: 'nowrap' }}>To</label>
-          <input type="date" defaultValue={DEFAULT_DATE_TO} style={{ width: 140 }} />
+          <input type="date" defaultValue={auditCfg?.DEFAULT_DATE_TO ?? ''} style={{ width: 140 }} />
         </div>
         <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setEvtFilter(''); setUserFilter('') }}>Clear</Button>
         <Button variant="secondary" size="sm" onClick={() => toast('Audit log exported to Excel.')}>↓ Export</Button>
@@ -84,7 +91,7 @@ export default function AuditTrail() {
             {pageItems.map((r, i) => (
               <tr key={i}>
                 <td style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>{r.ts}</td>
-                <td><Tag variant={EVENT_TYPE_VARIANT[r.event] ?? ''}>{r.event}</Tag></td>
+                <td><Tag variant={auditCfg?.EVENT_TYPE_VARIANT[r.event] ?? ''}>{r.event}</Tag></td>
                 <td style={{ fontSize: 12 }}>{r.detail}</td>
                 <td style={{ color: 'var(--muted)', fontSize: 12 }}>{r.facility}</td>
                 <td style={{ fontWeight: 600, fontSize: 12 }}>{r.user}</td>
@@ -95,7 +102,7 @@ export default function AuditTrail() {
         </table>
         {rows.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 12 }}>No events match the current filters.</div>}
         <div className="tbl-footer">
-          <span>Showing {from}–{to} of {rows.length} events · Retention: {AUDIT_RETENTION_LABEL}</span>
+          <span>Showing {from}–{to} of {rows.length} events · Retention: {auditCfg?.AUDIT_RETENTION_LABEL ?? '—'}</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
               {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}

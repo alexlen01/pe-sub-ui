@@ -13,7 +13,7 @@ import { api } from '../../services/api'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
-import { UBS_CLS_DEFAULT_RATE } from '../../config/classificationConfig'
+import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
@@ -65,6 +65,7 @@ export default function Dashboard() {
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
   const [execSummary,      setExecSummary]      = useState<BBSummary | null>(null)
   const [error,            setError]            = useState<string | null>(null)
+  const [classCfg,         setClassCfg]         = useState<ClassificationConfig | null>(null)
 
   const selectedFacilityId = selectedFacility?.id ?? null
 
@@ -74,6 +75,10 @@ export default function Dashboard() {
       .then(lps => setFacilityLPs(lps as { cls?: string }[]))
       .catch(e => setError(String(e)))
   }, [selectedFacilityId])
+
+  useEffect(() => {
+    getClassificationConfig().then(setClassCfg).catch(e => setError(String(e)))
+  }, [])
 
   // Executive Summary figures come from the latest persisted Shadow BB snapshot (bb_snapshots),
   // not from the facility row. null → no run yet → the card shows its empty state.
@@ -114,7 +119,7 @@ export default function Dashboard() {
     }
     const segments = Array.from(counts.entries())
       .map(([cls, n]) => {
-        const rate = UBS_CLS_DEFAULT_RATE[cls]
+        const rate = classCfg?.UBS_CLS_DEFAULT_RATE[cls]
         return {
           label: rate ? `${cls} (${rate})` : cls,
           n,
@@ -124,7 +129,7 @@ export default function Dashboard() {
       })
       .filter(s => s.n > 0)
     return { total, segments }
-  }, [facilityLPs])
+  }, [facilityLPs, classCfg])
   const activeCount         = facilities.filter(f => f.status === 'Active').length
   const needsReviewCount    = facilities.filter(f => f.status === 'Needs Review').length
   const inProgressCount     = facilities.filter(f => f.status === 'In Progress').length

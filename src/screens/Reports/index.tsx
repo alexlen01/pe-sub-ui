@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useApp }    from '../../context/AppContext'
 import Button        from '../../components/ui/Button'
-import { REPORT_TABS, CONCENTRATION_TESTS, REPORT_SCHEDULES } from '../../config/reportConfig'
+import { getReportConfig, type ReportConfig } from '../../services/configService'
 import { getFacilities } from '../../services/facilityService'
 
 const EMPTY: React.CSSProperties = {
@@ -34,9 +34,17 @@ export default function Reports() {
   const { toast }           = useApp()
   const [tab, setTab]       = useState('collateral')
   const [facilities, setFacilities] = useState<string[]>([])
+  const [reportCfg, setReportCfg] = useState<ReportConfig | null>(null)
 
   useEffect(() => {
     getFacilities().then(rows => setFacilities(rows.map(r => r.name))).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    getReportConfig().then(cfg => {
+      setReportCfg(cfg)
+      setTab(cfg.REPORT_TABS[0]?.id ?? 'collateral')
+    }).catch(() => {})
   }, [])
 
   const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })
@@ -44,7 +52,7 @@ export default function Reports() {
   return (
     <div>
       <div className="report-tabs">
-        {REPORT_TABS.map(t => (
+        {(reportCfg?.REPORT_TABS ?? []).map(t => (
           <div key={t.id} className={`r-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
       </div>
@@ -159,7 +167,7 @@ export default function Reports() {
               <div className="form-group"><label className="form-label">Facility</label><FacilitySelect facilities={['All Facilities', ...facilities]} /></div>
               <div className="form-group">
                 <label className="form-label">Concentration Tests</label>
-                {CONCENTRATION_TESTS.map(t => (
+                {(reportCfg?.CONCENTRATION_TESTS ?? []).map(t => (
                   <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6 }}>
                     <input type="checkbox" defaultChecked /> {t}
                   </label>
@@ -191,7 +199,7 @@ export default function Reports() {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>System-managed batch jobs. Run automatically — no user configuration required.</div>
               <hr className="sep" />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                {REPORT_SCHEDULES.map((s, i) => (
+                {(reportCfg?.REPORT_SCHEDULES ?? []).map((s, i) => (
                   <div key={i} style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--tbl)' }}>
                     <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--navy)', marginBottom: 4 }}>{s.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.freq} · Next run: {s.next}</div>

@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import { analysisCandidates, normalisedAgentName, BAND_VERDICT } from '../screens/MatchQueue/matchAnalysis'
-import type { MatchAnalysis } from '../services/api'
+import type { MatchAnalysis, MatchingConfig } from '../services/api'
+
+const matchingConfig: MatchingConfig = {
+  thresholds: {
+    autoAccept: 95,
+    reviewQueue: 80,
+    noMatch: 50,
+    jwWeight: 0.6,
+    levWeight: 0.4,
+    stripSuffixes: true,
+    caseFold: true,
+    punctuation: true,
+    abbrevExpand: true,
+    retirementNormalize: true,
+  },
+  legalSuffixes: [
+    { abbr: 'LP', full: 'Limited Partnership', strip: true },
+  ],
+  knownAbbreviations: [],
+  abbrevRegexMap: {},
+}
 
 // ── Live mode: real backend match_details (§6.5) ──────────────────────────────
 
@@ -21,7 +41,7 @@ describe('analysisCandidates — live mode (backend match_details)', () => {
       agentName: 'Texas Teachers Ret. Sys.',
       masterName: 'Texas Teachers Retirement System',
       matchDetails: liveDetails,
-    })
+    }, matchingConfig)
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual({ name: 'Texas Teachers Retirement System', jw: 100, lev: 100, combined: 100, verdict: 'Auto-accept' })
@@ -36,7 +56,7 @@ describe('analysisCandidates — live mode (backend match_details)', () => {
       agentName: 'Texas Teachers Ret. Sys.',
       masterName: 'Texas Teachers Retirement System',
       matchDetails: liveDetails,
-    })
+    }, matchingConfig)
     // Every name must come from the backend payload — no synthetic "Capital Partners" decoys.
     const backendNames = new Set(liveDetails.candidates.map(c => c.name))
     for (const r of rows) expect(backendNames.has(r.name)).toBe(true)
@@ -47,14 +67,14 @@ describe('analysisCandidates — live mode (backend match_details)', () => {
 
 describe('analysisCandidates — prototype mode (no match_details)', () => {
   it('reconstructs the matched name plus two decoys when masterName is set', () => {
-    const rows = analysisCandidates({ agentName: 'Blue Owl GP Stakes V', masterName: 'Blue Owl GP Stakes V' })
+    const rows = analysisCandidates({ agentName: 'Blue Owl GP Stakes V', masterName: 'Blue Owl GP Stakes V' }, matchingConfig)
     expect(rows).toHaveLength(3)
     expect(rows[0].name).toBe('Blue Owl GP Stakes V')
     expect(rows[0].verdict).toBe('Auto-accept') // exact reconstruction scores 100
   })
 
   it('returns no candidates when there is no master match', () => {
-    const rows = analysisCandidates({ agentName: 'Brand New Investor XYZ', masterName: null })
+    const rows = analysisCandidates({ agentName: 'Brand New Investor XYZ', masterName: null }, matchingConfig)
     expect(rows).toEqual([])
   })
 })

@@ -10,11 +10,9 @@ import Tag         from '../../components/ui/Tag'
 import InfoTip     from '../../components/ui/InfoTip'
 import DraggablePanel  from '../../components/ui/DraggablePanel'
 import LPRecordPanel   from '../../components/ui/LPRecordPanel'
-import {
-  CLS_OPTS, INVESTOR_TYPE_OPTS,
-} from '../../config/classificationConfig'
+import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import { formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
-import { api } from '../../services/api'
+import { api, type LpClassificationRequest } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
@@ -45,19 +43,48 @@ function tableMoney(value: unknown): string {
   const s = String(value ?? '').trim()
   return s ? formatMoneyText(s) : '—'
 }
+
+function pctNumber(value: unknown): number | undefined {
+  const s = String(value ?? '').trim()
+  if (!s || s === '—') return undefined
+  const n = parseFloat(s.replace('%', ''))
+  return Number.isFinite(n) ? n : undefined
+}
+
+function lpClassificationRow(lp: LPRecord, originalName?: string): LpClassificationRequest['rows'][number] {
+  return {
+    name:              lp.name,
+    originalName,
+    parent:            lp.parent ?? '',
+    spv:               lp.spv,
+    type:              lp.type,
+    region:            lp.region ?? '',
+    ig:                lp.ig,
+    cls:               lp.cls,
+    agentCls:          lp.agentCls ?? '',
+    sp:                lp.sp ?? '',
+    mdy:               lp.mdy ?? '',
+    fitch:             lp.fitch ?? '',
+    aum:               lp.aum ?? '',
+    nav:               lp.nav ?? '',
+    pension:           lp.pension ?? '',
+    pensionFunded:     lp.pensionFunded ?? '',
+    capCommit:         lp.capCommit ?? '',
+    uc:                lp.uc ?? '',
+    ubsAdvRatePct:     pctNumber(lp.rate),
+    agentRatePct:      pctNumber(lp.agentRate),
+    ubsConcLimitPct:   pctNumber(lp.ubsConc),
+    agentConcLimitPct: pctNumber(lp.agentConc),
+    inc:               lp.inc,
+    notes:             lp.notes ?? '',
+  }
+}
+
 function lpBelongsToFacility(lp: { name: string }, facilityName: string) {
   if (facilityName === 'Blue Owl GP Stakes V') return true
   const h = hash(facilityName)
   return (hash(lp.name) + h) % (3 + (h % 5)) !== 0
 }
-
-const CLS_LEGEND_ITEMS = [
-  { label: 'Rated — 90%',           desc: 'S&P, Moody\'s, or Fitch investment-grade rated LP.' },
-  { label: 'Unrated >$2bn — 75%',   desc: 'Unrated fund with AUM above $2bn.' },
-  { label: 'Unrated $1–2bn — 65%',  desc: 'Unrated fund with AUM between $1bn and $2bn.' },
-  { label: 'Eligible — 50%',        desc: 'Meets eligibility criteria but AUM is below $1bn.' },
-  { label: 'Excluded — 0%',         desc: 'Does not meet credit agreement eligibility criteria. Not counted in the borrowing base.' },
-]
 
 // Status colour mapping for facility cards
 const STATUS_COLOR: Record<string, string> = {
@@ -249,12 +276,16 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
-  const { toast, lpData, setLpData, updateLPRecord, currentUser, setActiveFacilityId } = useApp()
+  const { toast, lpData, setLpData, currentUser, setActiveFacilityId } = useApp()
   const canEdit = currentUser?.role === 'Analyst' || currentUser?.role === 'Account/Transaction Manager'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
+  const [classCfg,   setClassCfg]   = useState<ClassificationConfig | null>(null)
   useEffect(() => {
     getFacilities().then(setFacilities).catch(() => {})
+  }, [])
+  useEffect(() => {
+    getClassificationConfig().then(setClassCfg).catch(() => {})
   }, [])
 
   // view: 'grid' = facility picker, 'list' = LP table
@@ -314,6 +345,13 @@ export default function LPMaster() {
       return matchQ && matchCls && matchType && matchInc && matchFac
     })
   }, [lpData, search, clsFilter, typeFilter, incFilter, facFilter])
+  const clsLegendItems = useMemo(() => {
+    if (!classCfg) return []
+    return classCfg.CLS_OPTS.filter(Boolean).map(cls => ({
+      label: `${cls} - ${classCfg.BUSA_RATE_MAP[cls] ?? ''}`.trim(),
+      desc: classCfg.CLS_CRITERIA[cls] ?? '',
+    }))
+  }, [classCfg])
 
   const sortColumns = useMemo(() => [
     { key: 'name',         getValue: (lp: LPRecord) => lp.name },
@@ -361,9 +399,22 @@ export default function LPMaster() {
   })
   const selectedRank = selected ? sortedRows.findIndex(lp => lp.name === selected.name) + 1 : undefined
 
-  const handleSave = (updated: LPRecord) => {
-    updateLPRecord(updated)
+  const handleSave = async (updated: LPRecord) => {
+    const originalName = selected?.name
+    setLpData(lpData.map(lp => lp.name === originalName ? updated : lp))
     setSelected(updated)
+    if (facFilter?.id != null) {
+      try {
+        await api.lps.saveClassification({
+          facilityId: facFilter.id,
+          audit: true,
+          rows: [lpClassificationRow(updated, originalName)],
+        })
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Could not save LP record — API unavailable.')
+        return
+      }
+    }
     toast(`LP record updated — ${updated.name}.`)
   }
 
@@ -503,12 +554,12 @@ export default function LPMaster() {
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
           <select style={{ width: 160 }} value={clsFilter} onChange={e => { setClsFilter(e.target.value); setPage(1) }}>
-            {CLS_OPTS.map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
+            {(classCfg?.CLS_OPTS ?? []).map(o => <option key={o} value={o}>{o || 'Classification: All'}</option>)}
           </select>
-          <InfoTip title="LP Category" items={CLS_LEGEND_ITEMS} align="left" width={330} />
+          <InfoTip title="LP Category" items={clsLegendItems} align="left" width={330} />
           <select style={{ width: 170 }} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
             <option value="">Investor Type: All</option>
-            {INVESTOR_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+            {(classCfg?.INVESTOR_TYPE_OPTS ?? []).map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
             <option value="">Included: All</option>
@@ -550,8 +601,8 @@ export default function LPMaster() {
               <SortableHeader sortKey="uc"             sort={sort} onSort={requestSort} className="num" style={{ width: widths.uc }}            onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
               <SortableHeader sortKey="pctUncalled"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctUncalled }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
               <SortableHeader sortKey="pctCalled"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctCalled }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
-              <SortableHeader sortKey="agentRate"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentRate }}     onResizeStart={onResizeStart}>Agent Advance Base</SortableHeader>
-              <SortableHeader sortKey="rate"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rate }}          onResizeStart={onResizeStart}>UBS Advance Base</SortableHeader>
+              <SortableHeader sortKey="agentRate"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentRate }}     onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
+              <SortableHeader sortKey="rate"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rate }}          onResizeStart={onResizeStart}>UBS Advance Rate</SortableHeader>
               <SortableHeader sortKey="agentConc"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentConc }}     onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
               <SortableHeader sortKey="ubsConc"        sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsConc }}       onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
               <SortableHeader sortKey="agentExcess"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentExcess }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>

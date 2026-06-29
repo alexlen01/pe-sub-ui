@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { SCREENS as SCREEN_MAP } from '../config/screenConfig'
 import { getLPsForFacility } from '../services/lpService'
 import { DEFAULT_FACILITY_PARAMS } from '../services/bbCalculationService'
@@ -16,6 +16,7 @@ interface AppState {
   navigate: (name: string) => void
   toasts: ToastItem[]
   toast: (msg: string, duration?: number, variant?: ToastItem['variant']) => void
+  dismissToast: (id: number) => void
   lpData: LPRecord[]
   lpLoading: boolean
   setLpData: (lps: LPRecord[]) => void
@@ -49,6 +50,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeFacilityId,   setActiveFacilityId] = useState<number | null>(null)
   const [abortedFacilities,  setAbortedFacilities] = useState<string[]>([])
   const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
+  const toastSeq = useRef(0)
+  const toastTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
 
   // Loads LP Master records for the active facility. Exposed as refreshLpData so callers can
   // re-pull after a write (e.g. committing match decisions creates new LP records) without
@@ -67,10 +70,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (SCREEN_MAP[name]) { setScreen(name) }
   }, [])
 
+  const dismissToast = useCallback((id: number) => {
+    clearTimeout(toastTimers.current[id])
+    delete toastTimers.current[id]
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
   const toast = useCallback((msg: string, duration = 3200, variant?: ToastItem['variant']) => {
-    const id = Date.now()
+    const id = ++toastSeq.current
     setToasts(prev => [...prev, { id, msg, variant }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
+    toastTimers.current[id] = setTimeout(() => dismissToast(id), duration)
+  }, [dismissToast])
+
+  useEffect(() => {
+    return () => {
+      Object.values(toastTimers.current).forEach(clearTimeout)
+    }
   }, [])
 
   const updateLPRecord = useCallback((updated: LPRecord) => {
@@ -86,7 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       screen, navigate,
-      toasts, toast,
+      toasts, toast, dismissToast,
       lpData, lpLoading, setLpData, refreshLpData, updateLPRecord,
       bbParams, setBbParams,
       currentUser: DEFAULT_USER,

@@ -37,6 +37,7 @@ function isInteractiveTarget(target: EventTarget | null, container: HTMLElement)
 }
 
 export default function DraggablePanel({ children, className, style, storageKey }: DraggablePanelProps) {
+  const docked = className?.includes('lp-detail-overlay') ?? false
   const [offset, setOffset] = useState<Point>(() => loadPosition(storageKey))
   const panelRef = useRef<HTMLDivElement | null>(null)
   const offsetRef = useRef(offset)
@@ -53,6 +54,7 @@ export default function DraggablePanel({ children, className, style, storageKey 
   }
 
   useEffect(() => {
+    if (docked) return
     const panel = panelRef.current
     const header = panel?.querySelector<HTMLElement>(HEADER_SELECTOR)
     if (!header) return
@@ -139,7 +141,7 @@ export default function DraggablePanel({ children, className, style, storageKey 
       header.removeEventListener('pointercancel', onPointerCancel)
       header.classList.remove('draggable-panel-header')
     }
-  }, [children, storageKey])
+  }, [children, docked, storageKey])
 
   return (
     <div
@@ -147,9 +149,9 @@ export default function DraggablePanel({ children, className, style, storageKey 
       className={['draggable-panel', className].filter(Boolean).join(' ')}
       style={{
         ...style,
-        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        transform: docked ? undefined : `translate(${offset.x}px, ${offset.y}px)`,
         position: style?.position ?? (className?.includes('lp-detail-overlay') ? undefined : 'relative'),
-        zIndex: offset.x || offset.y ? 60 : style?.zIndex,
+        zIndex: docked ? style?.zIndex : offset.x || offset.y ? 60 : style?.zIndex,
       }}
     >
       {children}

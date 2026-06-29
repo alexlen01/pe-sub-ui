@@ -2,29 +2,6 @@ import { api, type BBSummaryExt } from './api'
 export type { BBSummaryExt }
 import type { LPRecord } from './lpService'
 
-// ── Advance rate schedules ────────────────────────────────────────────────────
-
-// Advance rate by LP classification. Covers BOTH taxonomies the platform persists, mirroring
-// BbCalculationService.BUSA_RATES on the API:
-//   • legacy LP Master tiers ('Rated', 'Unrated >2bn', …)
-//   • UBS LP Category  ('Rated Investor', 'FoF & Other > $10Bn AUM', …) — the labels the
-//     Shadow BB seeds from the Agent Advance Rate (classificationConfig.UBS_CLS_DEFAULT_RATE).
-// A blank/unrecognised classification falls back to 0%. Keeping this in sync with the API map is
-// what lets the LP-Level Shadow BB table resolve a non-zero Rate / UBS BB for UBS-taxonomy LPs
-// that have no stored per-LP ubsRate.
-export const BUSA_RATES: Record<string, number> = {
-  'Rated':                      0.90,
-  'Unrated >2bn':               0.75,
-  'Unrated 1–2bn':              0.65,
-  'Eligible':                   0.50,
-  'Excluded':                   0.00,
-  'Rated Investor':             0.90,
-  'FoF & Other > $10Bn AUM':    0.75,
-  'Unrated NAV > $1Bn':         0.65,
-  'Corp Pension > $5Bn Assets': 0.65,
-  'Other Institutional':        0.50,
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function parseM(s: string | undefined | null): number {
@@ -50,19 +27,22 @@ export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
 
 // Advance rate (as a fraction) for an LP. An explicit per-LP rate — e.g. the UBS Advance Rate
 // assigned on the Run Shadow BB screen, "90%" — takes precedence; otherwise fall back to the
-// BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LP
+// DB-backed BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LP
 // Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Category taxonomy
 // ('Rated Investor', …) the Shadow BB now seeds from the Agent Advance Rate.
 // `cls` is typed as string (not the legacy LPClassification union): at runtime it carries either
-// taxonomy — the legacy LP Master tiers or the UBS LP Category labels seeded at Step 5 —
-// and BUSA_RATES is keyed for both. Mirrors the API's advanceRateFraction(Lp).
-export function advanceRateFraction(lp: { rate?: string | null; cls?: string | null }): number {
+// taxonomy: the legacy LP Master tiers or the UBS LP Category labels seeded at Step 5.
+// Mirrors the API's advanceRateFraction(Lp).
+export function advanceRateFraction(
+  lp: { rate?: string | null; cls?: string | null },
+  busaRates: Record<string, number>,
+): number {
   const raw = (lp.rate ?? '').trim()
   if (raw) {
     const n = parseFloat(raw.replace('%', ''))
     if (!Number.isNaN(n)) return n > 1 ? n / 100 : n   // "90%"/"90" → 0.90; "0.90" → 0.90
   }
-  return BUSA_RATES[lp.cls ?? ''] ?? 0
+  return busaRates[lp.cls ?? ''] ?? 0
 }
 
 export const DEFAULT_FACILITY_PARAMS = { concLimitM: 25.0 }
@@ -87,9 +67,13 @@ export interface BBSummary {
 export interface BBBreachResult { rule: string; entity: string; value: string; limit: string; severity: 'breach' | 'warning' }
 export interface BBResult { lps: ComputedLPRecord[]; summary: BBSummary; breaches: BBBreachResult[] }
 
-export function computeLPRecord(lp: LPRecord, params = DEFAULT_FACILITY_PARAMS): ComputedLPRecord {
+export function computeLPRecord(
+  lp: LPRecord,
+  params = DEFAULT_FACILITY_PARAMS,
+  busaRates: Record<string, number> = {},
+): ComputedLPRecord {
   const concLimitM = (lp as LPRecord & { concLimitM?: number }).concLimitM ?? params.concLimitM ?? 25.0
-  const busaRate = advanceRateFraction(lp)
+  const busaRate = advanceRateFraction(lp, busaRates)
   const ucM  = (lp as LPRecord & { ucM?: number }).ucM != null ? (lp as LPRecord & { ucM?: number }).ucM! : parseM(lp.uc)
   const abbM = parseM(lp.abb)
   const navM = parseM(lp.nav)
@@ -114,8 +98,12 @@ export function computeLPRecord(lp: LPRecord, params = DEFAULT_FACILITY_PARAMS):
   }
 }
 
-export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PARAMS): BBResult {
-  const raw = lps.map(lp => computeLPRecord(lp, params))
+export function computePortfolioBB(
+  lps: LPRecord[],
+  params = DEFAULT_FACILITY_PARAMS,
+  busaRates: Record<string, number> = {},
+): BBResult {
+  const raw = lps.map(lp => computeLPRecord(lp, params, busaRates))
   const totalAllUC = raw.reduce((s, r) => s + r.ucM, 0)
   const computed = raw.map(lp => {
     const pctStr = lp.agentConc ?? ''
@@ -153,8 +141,6 @@ export function computePortfolioBB(lps: LPRecord[], params = DEFAULT_FACILITY_PA
 }
 
 // ── Selector functions (API-first) ────────────────────────────────────────────
-
-export function getBusaRates() { return BUSA_RATES }
 
 export async function getFacilityBBSnapshot(facilityId: number): Promise<Record<string, unknown> | null> {
   const snapshot = await api.bb.latestSnapshot(facilityId)

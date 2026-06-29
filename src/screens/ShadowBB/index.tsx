@@ -15,6 +15,7 @@ import type { LPRecord } from '../../services/lpService'
 import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculationService'
 import { api } from '../../services/api'
 import type { LpClassificationRequest } from '../../services/api'
+import { buildBusaRateFractions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import {
   SHADOW_BB_INITIAL_WIDTHS, YesNo, ShadowBBTableHead,
   calcRow, fmtFull, parseMoneyM, parsePct, pctStr,
@@ -170,13 +171,6 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
   writeFile(wb, `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`)
 }
 
-const BB_COLUMN_ITEMS = [
-  { label: 'UBS Advance Rate',   desc: 'UBS (BUSA) advance rate applied to eligible uncalled capital: Rated 90% · Unrated >$2bn 75% · Unrated $1–2bn 65% · Eligible 50% · Excluded 0%.' },
-  { label: 'Agent Advance Rate', desc: 'Advance rate assigned by the facility Agent. Typically 95% for highly-rated LPs, lower for others.' },
-  { label: 'Agent BB',           desc: "The Agent's borrowing base contribution for this LP: eligible uncalled capital × Agent advance rate, after concentration limits." },
-  { label: 'UBS BB',             desc: 'The UBS borrowing base contribution for this LP: eligible uncalled capital × UBS advance rate, after the UBS per-LP concentration limit.' },
-]
-
 function pctFromConc(value: string | undefined | null, totalUncalledM: number): number | '' {
   if (!value) return ''
   if (String(value).includes('%')) return parsePct(value)
@@ -194,6 +188,8 @@ function buildOverride(lp: ComputedLPRecord, totalUncalledM: number, defaultConc
     ig:                !!lp.ig,
     cls:               lp.cls ?? '',
     agentCls:          lp.agentCls ?? '',
+    region:            lp.region ?? '',
+    fundSleeve:        lp.fundSleeve ?? '',
     sp:                lp.sp && lp.sp !== 'NR' ? lp.sp : '',
     mdy:               lp.mdy && lp.mdy !== 'NR' ? lp.mdy : '',
     fitch:             lp.fitch && lp.fitch !== 'NR' ? lp.fitch : '',
@@ -220,6 +216,8 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
     ig: ov.ig,
     cls: (ov.cls as LPRecord['cls']) || undefined,
     agentCls: ov.agentCls || undefined,
+    region: (ov.region as LPRecord['region']) || undefined,
+    fundSleeve: ov.fundSleeve || undefined,
     sp: ov.sp || undefined,
     mdy: ov.mdy || undefined,
     fitch: ov.fitch || undefined,
@@ -234,7 +232,7 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
     agentConc: typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : undefined,
     concLimitM,
     inc: ov.inc,
-    notes: ov.notes || undefined,
+    notes: ov.notes ?? '',
   }
 }
 
@@ -252,6 +250,7 @@ export default function ShadowBB() {
   const [summaryExtApi,   setSummaryExtApi]   = useState<BBSummaryExt | null>(null)
   const [calcMeta,        setCalcMeta]        = useState<{ facility: string; ts: Date } | null>(null)
   const [loadError,       setLoadError]       = useState<string | null>(null)
+  const [classCfg,        setClassCfg]        = useState<ClassificationConfig | null>(null)
 
   // Raw LP records + snapshot kept in state so local overrides can trigger recomputation.
   const [rawLPs,       setRawLPs]       = useState<LPRecord[]>([])
@@ -271,6 +270,22 @@ export default function ShadowBB() {
     return () => ro.disconnect()
   }, [])
   const compact = containerWidth < 1500
+  const busaRates = useMemo(() => classCfg ? buildBusaRateFractions(classCfg) : {}, [classCfg])
+  const bbColumnItems = useMemo(() => {
+    const busaDesc = classCfg
+      ? Object.entries(classCfg.BUSA_RATE_MAP).map(([cls, rate]) => `${cls} ${rate}`).join(' · ')
+      : ''
+    return [
+      { label: 'UBS Advance Rate',   desc: `UBS (BUSA) advance rate applied to eligible uncalled capital: ${busaDesc || 'loaded from database configuration'}.` },
+      { label: 'Agent Advance Rate', desc: 'Advance rate assigned by the facility Agent.' },
+      { label: 'Agent BB',           desc: "The Agent's borrowing base contribution for this LP: eligible uncalled capital x Agent advance rate, after concentration limits." },
+      { label: 'UBS BB',             desc: 'The UBS borrowing base contribution for this LP: eligible uncalled capital x UBS advance rate, after the UBS per-LP concentration limit.' },
+    ]
+  }, [classCfg])
+
+  useEffect(() => {
+    getClassificationConfig().then(setClassCfg).catch(e => setLoadError(String(e)))
+  }, [])
 
   useEffect(() => {
     setLoadError(null)
@@ -321,14 +336,14 @@ export default function ShadowBB() {
   // Re-run the BB engine whenever rawLPs or overrideMap changes. When no overrides exist,
   // patch in the server snapshot summary so the persisted figures show correctly.
   const result = useMemo<BBResult>(() => {
-    if (rawLPs.length === 0) return computePortfolioBB([], bbParams)
+    if (rawLPs.length === 0) return computePortfolioBB([], bbParams, busaRates)
     const merged = rawLPs.map(lp => ({ ...lp, ...(overrideMap[lp.name ?? ''] ?? {}) }))
-    const computed = computePortfolioBB(merged, bbParams)
+    const computed = computePortfolioBB(merged, bbParams, busaRates)
     const hasOverrides = Object.keys(overrideMap).length > 0
     return hasOverrides || Object.keys(snapshot).length === 0
       ? computed
       : { ...computed, summary: { ...computed.summary, ...snapshot }, breaches: [] }
-  }, [rawLPs, overrideMap, bbParams, snapshot])
+  }, [rawLPs, overrideMap, bbParams, snapshot, busaRates])
 
   const resultTotalUncalledM = useMemo(
     () => (result.lps as ComputedLPRecord[]).reduce((s, lp) => s + lp.ucM, 0),
@@ -388,7 +403,8 @@ export default function ShadowBB() {
   const sbOvToLP = (lp: SubmissionLP, ov: Override): LPRecord => ({
     ...(lp as LPRecord),
     name:        ov.name || lp.name || lp._agentName || '',
-    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], ig: ov.ig,
+    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: lp.investorType,
+    ig:          ov.ig,
     cls:         (ov.cls || 'Eligible') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
     agentCls:    ov.agentCls, region: (ov.region || lp.region || '') as LPRecord['region'],
     fundSleeve:  ov.fundSleeve ?? lp.fundSleeve,
@@ -453,6 +469,7 @@ export default function ShadowBB() {
         ig:                draft.ig,
         cls:               draft.cls || undefined,
         agentCls:          draft.agentCls || undefined,
+        region:            draft.region || undefined,
         sp:                draft.sp,
         mdy:               draft.mdy,
         fitch:             draft.fitch,
@@ -466,7 +483,7 @@ export default function ShadowBB() {
         ubsConcLimitPct:   typeof draft.concLimitPct === 'number' ? draft.concLimitPct : undefined,
         agentConcLimitPct: typeof draft.agentConcLimitPct === 'number' ? draft.agentConcLimitPct : undefined,
         inc:               draft.inc,
-        notes:             draft.notes || undefined,
+        notes:             draft.notes ?? '',
       }
       await api.lps.saveClassification({ facilityId, rows: [row] })
       setSaveStatuses(s => ({ ...s, [lpName]: 'saved' }))
@@ -673,7 +690,7 @@ export default function ShadowBB() {
         <div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
-              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={BB_COLUMN_ITEMS} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
+              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
                   <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>

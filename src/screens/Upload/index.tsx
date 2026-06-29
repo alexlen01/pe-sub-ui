@@ -10,7 +10,7 @@ import DataTable          from '../../components/ui/DataTable'
 import InfoTip            from '../../components/ui/InfoTip'
 import { getSubmissions, getFacilities, createFacility } from '../../services/facilityService'
 import { api } from '../../services/api'
-import { WIZARD_STEPS } from '../../config/wizardConfig'
+import { getWizardConfig } from '../../services/configService'
 import { initTemplateService, getTemplateProfiles, findDetectedTemplate, type TemplateProfile } from '../../services/templateService'
 import type { SubmissionRow } from '../../services/facilityService'
 
@@ -224,9 +224,16 @@ export default function Upload() {
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
   const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
   const [loadError,      setLoadError]      = useState<string | null>(null)
+  const [wizardSteps,    setWizardSteps]    = useState<string[]>([])
 
   useEffect(() => {
     initTemplateService().then(() => setTemplates(getTemplateProfiles()))
+  }, [])
+
+  useEffect(() => {
+    getWizardConfig()
+      .then(cfg => setWizardSteps(cfg.WIZARD_STEPS))
+      .catch(e => setLoadError(String(e)))
   }, [])
 
   useEffect(() => {
@@ -353,7 +360,7 @@ export default function Upload() {
   return (
     <div>
       {loadError && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
-      <StepBar steps={WIZARD_STEPS} current={1} />
+      <StepBar steps={wizardSteps} current={1} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: 12, padding: '12px 24px 24px' }}>
 

@@ -7,9 +7,8 @@
 // In PROTOTYPE mode there is no backend, so `buildCandidates` reconstructs a plausible candidate
 // list client-side (the matched name plus two deterministic decoys) for demonstration only.
 
-import type { MatchAnalysis, MatchBand } from '../../services/api'
+import type { MatchAnalysis, MatchBand, MatchingConfig, MatchingThresholds } from '../../services/api'
 import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
-import { DEFAULT_THRESHOLDS } from '../../config/matchingConfig'
 
 export interface CandidateRow {
   name:     string
@@ -34,9 +33,9 @@ export const BAND_VERDICT: Record<MatchBand, string> = {
 }
 
 // Prototype-only verdict derived from the 2-threshold score bands.
-export function verdictFor(score: number): string {
-  return score >= DEFAULT_THRESHOLDS.autoAccept ? 'Auto-accept'
-       : score >= DEFAULT_THRESHOLDS.reviewQueue ? 'Review queue'
+export function verdictFor(score: number, thresholds: MatchingThresholds): string {
+  return score >= thresholds.autoAccept ? 'Auto-accept'
+       : score >= thresholds.reviewQueue ? 'Review queue'
        : 'Below threshold'
 }
 
@@ -57,17 +56,17 @@ function makeDecoyName(seed: string, words: string[], salt: string) {
 }
 
 /** Prototype reconstruction: the matched name plus two deterministic decoys (no backend data). */
-export function buildCandidates(r: AnalysisRowInput): CandidateRow[] {
-  const normAgent = normaliseName(r.agentName)
+export function buildCandidates(r: AnalysisRowInput, config: MatchingConfig): CandidateRow[] {
+  const normAgent = normaliseName(r.agentName, config)
   if (!r.masterName) return []
-  const normMaster = normaliseName(r.masterName)
-  const jw1 = jwSim(normAgent, normMaster), lv1 = levSim(normAgent, normMaster), co1 = combineScores(jw1, lv1)
+  const normMaster = normaliseName(r.masterName, config)
+  const jw1 = jwSim(normAgent, normMaster), lv1 = levSim(normAgent, normMaster), co1 = combineScores(jw1, lv1, config.thresholds)
   const mWords = r.masterName.split(/\s+/)
   const d1 = makeDecoyName(r.masterName, mWords, 'α'), d2 = makeDecoyName(r.masterName, mWords, 'β')
-  const jw2 = jwSim(normAgent, normaliseName(d1)), lv2 = levSim(normAgent, normaliseName(d1)), co2 = combineScores(jw2, lv2)
-  const jw3 = jwSim(normAgent, normaliseName(d2)), lv3 = levSim(normAgent, normaliseName(d2)), co3 = combineScores(jw3, lv3)
+  const jw2 = jwSim(normAgent, normaliseName(d1, config)), lv2 = levSim(normAgent, normaliseName(d1, config)), co2 = combineScores(jw2, lv2, config.thresholds)
+  const jw3 = jwSim(normAgent, normaliseName(d2, config)), lv3 = levSim(normAgent, normaliseName(d2, config)), co3 = combineScores(jw3, lv3, config.thresholds)
   return [
-    { name: r.masterName, jw: jw1, lev: lv1, combined: co1, verdict: verdictFor(co1) },
+    { name: r.masterName, jw: jw1, lev: lv1, combined: co1, verdict: verdictFor(co1, config.thresholds) },
     { name: d1, jw: jw2, lev: lv2, combined: co2, verdict: 'Discarded' },
     { name: d2, jw: jw3, lev: lv3, combined: co3, verdict: 'Discarded' },
   ]
@@ -77,7 +76,7 @@ export function buildCandidates(r: AnalysisRowInput): CandidateRow[] {
  * Candidate rows for the Match Analysis panel. Prefers the real backend `matchDetails` (live mode);
  * falls back to the client-side reconstruction when absent (prototype mode).
  */
-export function analysisCandidates(row: AnalysisRowInput): CandidateRow[] {
+export function analysisCandidates(row: AnalysisRowInput, config: MatchingConfig): CandidateRow[] {
   const real = row.matchDetails?.candidates
   if (real && real.length > 0) {
     return real.map(c => ({
@@ -88,7 +87,7 @@ export function analysisCandidates(row: AnalysisRowInput): CandidateRow[] {
       verdict:  BAND_VERDICT[c.band] ?? 'No match',
     }))
   }
-  return buildCandidates(row)
+  return buildCandidates(row, config)
 }
 
 /** The normalised agent name shown in the panel — backend value in live mode, else the reconstruction. */

@@ -9,53 +9,59 @@ import Modal from '../../components/ui/Modal'
 import StepBar from '../../components/ui/StepBar'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
-import { WIZARD_STEPS } from '../../config/wizardConfig'
-import { DEFAULT_THRESHOLDS, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, ABBREV_REGEX_MAP } from '../../config/matchingConfig'
+import { getMatchingConfig, getWizardConfig } from '../../services/configService'
 import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
 import { analysisCandidates, normalisedAgentName } from './matchAnalysis'
-import type { MatchAnalysis } from '../../services/api'
+import type { MatchAnalysis, MatchingConfig, MatchingThresholds } from '../../services/api'
 
 type QueueRow = Awaited<ReturnType<typeof getMatchQueue>>[0] & { status: string; matchDetails?: MatchAnalysis | null }
 
-const SUFFIX_RE = new RegExp(`\\b(${LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.')).join('|')})\\b`, 'gi')
+function suffixRe(config: MatchingConfig): RegExp | null {
+  const suffixes = config.legalSuffixes.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.'))
+  return suffixes.length ? new RegExp(`\\b(${suffixes.join('|')})\\b`, 'gi') : null
+}
 
-function buildNormSteps(name: string) {
+function buildNormSteps(name: string, config: MatchingConfig) {
   const steps: { label: string; rule: string; before: string; after: string }[] = []
   let cur = name
   const folded = cur.toLowerCase(); steps.push({ label: 'Case fold', rule: 'Lowercase all characters', before: cur, after: folded }); cur = folded
   const stripped = cur.replace(/[.,\-()]/g, ' ').replace(/\s+/g, ' ').trim(); if (stripped !== cur) { steps.push({ label: 'Strip punctuation', rule: 'Remove . , - ( ) characters', before: cur, after: stripped }); cur = stripped }
-  const noSuffix = cur.replace(SUFFIX_RE, '').replace(/\s+/g, ' ').trim(); if (noSuffix !== cur) { steps.push({ label: 'Legal suffix strip', rule: 'Remove legal entity suffixes: ' + LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr).join(', '), before: cur, after: noSuffix }); cur = noSuffix }
+  const suffix = suffixRe(config)
+  const noSuffix = suffix ? cur.replace(suffix, '').replace(/\s+/g, ' ').trim() : cur; if (noSuffix !== cur) { steps.push({ label: 'Legal suffix strip', rule: 'Remove legal entity suffixes: ' + config.legalSuffixes.filter(s => s.strip).map(s => s.abbr).join(', '), before: cur, after: noSuffix }); cur = noSuffix }
   const retired = cur.replace(/\bret\s+sys(?:tem)?\b/g, 'retirement system').replace(/\bret\b/g, 'retirement'); if (retired !== cur) { steps.push({ label: 'Retirement normalize', rule: 'Ret. Sys. → retirement system; Ret. → retirement', before: cur, after: retired }); cur = retired }
   let s = cur; const acronymExpansions: string[] = []
-  KNOWN_ABBREVIATIONS.forEach(({ token, expansion }) => { const re = new RegExp(`\\b${token}\\b`, 'gi'); if (re.test(s)) { acronymExpansions.push(`${token} → ${expansion}`); s = s.replace(re, expansion.toLowerCase()) } })
+  config.knownAbbreviations.forEach(({ token, expansion }) => { const re = new RegExp(`\\b${token}\\b`, 'gi'); if (re.test(s)) { acronymExpansions.push(`${token} → ${expansion}`); s = s.replace(re, expansion.toLowerCase()) } })
   s = s.replace(/\s+/g, ' ').trim(); if (s !== cur) { steps.push({ label: 'Acronym expansion', rule: acronymExpansions.join('; '), before: cur, after: s }); cur = s }
   let expanded = cur; const abbrevExpansions: string[] = []
-  Object.entries(ABBREV_REGEX_MAP).forEach(([pat, full]) => { const re = new RegExp(`\\b${pat}\\b`, 'gi'); if (re.test(expanded)) { abbrevExpansions.push(`${pat.replace(/\\\./g, '.')} → ${full}`); expanded = expanded.replace(re, (full as string).toLowerCase()) } })
+  Object.entries(config.abbrevRegexMap ?? {}).forEach(([pat, full]) => { const re = new RegExp(`\\b${pat}\\b`, 'gi'); if (re.test(expanded)) { abbrevExpansions.push(`${pat.replace(/\\\./g, '.')} → ${full}`); expanded = expanded.replace(re, (full as string).toLowerCase()) } })
   expanded = expanded.replace(/\s+/g, ' ').trim(); if (expanded !== cur) { steps.push({ label: 'Abbrev expansion', rule: abbrevExpansions.join('; '), before: cur, after: expanded }); cur = expanded }
   return { steps, normalised: cur }
 }
 
-function buildParentSignal(r: QueueRow) {
+function buildParentSignal(r: QueueRow, config: MatchingConfig) {
   if (!r.agentParent) return null
   const masterParent = r.masterParent || r.masterName || ''
   if (!masterParent) return { agentParent: r.agentParent, masterParent: '', score: null as number | null, adjustment: 0, effect: 'unresolved' }
-  const normA = normaliseName(r.agentParent), normM = normaliseName(masterParent)
-  const score = combineScores(jwSim(normA, normM), levSim(normA, normM))
+  const normA = normaliseName(r.agentParent, config), normM = normaliseName(masterParent, config)
+  const score = combineScores(jwSim(normA, normM), levSim(normA, normM), config.thresholds)
   let adjustment = 0, effect = 'neutral'
   if (score >= 85) { adjustment = +3; effect = 'boost' } else if (score >= 70) { adjustment = +1; effect = 'partial' } else if (score < 50) { adjustment = -2; effect = 'penalty' }
   return { agentParent: r.agentParent, masterParent, score, adjustment, effect }
 }
 
 const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--danger)'
-const scoreBand = (s: number) => s >= 95 ? 'Auto-accept' : s >= 80 ? 'Review' : 'No Match'
-const bandVariant = (s: number) => s >= 95 ? 'active' : s >= 80 ? 'pending' : 'excl'
+const scoreBand = (s: number, thresholds: MatchingThresholds) =>
+  s >= thresholds.autoAccept ? 'Auto-accept' : s >= thresholds.reviewQueue ? 'Review' : 'No Match'
+const bandVariant = (s: number, thresholds: MatchingThresholds) =>
+  s >= thresholds.autoAccept ? 'active' : s >= thresholds.reviewQueue ? 'pending' : 'excl'
 
-function MatchDetailPanel({ row, onClose, onResolve, thresholds, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; thresholds: typeof DEFAULT_THRESHOLDS; overlay?: boolean }) {
-  const { steps, normalised: reconstructed } = buildNormSteps(row.agentName)
+function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; config: MatchingConfig; overlay?: boolean }) {
+  const thresholds = config.thresholds
+  const { steps, normalised: reconstructed } = buildNormSteps(row.agentName, config)
   const normalised = normalisedAgentName(row, reconstructed)
-  const candidates = analysisCandidates(row), topCandidate = candidates[0]
+  const candidates = analysisCandidates(row, config), topCandidate = candidates[0]
   const hasProposedMatch = !!row.masterName
-  const parentSignal = buildParentSignal(row)
+  const parentSignal = buildParentSignal(row, config)
   const verdictColor = (v: string) => v === 'Auto-accept' ? 'var(--green)' : v.startsWith('Review') ? 'var(--amber)' : 'var(--danger)'
   const parentEffectLabel = (sig: ReturnType<typeof buildParentSignal>) => {
     if (!sig) return null
@@ -152,6 +158,8 @@ export default function MatchQueue() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [wizardSteps, setWizardSteps] = useState<string[]>([])
+  const [matchingConfig, setMatchingConfig] = useState<MatchingConfig | null>(null)
 
   const handleAbort = async (msg = 'Submission aborted.') => {
     if (activeSubmissionId != null) {
@@ -167,16 +175,24 @@ export default function MatchQueue() {
 
   useEffect(() => {
     setLoadError(null)
-    getMatchQueue(activeSubmissionId ?? 0)
-      .then(q => setQueue(q as QueueRow[]))
+    Promise.all([
+      getMatchQueue(activeSubmissionId ?? 0),
+      getWizardConfig(),
+      getMatchingConfig(),
+    ])
+      .then(([q, wizard, config]) => {
+        setQueue(q as QueueRow[])
+        setWizardSteps(wizard.WIZARD_STEPS)
+        setMatchingConfig(config)
+      })
       .catch(e => setLoadError(String(e)))
   }, [activeSubmissionId])
 
   const filtered = useMemo(() => queue.filter(r => {
     const matchStatus = !statusFilter || r.status === statusFilter
-    const matchBand   = !bandFilter   || scoreBand(r.score) === bandFilter
+    const matchBand   = !bandFilter   || (matchingConfig && scoreBand(r.score, matchingConfig.thresholds) === bandFilter)
     return matchStatus && matchBand
-  }), [queue, statusFilter, bandFilter])
+  }), [queue, statusFilter, bandFilter, matchingConfig])
 
   const allChecked = filtered.length > 0 && filtered.every(r => checked.has(r.id))
   const someChecked = !allChecked && filtered.some(r => checked.has(r.id))
@@ -203,10 +219,10 @@ export default function MatchQueue() {
     { key: 'agentName', getValue: (r: QueueRow) => r.agentName },
     { key: 'masterName', getValue: (r: QueueRow) => r.masterName ?? '' },
     { key: 'score', getValue: (r: QueueRow) => r.score },
-    { key: 'quality', getValue: (r: QueueRow) => scoreBand(r.score) },
+    { key: 'quality', getValue: (r: QueueRow) => matchingConfig ? scoreBand(r.score, matchingConfig.thresholds) : '' },
     { key: 'status', getValue: (r: QueueRow) => r.status },
     { key: 'action', getValue: (r: QueueRow) => r.status },
-  ], [])
+  ], [matchingConfig])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth: mqTableWidth } = useColumnResize('match-queue', {
@@ -270,7 +286,7 @@ export default function MatchQueue() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
       {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
-      <StepBar steps={WIZARD_STEPS} current={3} />
+      <StepBar steps={wizardSteps} current={3} />
       {autoAccepted > 0 && (
         <div style={{ padding: '7px 20px', background: 'var(--red-lt)', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontWeight: 700 }}>✓ {autoAccepted} records auto-matched</span>
@@ -308,7 +324,7 @@ export default function MatchQueue() {
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.agentName}>{r.agentName}</div></td>
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.masterName ? 'var(--text)' : 'var(--muted)', fontStyle: r.masterName ? 'normal' : 'italic' }} title={r.masterName ?? ''}>{r.masterName ?? 'No match found — new LP record will be created'}</div></td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: scoreColor(r.score) }}>{r.score}%</td>
-                  <td><Tag variant={bandVariant(r.score)}>{scoreBand(r.score)}</Tag></td>
+                  <td><Tag variant={matchingConfig ? bandVariant(r.score, matchingConfig.thresholds) : ''}>{matchingConfig ? scoreBand(r.score, matchingConfig.thresholds) : '—'}</Tag></td>
                   <td><Tag variant={r.status === 'Accepted' ? 'active' : r.status === 'Rejected' ? 'excl' : 'pending'}>{r.status}</Tag></td>
                   <td style={{ padding: '7px 6px' }} onClick={e => e.stopPropagation()}>
                     {r.status === 'Pending' ? (<div style={{ display: 'flex', gap: 6 }}><Button size="sm" onClick={() => resolveOne(r.id, 'Accepted')}>✓ Accept</Button><Button variant="ghost" size="sm" onClick={() => resolveOne(r.id, 'Rejected')}>✕ Reject</Button></div>) : (<span style={{ fontSize: 11, color: 'var(--red)', cursor: 'pointer', fontWeight: 600 }} onClick={() => resolveOne(r.id, 'Pending')}>Undo</span>)}
@@ -328,8 +344,8 @@ export default function MatchQueue() {
         </div>
 
         <div style={{ width: 360, flexShrink: 0, height: '100%', overflow: 'hidden' }}>
-          {selectedRow ? (
-            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} thresholds={DEFAULT_THRESHOLDS} />
+          {selectedRow && matchingConfig ? (
+            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} config={matchingConfig} />
           ) : (
             <div style={{ height: '100%', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--card)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, color: 'var(--muted)' }}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity={0.4}>

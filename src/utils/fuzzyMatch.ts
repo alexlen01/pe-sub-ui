@@ -1,20 +1,21 @@
-import { ABBREV_REGEX_MAP, LEGAL_SUFFIXES, KNOWN_ABBREVIATIONS, DEFAULT_THRESHOLDS } from '../config/matchingConfig'
+import type { MatchingConfig, MatchingThresholds } from '../services/api'
 
-const SUFFIX_RE = new RegExp(
-  `\\b(${LEGAL_SUFFIXES.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.')).join('|')})\\b`,
-  'gi',
-)
+function suffixRe(config: MatchingConfig): RegExp | null {
+  const suffixes = config.legalSuffixes.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.'))
+  return suffixes.length ? new RegExp(`\\b(${suffixes.join('|')})\\b`, 'gi') : null
+}
 
-export function normaliseName(name: string): string {
+export function normaliseName(name: string, config: MatchingConfig): string {
   let s = name.toLowerCase().replace(/[.,\-()]/g, ' ').replace(/\s+/g, ' ').trim()
-  s = s.replace(SUFFIX_RE, '').replace(/\s+/g, ' ').trim()
+  const re = suffixRe(config)
+  if (re) s = s.replace(re, '').replace(/\s+/g, ' ').trim()
   // Retirement-suffix normalisation (Solution Design §6.2 step 6). Punctuation is already stripped,
   // so the dotted "Ret. Sys." forms arrive here as "ret sys"; fold to the canonical spelling.
   s = s.replace(/\bret\s+sys(?:tem)?\b/g, 'retirement system').replace(/\bret\b/g, 'retirement')
-  KNOWN_ABBREVIATIONS.forEach(({ token, expansion }) => {
+  config.knownAbbreviations.forEach(({ token, expansion }) => {
     s = s.replace(new RegExp(`\\b${token}\\b`, 'gi'), expansion.toLowerCase())
   })
-  Object.entries(ABBREV_REGEX_MAP).forEach(([pat, full]) => {
+  Object.entries(config.abbrevRegexMap ?? {}).forEach(([pat, full]) => {
     s = s.replace(new RegExp(`\\b${pat}\\b`, 'gi'), (full as string).toLowerCase())
   })
   return s.replace(/\s+/g, ' ').trim()
@@ -64,12 +65,12 @@ export function levSim(a: string, b: string): number {
   return Math.round((1 - dp[a.length][b.length] / Math.max(a.length, b.length)) * 100)
 }
 
-export function combineScores(jw: number, lev: number): number {
-  return Math.round(jw * DEFAULT_THRESHOLDS.jwWeight + lev * DEFAULT_THRESHOLDS.levWeight)
+export function combineScores(jw: number, lev: number, thresholds: MatchingThresholds): number {
+  return Math.round(jw * thresholds.jwWeight + lev * thresholds.levWeight)
 }
 
-export function matchScore(agentName: string, masterName: string): number {
-  const na = normaliseName(agentName)
-  const nb = normaliseName(masterName)
-  return combineScores(jwSim(na, nb), levSim(na, nb))
+export function matchScore(agentName: string, masterName: string, config: MatchingConfig): number {
+  const na = normaliseName(agentName, config)
+  const nb = normaliseName(masterName, config)
+  return combineScores(jwSim(na, nb), levSim(na, nb), config.thresholds)
 }

@@ -12,7 +12,7 @@ import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields, type DocRecognitionRow, type UnrecognizedColumn } from '../../services/extractionService'
 import { initTemplateService, getTemplateProfiles, getTemplateProfile, detectTemplate, findDetectedTemplate, buildDocRecognition, type MappedColumn, type TemplateProfile } from '../../services/templateService'
 import { api } from '../../services/api'
-import { WIZARD_STEPS } from '../../config/wizardConfig'
+import { getWizardConfig } from '../../services/configService'
 
 type FieldMapRow = Awaited<ReturnType<typeof getExtractionFieldMap>>[0]
 type CanonicalField = Awaited<ReturnType<typeof getAllCanonicalFields>>[0]
@@ -502,6 +502,13 @@ export default function ExtractionPreview() {
   const [unrecog,        setUnrecog]      = useState<UnrecogRow[]>([])
   const [profileId,      setProfileId]    = useState('')
   const [templates,      setTemplates]    = useState<TemplateProfile[]>([])
+  const [wizardSteps,    setWizardSteps]  = useState<string[]>([])
+
+  useEffect(() => {
+    getWizardConfig()
+      .then(cfg => setWizardSteps(cfg.WIZARD_STEPS))
+      .catch(e => setLoadError(String(e)))
+  }, [])
 
   useEffect(() => {
     initTemplateService().then(() => setTemplates(getTemplateProfiles()))
@@ -740,7 +747,7 @@ export default function ExtractionPreview() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
       {loadError && <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
-      <StepBar steps={WIZARD_STEPS} current={2} />
+      <StepBar steps={wizardSteps} current={2} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 40px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         <Card

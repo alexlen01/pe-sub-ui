@@ -3,7 +3,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
 import { api } from '../../services/api'
-import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../config/eligibilityConfig'
+import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../services/configService'
 
 type AgentRateParam = { label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }
 

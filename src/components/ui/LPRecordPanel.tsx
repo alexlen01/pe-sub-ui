@@ -1,25 +1,17 @@
 import { useState, useEffect } from 'react'
 import Button from './Button'
 import Tag    from './Tag'
-import {
-  SP_RATING_OPTS, MDY_RATING_OPTS, FITCH_RATING_OPTS,
-  INVESTOR_TYPE_OPTS, TYPE_OPTS, REGION_OPTS, LP_SIZE_CRITERIA_OPTS,
-  UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE,
-  BUSA_RATE_MAP, CLS_TAG_MAP, CLS_CRITERIA as _CLS_CRITERIA,
-} from '../../config/classificationConfig'
-import { AGENT_TIERS } from '../../config/eligibilityConfig'
 import { computeLPRecord, parseM, fmtM, fmtPct } from '../../services/bbCalculationService'
+import {
+  buildBusaRateFractions,
+  getClassificationConfig,
+  getEligibilityConfig,
+  type ClassificationConfig,
+  type EligibilityConfig,
+} from '../../services/configService'
 import type { LPRecord } from '../../services/lpService'
 
-const CLS_CRITERIA = _CLS_CRITERIA
 const NOTES_MAX    = 250
-const AGENT_RATE_SCHEDULE_OPTS = AGENT_TIERS.map(({ cls, rate }) => ({
-  value: cls, label: `${cls} (${rate}%)`, rate: `${rate}%`,
-}))
-
-function agentRateForClass(cls: string): string {
-  return AGENT_RATE_SCHEDULE_OPTS.find(o => o.value === cls)?.rate ?? ''
-}
 
 type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
 
@@ -118,8 +110,20 @@ export default function LPRecordPanel({
   const [newCls,    setNewCls]    = useState('')
   const [rationale, setRationale] = useState('')
   const [form,      setForm]      = useState<Record<string, unknown>>({})
+  const [classCfg,  setClassCfg]  = useState<ClassificationConfig | null>(null)
+  const [eligCfg,   setEligCfg]   = useState<EligibilityConfig | null>(null)
 
   const editable = canEdit && !running
+
+  useEffect(() => {
+    if (!open) return
+    Promise.all([getClassificationConfig(), getEligibilityConfig()])
+      .then(([classification, eligibility]) => {
+        setClassCfg(classification)
+        setEligCfg(eligibility)
+      })
+      .catch(() => {})
+  }, [open])
 
   useEffect(() => {
     if (!lp) return
@@ -148,13 +152,27 @@ export default function LPRecordPanel({
   }, [open, onClose])
 
   if (!open || !lp) return null
+  if (!classCfg || !eligCfg) {
+    return (
+      <div style={{ height: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 18, color: 'var(--muted)', fontSize: 12 }}>
+        Loading LP configuration...
+      </div>
+    )
+  }
+
+  const agentRateScheduleOpts = eligCfg.AGENT_TIERS.map(({ cls, rate }) => ({
+    value: cls, label: `${cls} (${rate}%)`, rate: `${rate}%`,
+  }))
+  const agentRateForClass = (cls: string): string =>
+    agentRateScheduleOpts.find(o => o.value === cls)?.rate ?? ''
+  const busaRates = buildBusaRateFractions(classCfg)
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => {
       const rawValue = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
       const value = k === 'notes' && typeof rawValue === 'string' ? rawValue.slice(0, NOTES_MAX) : rawValue
       const next = { ...p, [k]: value }
-      if (k === 'cls' && !p.rate) next.rate = UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
+      if (k === 'cls' && !p.rate) next.rate = classCfg.UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
       if (k === 'agentCls') next.agentRate = agentRateForClass(String(value)) || next.agentRate
       if (k === 'lpSizeCriteria' && lp) next.lpSize = lpSizeValue(applyLpSizeToRecord(lp, p), String(value))
       return next
@@ -162,15 +180,15 @@ export default function LPRecordPanel({
 
   const handleSave = () => {
     const eff = applyLpSizeToRecord(lp, form)
-    const c = computeLPRecord(eff)
+    const c = computeLPRecord(eff, undefined, busaRates)
     const capCommitM = parseM(eff.capCommit)
     const calledCapM = capCommitM - parseM(eff.uc)
     const agentRateDec = parseRatePct(eff.agentRate)
     onSave({
       ...eff,
       fundSleeve: form.fundSleeve as string | undefined,
-      rate: eff.rate || UBS_CLS_DEFAULT_RATE[form.cls as string] || BUSA_RATE_MAP[form.cls as string] || lp.rate,
-      clsTag: CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
+      rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE[form.cls as string] || classCfg.BUSA_RATE_MAP[form.cls as string] || lp.rate,
+      clsTag: classCfg.CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
       hq: c.busaRate === 0.90,
       calledCap: fmtM(calledCapM),
       pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
@@ -187,8 +205,8 @@ export default function LPRecordPanel({
       ...lp,
       cls: newCls as LPRecord['cls'],
       rcl: true,
-      clsTag: CLS_TAG_MAP[newCls] ?? lp.clsTag,
-      rate: UBS_CLS_DEFAULT_RATE[newCls] ?? BUSA_RATE_MAP[newCls] ?? lp.rate,
+      clsTag: classCfg.CLS_TAG_MAP[newCls] ?? lp.clsTag,
+      rate: classCfg.UBS_CLS_DEFAULT_RATE[newCls] ?? classCfg.BUSA_RATE_MAP[newCls] ?? lp.rate,
       notes: (lp.notes ? lp.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}`,
     } as LPRecord)
     setSubview(null)
@@ -249,7 +267,7 @@ export default function LPRecordPanel({
 
   const renderDetail = () => {
     const eff = applyLpSizeToRecord(lp, form)
-    const c = computeLPRecord(eff)
+    const c = computeLPRecord(eff, undefined, busaRates)
     const capCommitM = parseM(eff.capCommit)
     const ucM = parseM(eff.uc)
     const calledCapM = capCommitM - ucM
@@ -261,9 +279,9 @@ export default function LPRecordPanel({
     const ubsExcessStr   = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
     const agentExcessStr = eff.agentExcessConc || '—'
     const agentClsValue  = String(form.agentCls ?? '')
-    const agentClsOptions = agentClsValue && !AGENT_RATE_SCHEDULE_OPTS.some(o => o.value === agentClsValue)
-      ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...AGENT_RATE_SCHEDULE_OPTS]
-      : [{ value: '', label: 'Select classification' }, ...AGENT_RATE_SCHEDULE_OPTS]
+    const agentClsOptions = agentClsValue && !agentRateScheduleOpts.some(o => o.value === agentClsValue)
+      ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...agentRateScheduleOpts]
+      : [{ value: '', label: 'Select classification' }, ...agentRateScheduleOpts]
 
     const calc = (label: string, val: unknown, cfg: Record<string, unknown> = {}) =>
       f(label, val, null, { ro: true, editVal: val, ...cfg })
@@ -276,26 +294,26 @@ export default function LPRecordPanel({
         {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
         {f('Parent', lp.parent, 'parent', { cols: 5 })}
         {f('Fund Sleeve', lp.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
-        {f('Region / Location', lp.region || '—', 'region', { opts: ['', ...REGION_OPTS], cols: 3 })}
-        {f('Investor Type', lp.investorType ?? lp.type, 'type', { opts: INVESTOR_TYPE_OPTS })}
-        {f('Institutional vs HNW', lp.type, 'type', { opts: TYPE_OPTS })}
+        {f('Region / Location', lp.region || '—', 'region', { opts: ['', ...classCfg.REGION_OPTS], cols: 3 })}
+        {f('Investor Type', lp.investorType ?? lp.type, 'type', { opts: classCfg.INVESTOR_TYPE_OPTS })}
+        {f('Institutional vs HNW', lp.type, 'type', { opts: classCfg.TYPE_OPTS })}
         {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
-        {f('UBS LP Classification', lp.cls, 'cls', { opts: UBS_CLS_OPTS.filter(Boolean) })}
+        {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS.filter(Boolean) })}
         {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-        {Boolean(form.cls && CLS_CRITERIA[form.cls as string]) && (
+        {Boolean(form.cls && classCfg.CLS_CRITERIA[form.cls as string]) && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
-            <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[form.cls as string]}
+            <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[form.cls as string]}
           </div>
         )}
 
         {sec('Credit Ratings')}
-        {f('S&P', lp.sp, 'sp', { opts: SP_RATING_OPTS, cols: 2 })}
-        {f("Moody's", lp.mdy, 'mdy', { opts: MDY_RATING_OPTS, cols: 2 })}
-        {f('Fitch', lp.fitch, 'fitch', { opts: FITCH_RATING_OPTS, cols: 2 })}
+        {f('S&P', lp.sp, 'sp', { opts: classCfg.SP_RATING_OPTS, cols: 2 })}
+        {f("Moody's", lp.mdy, 'mdy', { opts: classCfg.MDY_RATING_OPTS, cols: 2 })}
+        {f('Fitch', lp.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
 
         {sec('Capital Metrics')}
         {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B' })}
-        {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
+        {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: classCfg.LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
         {f('Capital Commitments', lp.capCommit, 'capCommit', { money: true })}
         {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
         {calc('Called Capital', calledCapStr, { money: true, formula: 'Capital Commitments − Uncalled Capital' })}
@@ -304,8 +322,8 @@ export default function LPRecordPanel({
         {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
         {sec('Borrowing Base Calculation')}
-        {f('Agent Advance Base', lp.agentRate, 'agentRate')}
-        {f('UBS Advance Base', lp.rate, 'rate')}
+        {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
+        {f('UBS Advance Rate', lp.rate, 'rate')}
         {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
         {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
         {calc('Agent Excess Concentration', agentExcessStr, { money: true, formula: 'Excess uncalled above Agent concentration limit' })}
@@ -363,12 +381,12 @@ export default function LPRecordPanel({
       <div className="form-group">
         <label className="form-label">New Classification *</label>
         <select style={{ width: '100%' }} value={newCls} onChange={e => setNewCls(e.target.value)}>
-          {UBS_CLS_OPTS.filter(Boolean).map(o => <option key={o} value={o}>{o} — {UBS_CLS_DEFAULT_RATE[o] ?? '?'} UBS</option>)}
+          {classCfg.UBS_CLS_OPTS.filter(Boolean).map(o => <option key={o} value={o}>{o} - {classCfg.UBS_CLS_DEFAULT_RATE[o] ?? '?'} UBS</option>)}
         </select>
       </div>
       {newCls && (
         <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px' }}>
-          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {CLS_CRITERIA[newCls]}
+          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[newCls]}
         </div>
       )}
       <div className="form-group">
@@ -382,7 +400,7 @@ export default function LPRecordPanel({
       </div>
       {newCls !== lp.cls && (
         <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', borderRadius: 4, fontSize: 12 }}>
-          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls]}</strong> to <strong>{UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
+          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{lp.rate || classCfg.UBS_CLS_DEFAULT_RATE[lp.cls] || classCfg.BUSA_RATE_MAP[lp.cls]}</strong> to <strong>{classCfg.UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
         </div>
       )}
     </div>
@@ -391,7 +409,7 @@ export default function LPRecordPanel({
   const subviewTitle = subview === 'history' ? 'Version History' : subview === 'reclassify' ? 'Reclassify' : null
 
   return (
-    <div style={{ height: '100%', maxHeight: '100%', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: '100%', maxHeight: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="lp-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
@@ -401,7 +419,7 @@ export default function LPRecordPanel({
             </div>
             <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
               <Tag>{lp.cls}</Tag>
-              <span style={{ fontSize: 11, opacity: .7 }}>{lp.rate || UBS_CLS_DEFAULT_RATE[lp.cls] || BUSA_RATE_MAP[lp.cls] || '—'} UBS · {lp.agentRate || '—'} Agent</span>
+              <span style={{ fontSize: 11, opacity: .7 }}>{lp.rate || classCfg.UBS_CLS_DEFAULT_RATE[lp.cls] || classCfg.BUSA_RATE_MAP[lp.cls] || '—'} UBS · {lp.agentRate || '—'} Agent</span>
               {running && <span style={{ fontSize: 10, opacity: .8 }}>Calculating…</span>}
               {lp.rcl && <span className="rcl-badge">Reclassified</span>}
               {lp.tf  && <span className="tf-badge">Transferee</span>}
@@ -411,7 +429,7 @@ export default function LPRecordPanel({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px 18px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 18px' }}>
         {subview === 'history'     ? renderHistory()    :
          subview === 'reclassify'  ? renderReclassify() :
          renderDetail()}
