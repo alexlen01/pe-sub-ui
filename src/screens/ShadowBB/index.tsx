@@ -18,7 +18,7 @@ import type { LpClassificationRequest } from '../../services/api'
 import { buildBusaRateFractions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import {
   SHADOW_BB_INITIAL_WIDTHS, YesNo, ShadowBBTableHead,
-  calcRow, fmtFull, parseMoneyM, parsePct, pctStr,
+  calcRow, fmtBillionDisplay, fmtFull, parseMoneyM, parsePct, pctStr,
   type Override, type SubmissionLP,
 } from '../RunShadowBB'
 import { useColumnResize } from '../../hooks/useColumnResize'
@@ -728,7 +728,7 @@ export default function ShadowBB() {
                             <td>{ov.mdy || '—'}</td>
                             <td>{ov.fitch || '—'}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
-                            <td className="num" title={ov.lpSizeBil || '—'}>{ov.lpSizeBil || '—'}</td>
+                            <td className="num" title={ov.lpSizeBil || '—'}>{fmtBillionDisplay(ov.lpSizeBil)}</td>
                             <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
                             <td className="num">{fmtPct(c.cmtPct)}</td>
                             <td className="num">{fmtFull(c.calledM)}</td>
@@ -741,9 +741,9 @@ export default function ShadowBB() {
                             <td className="num">{pctStr(ov.concLimitPct)}</td>
                             <td className={`num ${c.agentExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.agentExcess)}</td>
                             <td className={`num ${c.ubsExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsExcess)}</td>
-                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
+                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{fmtFull(c.agentBBCalc)}</td>
                             <td className="num">{totalAgentBBCalc > 0 && c.agentBBCalc > 0 ? fmtPct(c.agentBBCalc / totalAgentBBCalc) : '—'}</td>
-                            <td className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
+                            <td className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsBBCalc)}</td>
                             <td className="num">{totalUbsBBCalc > 0 && c.ubsBBCalc > 0 ? fmtPct(c.ubsBBCalc / totalUbsBBCalc) : '—'}</td>
                             <td title={ov.notes || '—'}>{ov.notes || '—'}</td>
                           </tr>

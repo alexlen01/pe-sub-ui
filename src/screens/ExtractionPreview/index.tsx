@@ -117,7 +117,7 @@ const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   "Moody's Rating":            { key: 'moodys', width: 84, rating: true },
   'Fitch Rating':              { key: 'fitch', width: 78, rating: true },
   // Aliases used by the standard grid layout
-  'LP Size':                   { key: 'lpSize', width: 90, align: 'right' as const },
+  'LP Size':                   { key: 'lpSize', width: 90, align: 'right' as const, money: true },
   'Fund Sleeve':               { key: 'fundSleeve', width: 140 },
   'Investor Type':             { key: 'investorType', width: 140 },
   'Parent':                    { key: 'parent', width: 165 },
@@ -156,7 +156,7 @@ const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' 
   '% of LP Called':             { key: 'pctCalledFmt' },
   AUM:                          { key: 'aum' },
   NAV:                          { key: 'nav' },
-  'LP Size':                    { key: 'lpSize' },
+  'LP Size':                    { key: 'lpSize', money: true },
   'Size Metric Type':           { key: 'sizeMetricType' },
   'Size Value / Tier':          { key: 'sizeValueTier' },
   'Advance Rate':               { key: 'agentRate' },
@@ -343,20 +343,10 @@ function toUsdNoCents(val: string | undefined): string {
   })
 }
 
-function toMillions(val: string | undefined): string {
-  const num = parseCurrencyAmount(val)
-  if (num == null) return val || '—'
-  const m = num / 1e6
-  if (m >= 1000) return `$${parseFloat((m / 1000).toFixed(2))}B`
-  if (m >= 100)  return `$${Math.round(m)}M`
-  if (m >= 10)   return `$${parseFloat(m.toFixed(1))}M`
-  return `$${parseFloat(m.toFixed(2))}M`
-}
-
-function formatDisplayValue(value: string | undefined, money: boolean, compact: boolean): string {
+function formatDisplayValue(value: string | undefined, money: boolean, _compact: boolean): string {
   if (!value) return '—'
   if (!money) return String(value)
-  return compact ? toMillions(String(value)) : toUsdNoCents(String(value))
+  return toUsdNoCents(String(value))
 }
 
 function cleanSizePart(value: unknown): string {

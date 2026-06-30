@@ -120,16 +120,16 @@ function fmtMoneyInput(value: string | undefined): string {
   return m === 0 ? '$0' : fmtFull(m)
 }
 
-function fmtBillionDisplay(value: string | undefined): string {
+export function fmtBillionDisplay(value: string | undefined): string {
   const s = String(value ?? '').trim()
   if (!s) return '—'
   if (/[$MB]/i.test(s)) {
     const parsed = parseMoneyM(s)
-    if (parsed > 0) return `$${parsed.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
+    if (parsed > 0) return fmtFull(parsed)
   }
   const n = Number(s.replace(/[$,]/g, ''))
   return Number.isFinite(n)
-    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}B`
+    ? `$${Math.round(n * 1_000_000_000).toLocaleString('en-US')}`
     : s
 }
 
@@ -231,20 +231,10 @@ export default function RunShadowBB() {
   const [lpRatesLoaded, setLpRatesLoaded] = useState(false)
   const [facilityLPs, setFacilityLPs] = useState<LPRecord[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [containerWidth, setContainerWidth] = useState(Infinity)
   const [wizardSteps, setWizardSteps] = useState<string[]>([])
   const [classCfg, setClassCfg] = useState<ClassificationConfig | null>(null)
   const [eligCfg, setEligCfg] = useState<EligibilityConfig | null>(null)
 
-  useEffect(() => {
-    const el = document.querySelector('.content') as HTMLElement | null
-    if (!el) return
-    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const compact = containerWidth < 1500
   const busaRates = useMemo(() => classCfg ? buildBusaRateFractions(classCfg) : {}, [classCfg])
 
   useEffect(() => {
@@ -910,9 +900,9 @@ export default function RunShadowBB() {
                             <td className="num">{pctStr(ov.concLimitPct)}</td>
                             <td className={`num ${c.agentExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.agentExcess)}</td>
                             <td className={`num ${c.ubsExcess === 0 ? 'zero' : ''}`}>{fmtFull(c.ubsExcess)}</td>
-                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{compact ? fmtM(c.agentBBCalc) : fmtFull(c.agentBBCalc)}</td>
+                            <td className={`num ${c.agentBBCalc === 0 ? 'zero' : ''}`}>{fmtFull(c.agentBBCalc)}</td>
                             <td className="num">{totalAgentBBCalc > 0 && c.agentBBCalc > 0 ? fmtPct(c.agentBBCalc / totalAgentBBCalc) : '—'}</td>
-                            <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{compact ? fmtM(c.ubsBBCalc) : fmtFull(c.ubsBBCalc)}</td>
+                            <td key={`ubb-${key}-${flashKeys[key]?.ubsBBCalc ?? 0}`} className={`num ${c.ubsBBCalc === 0 ? 'zero' : ''} ${flashKeys[key]?.ubsBBCalc ? 'cell-flash' : ''}`}>{fmtFull(c.ubsBBCalc)}</td>
                             <td className="num">{totalUbsBBCalc > 0 && c.ubsBBCalc > 0 ? fmtPct(c.ubsBBCalc / totalUbsBBCalc) : '—'}</td>
                             <td title={ov.notes || '—'}>{ov.notes || '—'}</td>
                           </tr>
