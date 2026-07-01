@@ -105,6 +105,7 @@ body {
 /* ── Card ──────────────────────────────────────────────────── */
 .card           { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
 .card-header    { padding: 14px 18px 10px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--border); gap: 8px; }
+.card-header > div:first-child { min-width: 0; }
 .card-title     { font-weight: 700; font-size: 13px; color: var(--navy); }
 .card-subtitle  { font-size: 10px; color: var(--muted); margin-top: 2px; }
 .card-body      { padding: 16px 18px; }
@@ -152,6 +153,40 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 .sortable-th-indicator { color: var(--muted); font-size: 9px; line-height: 1; opacity: .7; }
 .sortable-th-active .sortable-th-indicator { color: var(--red); opacity: 1; }
 .data-table th.num .sortable-th-label { justify-content: flex-end; width: 100%; }
+
+/* Dashboard summary: fixed columns to fit the center grid beside the summary rail. */
+.dashboard-screen {
+  --dash-agent-col: 137px;
+  --dash-borrower-col: 204px;
+  --dash-lps-col: 74px;
+  --dash-account-col: 84px;
+  --dash-loan-col: 102px;
+  --dash-maturity-col: 116px;
+  --dash-collateral-col: 100px;
+  --dash-status-col: 224px;
+}
+.dashboard-screen .data-table-wrap { overflow-x: auto; }
+.dashboard-screen .data-table { table-layout: fixed; min-width: 0; }
+.dashboard-screen .data-table th,
+.dashboard-screen .data-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.dashboard-screen .sortable-th-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 1500px) {
+  .dashboard-screen .data-table th,
+  .dashboard-screen .data-table td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
 /* Column resize handle — absolutely positioned at the right edge of each <th> */
 .col-resize-handle {
   position: absolute;

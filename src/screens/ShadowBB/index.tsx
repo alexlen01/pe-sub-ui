@@ -184,6 +184,7 @@ function buildOverride(lp: ComputedLPRecord, totalUncalledM: number, defaultConc
     name:              lp.name ?? '',
     parent:            lp.parent ?? '',
     spv:               !!lp.spv,
+    investorType:      lp.investorType ?? '',
     type:              lp.type ?? 'Institutional',
     ig:                !!lp.ig,
     cls:               lp.cls ?? '',
@@ -212,6 +213,7 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
     name: ov.name,
     parent: ov.parent,
     spv: ov.spv,
+    investorType: ov.investorType || undefined,
     type: ov.type as LPRecord['type'],
     ig: ov.ig,
     cls: (ov.cls as LPRecord['cls']) || undefined,
@@ -403,7 +405,7 @@ export default function ShadowBB() {
   const sbOvToLP = (lp: SubmissionLP, ov: Override): LPRecord => ({
     ...(lp as LPRecord),
     name:        ov.name || lp.name || lp._agentName || '',
-    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: lp.investorType,
+    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: ov.investorType ?? lp.investorType ?? '',
     ig:          ov.ig,
     cls:         (ov.cls || 'Eligible') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
     agentCls:    ov.agentCls, region: (ov.region || lp.region || '') as LPRecord['region'],
@@ -426,7 +428,7 @@ export default function ShadowBB() {
 
   const sbLpToOv = (saved: LPRecord, prev: Override): Override => ({
     ...prev,
-    name: saved.name, parent: saved.parent ?? '', spv: saved.spv, type: saved.type, ig: saved.ig,
+    name: saved.name, parent: saved.parent ?? '', spv: saved.spv, investorType: saved.investorType ?? '', type: saved.type, ig: saved.ig,
     cls: saved.cls ?? '', agentCls: saved.agentCls ?? '',
     region: saved.region ?? '', fundSleeve: saved.fundSleeve ?? '',
     sp: saved.sp ?? '', mdy: saved.mdy ?? '', fitch: saved.fitch ?? '',
@@ -465,6 +467,8 @@ export default function ShadowBB() {
         originalName:      selectedKey,
         parent:            draft.parent || undefined,
         spv:               draft.spv,
+        investorType:      draft.investorType || undefined,
+        instVsHnw:         draft.type || undefined,
         type:              draft.type || undefined,
         ig:                draft.ig,
         cls:               draft.cls || undefined,
@@ -514,7 +518,7 @@ export default function ShadowBB() {
       { key: 'parent',       getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
       { key: 'spv',          getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
       { key: 'region',       getValue: (lp: SubmissionLP) => getOverride(lp)?.region ?? lp.region ?? '' },
-      { key: 'investorType', getValue: (lp: SubmissionLP) => lp.investorType ?? lp.type ?? '' },
+      { key: 'investorType', getValue: (lp: SubmissionLP) => getOverride(lp)?.investorType ?? lp.investorType ?? '' },
       { key: 'cls',          getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
       { key: 'type',         getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
       { key: 'ig',           getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
@@ -718,7 +722,7 @@ export default function ShadowBB() {
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
                             <td>{ov.region || lp.region || '—'}</td>
-                            <td title={lp.investorType || '—'}>{lp.investorType || '—'}</td>
+                            <td title={ov.investorType || lp.investorType || '—'}>{ov.investorType || lp.investorType || '—'}</td>
                             <td>{ov.type || '—'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>

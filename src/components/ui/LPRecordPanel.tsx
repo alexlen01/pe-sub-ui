@@ -82,13 +82,6 @@ function formatMoneyText(value: unknown): string {
   return `${sign}$${Math.round(dollars).toLocaleString('en-US')}`
 }
 
-const VERSION_HISTORY = [
-  { ts: '2026-05-27 10:45', user: 'J. Smith',  field: 'Classification',      before: 'Unrated >2bn', after: 'Rated',   note: 'Received S&P BB+ rating — confirmed with agent bank' },
-  { ts: '2026-05-02 09:15', user: 'M. Patel',  field: 'Uncalled Capital',    before: '$31.2M',       after: '$28.4M',  note: 'Q1 2026 capital call processed' },
-  { ts: '2026-04-14 11:04', user: 'L. Torres', field: 'AUM',                 before: '$3.9B',        after: '$4.2B',   note: 'Updated from Q1 2026 manager report' },
-  { ts: '2025-12-31 08:00', user: 'System',    field: 'Included Flag',       before: 'N',            after: 'Y',       note: 'ERISA test passed — auto re-included' },
-  { ts: '2025-11-18 16:30', user: 'J. Smith',  field: 'Concentration Limit', before: '7.5%',         after: '10.0%',   note: 'Agent confirmed higher concentration applies' },
-]
 
 export interface LPRecordPanelProps {
   lp: LPRecord | null
@@ -100,13 +93,14 @@ export interface LPRecordPanelProps {
   rank?: number
   totalAgentBB?: number
   totalUbsBB?: number
+  enableReclassify?: boolean
 }
 
 export default function LPRecordPanel({
   lp, open, onClose, onSave, canEdit = true, running = false, rank,
-  totalAgentBB, totalUbsBB,
+  totalAgentBB, totalUbsBB, enableReclassify = false,
 }: LPRecordPanelProps) {
-  const [subview,   setSubview]   = useState<null | 'history' | 'reclassify'>(null)
+  const [subview,   setSubview]   = useState<null | 'reclassify'>(null)
   const [newCls,    setNewCls]    = useState('')
   const [rationale, setRationale] = useState('')
   const [form,      setForm]      = useState<Record<string, unknown>>({})
@@ -132,7 +126,7 @@ export default function LPRecordPanel({
     setForm({
       name: lp.name ?? '', parent: lp.parent ?? '', spv: lp.spv, agentCls: lp.agentCls ?? '',
       fundSleeve: lp.fundSleeve ?? '',
-      type: lp.type ?? '', cls: lp.cls ?? '', ig: lp.ig,
+      investorType: lp.investorType ?? '', type: lp.type ?? '', cls: lp.cls ?? '', ig: lp.ig,
       region: lp.region ?? '', hq: lp.hq,
       sp: lp.sp ?? '', mdy: lp.mdy ?? '', fitch: lp.fitch ?? '',
       aum: lp.aum ?? '', nav: lp.nav ?? '', pension: lp.pension || 'N/A', pensionFunded: lp.pensionFunded || 'N/A',
@@ -294,8 +288,8 @@ export default function LPRecordPanel({
         {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
         {f('Parent', lp.parent, 'parent', { cols: 5 })}
         {f('Fund Sleeve', lp.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
-        {f('Region / Location', lp.region || '—', 'region', { opts: ['', ...classCfg.REGION_OPTS], cols: 3 })}
-        {f('Investor Type', lp.investorType ?? lp.type, 'type', { opts: classCfg.INVESTOR_TYPE_OPTS })}
+        {f('Region / Location', lp.region || '—', 'region', { cols: 3 })}
+        {f('Investor Type', lp.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS })}
         {f('Institutional vs HNW', lp.type, 'type', { opts: classCfg.TYPE_OPTS })}
         {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
         {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS.filter(Boolean) })}
@@ -352,30 +346,6 @@ export default function LPRecordPanel({
     )
   }
 
-  const renderHistory = () => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-      <thead>
-        <tr style={{ background: 'var(--tbl)' }}>
-          {['Timestamp', 'User', 'Field', 'Before', 'After', 'Note'].map(h => (
-            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {VERSION_HISTORY.map((r, i) => (
-          <tr key={i}>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>{r.ts}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{r.user}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--navy)' }}>{r.field}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>{r.before}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, color: 'var(--green)', fontFamily: 'monospace', fontSize: 11 }}>{r.after}</td>
-            <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11 }}>{r.note}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-
   const renderReclassify = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
       <div className="form-group">
@@ -406,7 +376,7 @@ export default function LPRecordPanel({
     </div>
   )
 
-  const subviewTitle = subview === 'history' ? 'Version History' : subview === 'reclassify' ? 'Reclassify' : null
+  const subviewTitle = subview === 'reclassify' ? 'Reclassify' : null
 
   return (
     <div style={{ height: '100%', maxHeight: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -430,18 +400,12 @@ export default function LPRecordPanel({
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 18px' }}>
-        {subview === 'history'     ? renderHistory()    :
-         subview === 'reclassify'  ? renderReclassify() :
+        {subview === 'reclassify'  ? renderReclassify() :
          renderDetail()}
       </div>
 
       <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        {subview === 'history' ? (
-          <>
-            <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          </>
-        ) : subview === 'reclassify' ? (
+        {subview === 'reclassify' ? (
           <>
             <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -452,8 +416,7 @@ export default function LPRecordPanel({
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Button variant="secondary" onClick={() => setSubview('history')}>Version History</Button>
-              {editable && <Button variant="secondary" onClick={() => { setNewCls(lp.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
+              {enableReclassify && editable && <Button variant="secondary" onClick={() => { setNewCls(lp.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={onClose}>Cancel</Button>

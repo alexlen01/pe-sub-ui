@@ -12,6 +12,21 @@ export interface MatchAnalysis {
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
+type ApiLP = LP & {
+  investor_type?: string
+  inst_vs_hnw?: string
+  region_location?: string
+}
+
+function normalizeLP(row: ApiLP): LP {
+  return {
+    ...row,
+    investorType: row.investorType ?? row.investor_type ?? '',
+    type: (row.type ?? row.instVsHnw ?? row.inst_vs_hnw ?? '') as LP['type'],
+    region: row.region ?? row.regionLocation ?? row.region_location ?? '',
+  }
+}
+
 // ── HTTP primitives ───────────────────────────────────────────────────────────
 
 async function get<T>(path: string): Promise<T> {
@@ -118,6 +133,7 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 /** Mirrors CommitBbRequest.CommitLpRow on the Java side. All fields from BB_PROCESS_FLOW Step 4. */
 export interface CommitLpRow {
   name: string; parent: string | null; spv: boolean; hq: boolean
+  investorType?: string | null
   type: string; region: string; ig: boolean; cls: string
   agentCls?: string | null
   sp: string; mdy: string; fitch: string
@@ -176,7 +192,9 @@ export interface LpClassificationRequest {
     // Identity & classification (manual)
     parent?: string
     spv?: boolean
-    type?: string             // Investor Type
+    investorType?: string     // Investor Type
+    instVsHnw?: string        // Institutional vs HNW
+    type?: string             // Back-compat alias for Institutional vs HNW
     region?: string
     ig?: boolean              // Investment Grade?
     cls?: string              // UBS LP Category
@@ -370,19 +388,26 @@ export const api = {
   // ── LPs ─────────────────────────────────────────────────────────────────────
   lps: {
     list: (params: { facilityId?: number; cls?: string; search?: string } = {}) =>
-      get<LP[]>(`/api/lps${qs(params)}`),
+      get<ApiLP[]>(`/api/lps${qs(params)}`).then(rows => rows.map(normalizeLP)),
     get: (id: number) =>
-      get<LP>(`/api/lps/${id}`),
+      get<ApiLP>(`/api/lps/${id}`).then(normalizeLP),
     update: (id: number, data: Partial<LP>) =>
-      patch<LP>(`/api/lps/${id}`, data),
+      patch<ApiLP>(`/api/lps/${id}`, data).then(normalizeLP),
     // Batch-save the classification & rate edits from the Shadow BB screen onto persisted
     // LP Master records. Rows are matched to existing records by (facilityId, name).
     saveClassification: (body: LpClassificationRequest) =>
       patch<{ updated: number }>('/api/lps/classification', body),
     lookup: (name: string) =>
-      get<LP[]>(`/api/lps/lookup${qs({ name })}`),
+      get<ApiLP[]>(`/api/lps/lookup${qs({ name })}`).then(rows => rows.map(normalizeLP)),
     rates: (effectiveDate?: string) =>
       get<LpRate[]>(`/api/lps/rates${qs({ effective_date: effectiveDate })}`),
+  },
+
+  // ── LP Master (bank-wide) ────────────────────────────────────────────────────
+  lpMaster: {
+    list: () => get<ApiLP[]>('/api/lp-master').then(rows => rows.map(normalizeLP)),
+    get: (id: number) => get<ApiLP>(`/api/lp-master/${id}`).then(normalizeLP),
+    count: () => get<{ count: number }>('/api/lp-master/count'),
   },
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────

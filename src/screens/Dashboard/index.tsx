@@ -24,28 +24,56 @@ const FACILITY_STATUS_ITEMS = [
 
 // Agent Bank Summary layout (mirrors the prototype's Agent Bank Summary report) with "# LPs"
 // added after Borrower. Account Number / Loan Amount / Maturity Date / Collateral Date are facility-edit inputs;
-// Facility Status / Status Date reflect the internal workflow status.
+// Facility Status reflects the internal workflow status.
 const FACILITY_COLS = [
-  { key: 'agentBank',          label: 'Agent',                style: { width: 150 } },
-  { key: 'name',               label: 'Borrower',             style: { width: 170 } },
-  { key: 'lps',                label: '# LPs',                align: 'right', style: { width: 60  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
-  { key: 'accountNumber',      label: 'Account Number',       align: 'right', style: { width: 105 } },
-  { key: 'loanAmount',         label: 'Loan Amount',          align: 'right', style: { width: 100 } },
-  { key: 'maturityDate',       label: 'Maturity Date',        align: 'right', style: { width: 105 } },
-  { key: 'collateralDate',     label: 'Collateral Date',       align: 'right', style: { width: 110 } },
-  { key: 'status',             label: 'Facility Status',                      style: { width: 90 }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
-  { key: 'facilityStatusDate', label: 'Facility Status Date', align: 'right', style: { width: 125 }, render: (r: FacilityRow) => <span style={{ color: r.facilityStatusDate === '—' ? 'var(--muted)' : 'inherit' }}>{r.facilityStatusDate}</span> },
+  {
+    key: 'agentBank',
+    label: 'Agent',
+    style: { width: 'var(--dash-agent-col)' },
+    render: (r: FacilityRow) => (
+      <div title={r.agentBank} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {r.agentBank}
+      </div>
+    ),
+  },
+  {
+    key: 'name',
+    label: 'Borrower',
+    style: { width: 'var(--dash-borrower-col)' },
+    render: (r: FacilityRow) => (
+      <div title={r.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {r.name}
+      </div>
+    ),
+  },
+  { key: 'lps',                label: '# LPs',                align: 'right', style: { width: 'var(--dash-lps-col)'  }, render: (r: FacilityRow) => r.lps?.toLocaleString() ?? '—' },
+  { key: 'accountNumber',      label: 'Account #',            align: 'right', style: { width: 'var(--dash-account-col)' } },
+  { key: 'loanAmount',         label: 'Loan Amount',          align: 'right', style: { width: 'var(--dash-loan-col)' } },
+  { key: 'maturityDate',       label: 'Maturity Date',        align: 'right', style: { width: 'var(--dash-maturity-col)' } },
+  { key: 'collateralDate',     label: 'Collateral Date',      align: 'right', style: { width: 'var(--dash-collateral-col)' } },
+  { key: 'status',             label: 'Facility Status',                      style: { width: 'var(--dash-status-col)' }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
 ]
 
 // Colors for each LP category — covers both UBS taxonomy (Shadow BB) and legacy values
+const DASHBOARD_INITIAL_WIDTHS = {
+  agentBank: 137,
+  name: 204,
+  lps: 74,
+  accountNumber: 84,
+  loanAmount: 102,
+  maturityDate: 116,
+  collateralDate: 100,
+  status: 224,
+}
+
 const CLS_COLORS: Record<string, string> = {
   // UBS LP Category (UBS_CLS_OPTS)
   'Rated Investor':             '#4F4F4F',
   'FoF & Other > $10Bn AUM':   '#E60000',
   'Unrated NAV > $1Bn':        '#767676',
-  'Corp Pension > $5Bn Assets': '#005BBB',
+  'Corp Pension > $5Bn Assets': '#767676',
   'Other Institutional':        '#007A38',
-  'Included (PWM)':             '#7B2D8B',
+  'Included (PWM)':             '#007A38',
   'Excluded':                   '#C8C8C8',
   // Legacy LP classification (CLS_OPTS) — still present in LP Master records
   // that haven't been run through the Shadow BB workflow
@@ -65,7 +93,7 @@ export default function Dashboard() {
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
   const [execSummary,      setExecSummary]      = useState<BBSummary | null>(null)
   const [error,            setError]            = useState<string | null>(null)
-  const [classCfg,         setClassCfg]         = useState<ClassificationConfig | null>(null)
+  const [classCfg, setClassCfg] = useState<ClassificationConfig | null>(null)
 
   const selectedFacilityId = selectedFacility?.id ?? null
 
@@ -154,7 +182,7 @@ export default function Dashboard() {
   ]
 
   return (
-    <div>
+    <div className="dashboard-screen">
       {error && <div style={{ margin: '12px 24px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {error}</div>}
       <div className="kpi-grid">
         {kpis.map(k => (
@@ -162,7 +190,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 12, padding: '12px 24px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 400px', gap: 12, padding: '12px 24px 0' }}>
         <Card
           title="Agent Bank Summary"
           subtitle={`${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })} · ${statusFilter === 'All' ? `All ${facilities.length}` : `${filteredFacilities.length}`} borrowers · Click a row to view LP Category breakdown and Executive Summary`}
@@ -184,7 +212,7 @@ export default function Dashboard() {
               <Button variant="secondary" size="sm" onClick={() => navigate('lp-master')}>View All LPs</Button>
             </div>
           }
-          style={{ display: 'flex', flexDirection: 'column' }}
+          style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}
           bodyStyle={{ flex: 1, minHeight: 0, padding: 0, display: 'flex', flexDirection: 'column' }}
         >
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -193,11 +221,13 @@ export default function Dashboard() {
               rows={filteredFacilities}
               onRowClick={setSelectedFacility}
               selectedRow={selectedFacility}
+              resizableStorageKey="dashboard-facilities-fixed-v5"
+              initialWidths={DASHBOARD_INITIAL_WIDTHS}
             />
           </div>
         </Card>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           <Card
             title="LP Category"
             subtitle={

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Card    from '../../components/ui/Card'
 import Button  from '../../components/ui/Button'
+import InfoTip from '../../components/ui/InfoTip'
 import Modal   from '../../components/ui/Modal'
 import { useApp } from '../../context/AppContext'
 import { api } from '../../services/api'
@@ -35,6 +36,21 @@ const SAMPLE_TEMPLATE_LINKS = [
   ['AEP VII', '/samples/bb-templates/BB-Template-Import-aep-vii.xlsx'],
   ['Petershill IV', '/samples/bb-templates/BB-Template-Import-petershill-iv.xlsx'],
 ] as const
+
+const BB_TEMPLATE_TIP_ITEMS = [
+  {
+    label: 'What a template stores',
+    desc: 'A template describes one Agent BB workbook layout: tabs, header rows, column names, skip rows, and LP category group sections.',
+  },
+  {
+    label: 'How extraction uses it',
+    desc: 'When a submission is reviewed, the API matches workbook signals to this registry so LP rows and columns can be read consistently.',
+  },
+  {
+    label: 'When to add one',
+    desc: 'Add or upload a template when an agent bank sends a new workbook format or changes the tab/header structure materially.',
+  },
+]
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -589,7 +605,8 @@ export default function BBTemplates() {
         title={`BB Template Registry (${templates.length})`}
         subtitle="One row per Agent BB workbook format variant registered for extraction."
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <InfoTip title="BB Templates" items={BB_TEMPLATE_TIP_ITEMS} width={340} />
             <Button size="sm" variant="secondary" disabled={importing || mutationDisabled} onClick={() => importRef.current?.click()}>
               {importing ? 'Importing…' : '↑ Upload Template'}
             </Button>

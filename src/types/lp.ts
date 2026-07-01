@@ -1,5 +1,5 @@
 export type LPClassification = 'Rated' | 'Unrated >2bn' | 'Unrated 1–2bn' | 'Eligible' | 'Excluded'
-export type Region = 'North America' | 'Europe' | 'Asia-Pacific' | 'Middle East' | 'Other'
+export type Region = string
 export type InvestorType =
   | 'Institutional' | 'HNW'
   | 'Pension Fund' | 'Public Pension' | 'Endowment' | 'Foundation'
@@ -14,6 +14,11 @@ export interface LP {
   hq: boolean
   type: InvestorType
   investorType?: string
+  investor_type?: string
+  instVsHnw?: string
+  inst_vs_hnw?: string
+  regionLocation?: string
+  region_location?: string
   region: Region
   ig: boolean
   cls: LPClassification

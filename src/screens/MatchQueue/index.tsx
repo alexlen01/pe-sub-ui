@@ -150,7 +150,7 @@ function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: Q
 }
 
 export default function MatchQueue() {
-  const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId, refreshLpData } = useApp()
+  const { toast, navigate, activeSubmission, abortSubmission, activeSubmissionId } = useApp()
   const [queue, setQueue] = useState<QueueRow[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [bandFilter, setBandFilter] = useState('')
@@ -262,14 +262,13 @@ export default function MatchQueue() {
       return
     }
     if (activeSubmissionId) {
-      // Wait for the accept/reject PATCHes, then commit accepted matches and rejected-as-new
-      // records to LP Master before Run Shadow BB loads its classification table.
+      // Wait for the accept/reject PATCHes, then advance only this submission.
+      // Facility LP records are not touched until the Shadow BB run is executed.
       setCommitting(true)
       try {
         await Promise.allSettled(pendingDecides.current)
         pendingDecides.current = []
         await api.submissions.saveShadowBbState(activeSubmissionId, null)
-        await refreshLpData()
       } catch {
         setCommitting(false)
         toast('Commit failed — please try again.')
@@ -277,7 +276,7 @@ export default function MatchQueue() {
       }
       setCommitting(false)
     }
-    toast(`${acceptedCount} accepted · ${rejectedCount} new LP${rejectedCount !== 1 ? 's' : ''} committed to LP Master.`, 3200, 'success')
+    toast(`${acceptedCount} accepted · ${rejectedCount} new LP${rejectedCount !== 1 ? 's' : ''} ready for Shadow BB.`, 3200, 'success')
     navigate('run-shadow-bb')
   }
   const selectedRow = selectedId ? queue.find(r => r.id === selectedId) ?? null : null

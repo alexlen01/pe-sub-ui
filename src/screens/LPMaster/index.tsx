@@ -17,10 +17,6 @@ import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 
-function hash(str: string) {
-  return Math.abs([...str].reduce((a, c) => (Math.imul(31, a) + c.charCodeAt(0)) | 0, 0))
-}
-
 function formatMoneyText(value: unknown): string {
   const s = String(value ?? '').trim()
   if (!s || s === '—' || /^N\/A$/i.test(s)) return s
@@ -57,6 +53,8 @@ function lpClassificationRow(lp: LPRecord, originalName?: string): LpClassificat
     originalName,
     parent:            lp.parent ?? '',
     spv:               lp.spv,
+    investorType:      lp.investorType ?? '',
+    instVsHnw:         lp.type,
     type:              lp.type,
     region:            lp.region ?? '',
     ig:                lp.ig,
@@ -78,12 +76,6 @@ function lpClassificationRow(lp: LPRecord, originalName?: string): LpClassificat
     inc:               lp.inc,
     notes:             lp.notes ?? '',
   }
-}
-
-function lpBelongsToFacility(lp: { name: string }, facilityName: string) {
-  if (facilityName === 'Blue Owl GP Stakes V') return true
-  const h = hash(facilityName)
-  return (hash(lp.name) + h) % (3 + (h % 5)) !== 0
 }
 
 // Status colour mapping for facility cards
@@ -339,12 +331,11 @@ export default function LPMaster() {
     return lpData.filter(lp => {
       const matchQ    = !q || (lp.name ?? '').toLowerCase().includes(q) || (lp.parent ?? '').toLowerCase().includes(q)
       const matchCls  = !clsFilter  || lp.cls === clsFilter
-      const matchType = !typeFilter || (lp.investorType ?? lp.type) === typeFilter
+      const matchType = !typeFilter || (lp.investorType ?? '') === typeFilter
       const matchInc  = !incFilter  || (incFilter === 'Y' ? lp.inc : !lp.inc)
-      const matchFac  = !facFilter  || lpBelongsToFacility(lp, facFilter.name)
-      return matchQ && matchCls && matchType && matchInc && matchFac
+      return matchQ && matchCls && matchType && matchInc
     })
-  }, [lpData, search, clsFilter, typeFilter, incFilter, facFilter])
+  }, [lpData, search, clsFilter, typeFilter, incFilter])
   const clsLegendItems = useMemo(() => {
     if (!classCfg) return []
     return classCfg.CLS_OPTS.filter(Boolean).map(cls => ({
@@ -359,7 +350,7 @@ export default function LPMaster() {
     { key: 'parent',       getValue: (lp: LPRecord) => lp.parent ?? '' },
     { key: 'spv',          getValue: (lp: LPRecord) => lp.spv ? 'Yes' : 'No' },
     { key: 'region',       getValue: (lp: LPRecord) => lp.region ?? '' },
-    { key: 'investorType', getValue: (lp: LPRecord) => lp.investorType ?? lp.type ?? '' },
+    { key: 'investorType', getValue: (lp: LPRecord) => lp.investorType ?? '' },
     { key: 'instHnw',      getValue: (lp: LPRecord) => lp.type === 'HNW' ? 'HNW' : 'Institutional' },
     { key: 'agentCls',     getValue: (lp: LPRecord) => lp.agentCls ?? '' },
     { key: 'cls',          getValue: (lp: LPRecord) => lp.cls ?? '' },
@@ -629,7 +620,7 @@ export default function LPMaster() {
                 <td title={lp.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{lp.parent || '—'}</td>
                 <td>{lp.spv ? 'Yes' : 'No'}</td>
                 <td>{lp.region || '—'}</td>
-                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType ?? lp.type ?? '—'}</td>
+                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType || '—'}</td>
                 <td>{instHnw}</td>
                 <td title={lp.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{lp.agentCls || '—'}</td>
                 <td><Tag>{lp.cls}</Tag></td>
@@ -693,6 +684,7 @@ export default function LPMaster() {
             onClose={() => setSelected(null)}
             onSave={handleSave}
             canEdit={canEdit}
+            enableReclassify
             rank={selectedRank && selectedRank > 0 ? selectedRank : undefined}
           />
         </DraggablePanel>

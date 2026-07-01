@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import Button from './Button'
 import { SortableHeader, useSortableRows, type SortValue } from '../../hooks/useTableSort'
+import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 
-const PAGE_SIZE_OPTS = [15, 20, 25]
+const PAGE_SIZE_OPTS = [15, 30, 45]
 
 export interface Column<T> {
   key: string
@@ -22,11 +23,16 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   footer?: ReactNode
   selectedRow?: T | null
+  resizableStorageKey?: string
+  initialWidths?: ColWidths
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
+  const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
+  const { widths, onResizeStart, tableWidth } = useColumnResize(resizableStorageKey ?? 'data-table', resizeInitial)
+  const resizable = Boolean(resizableStorageKey && initialWidths)
   const sortColumns = useMemo(() => columns.map(col => ({
     key: col.key,
     getValue: (row: T) => col.sortValue ? col.sortValue(row) : (row as Record<string, SortValue>)[col.key],
@@ -45,7 +51,7 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
 
   return (
     <div className="data-table-wrap">
-      <table className="data-table" style={{ tableLayout: 'fixed' }}>
+      <table className="data-table" style={{ tableLayout: 'fixed', ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}) }}>
         <thead>
           <tr>
             {columns.map(col => (
@@ -55,7 +61,8 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
                 sort={sort}
                 onSort={requestSort}
                 className={col.align === 'right' ? 'num' : ''}
-                style={col.style}
+                style={{ ...col.style, ...(resizable ? { width: widths[col.key] ?? resizeInitial[col.key] } : {}) }}
+                onResizeStart={resizable ? onResizeStart : undefined}
               >
                 {col.label}
               </SortableHeader>

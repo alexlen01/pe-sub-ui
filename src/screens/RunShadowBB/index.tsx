@@ -183,7 +183,7 @@ function deriveInc(cls: string, isNew: boolean, masterInc: boolean | undefined):
 export type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
 export type Override = {
   name: string
-  parent: string; spv: boolean; type: string; ig: boolean
+  parent: string; spv: boolean; investorType: string; type: string; ig: boolean
   cls: string; agentCls: string
   region?: string; fundSleeve?: string
   sp: string; mdy: string; fitch: string
@@ -334,6 +334,7 @@ export default function RunShadowBB() {
         name: lp.name ?? lp._agentName ?? '',
         parent: lp.parent ?? '',
         spv: !!lp.spv,
+        investorType: lp.investorType ?? '',
         type: lp.type ?? 'Institutional',
         ig: !!lp.ig,
         cls: '',
@@ -363,6 +364,7 @@ export default function RunShadowBB() {
       name:              lp.name ?? lp._agentName ?? '',
       parent:            lp.parent ?? '',
       spv:               !!lp.spv,
+      investorType:      lp.investorType ?? '',
       type:              lp.type ?? 'Institutional',
       ig:                !!lp.ig,
       cls,
@@ -407,6 +409,8 @@ export default function RunShadowBB() {
       originalName:      lp?.name || lp?._agentName || undefined,
       parent:            ov.parent || undefined,
       spv:               ov.spv,
+      investorType:      ov.investorType || undefined,
+      instVsHnw:         ov.type || undefined,
       type:              ov.type || undefined,
       region:            ov.region || undefined,
       ig:                ov.ig,
@@ -492,6 +496,7 @@ export default function RunShadowBB() {
     name:        ov.name || lp.name || lp._agentName || '',
     parent:      ov.parent ?? '',
     spv:         ov.spv,
+    investorType: ov.investorType ?? lp.investorType ?? '',
     type:        ov.type as LPRecord['type'],
     ig:          ov.ig,
     cls:         (ov.cls || 'Eligible') as LPRecord['cls'],
@@ -526,6 +531,7 @@ export default function RunShadowBB() {
     name:              saved.name,
     parent:            saved.parent ?? '',
     spv:               saved.spv,
+    investorType:      saved.investorType ?? '',
     type:              saved.type,
     ig:                saved.ig,
     cls:               saved.cls ?? '',
@@ -644,7 +650,7 @@ export default function RunShadowBB() {
       { key: 'parent', getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
       { key: 'spv', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
       { key: 'region', getValue: (lp: SubmissionLP) => getOverride(lp)?.region ?? lp.region ?? '' },
-      { key: 'investorType', getValue: (lp: SubmissionLP) => lp.investorType ?? lp.type ?? '' },
+      { key: 'investorType', getValue: (lp: SubmissionLP) => getOverride(lp)?.investorType ?? lp.investorType ?? '' },
       { key: 'cls', getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
       { key: 'type', getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
       { key: 'ig', getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
@@ -729,7 +735,7 @@ export default function RunShadowBB() {
       return {
         ...lp,
         name: ov.name || lp.name || lp._agentName,
-        parent: ov.parent, spv: ov.spv, region: (ov.region || lp.region || '') as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
+        parent: ov.parent, spv: ov.spv, investorType: ov.investorType, region: (ov.region || lp.region || '') as LPRecord['region'], type: ov.type as LPRecord['type'], ig: ov.ig,
         cls: ov.cls || 'Excluded', agentCls: ov.agentCls,
         sp: ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
         aum: sizeAum, nav: sizeNav, pension: sizeAssets, pensionFunded: '',
@@ -753,6 +759,7 @@ export default function RunShadowBB() {
             parent:          lp.parent ?? null,
             spv:             lp.spv ?? false,
             hq:              lp.hq ?? true,
+            investorType:    lp.investorType ?? null,
             type:            lp.type ?? 'Institutional',
             region:          lp.region ?? '',
             ig:              lp.ig ?? false,
@@ -877,7 +884,7 @@ export default function RunShadowBB() {
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
                             <td>{ov.region || lp.region || '—'}</td>
-                            <td title={lp.investorType || '—'}>{lp.investorType || '—'}</td>
+                            <td title={ov.investorType || lp.investorType || '—'}>{ov.investorType || lp.investorType || '—'}</td>
                             <td>{ov.type || '—'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
