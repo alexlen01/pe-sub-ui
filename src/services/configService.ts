@@ -26,7 +26,15 @@ export const getWizardConfig = (): Promise<WizardConfig> => api.config.wizard()
 export const getWizardSteps = async (): Promise<string[]> => (await getWizardConfig()).WIZARD_STEPS
 export const getEligibilityConfig = (): Promise<EligibilityConfig> => api.config.eligibility()
 export const getReportConfig = (): Promise<ReportConfig> => api.config.reports()
-export const getClassificationConfig = (): Promise<ClassificationConfig> => api.config.classification()
+export const getClassificationConfig = async (): Promise<ClassificationConfig> => {
+  const cfg = await api.config.classification()
+  return {
+    ...cfg,
+    INVESTOR_TYPE_OPTS: cfg.INVESTOR_TYPE_OPTS[0] === ''
+      ? cfg.INVESTOR_TYPE_OPTS
+      : ['', ...cfg.INVESTOR_TYPE_OPTS],
+  }
+}
 export const getMatchingConfig = (): Promise<MatchingConfig> => api.config.matching()
 
 export function ubsClassFromAgentRate(

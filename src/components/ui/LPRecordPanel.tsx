@@ -218,7 +218,7 @@ export default function LPRecordPanel({
   )
 
   const f = (label: string, _viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, formula, cols, money, accent, maxLength, inputMode, width } = cfg
+    const { wide, span2, opts, chk, ta, ro, formula, cols, money, accent, maxLength, inputMode, width, emptyLabel } = cfg
     const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
     const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : cols ? { gridColumn: `span ${Number(cols)}` } : span2 ? { gridColumn: 'span 2' } : { gridColumn: 'span 3' }
     const caption = formula
@@ -236,7 +236,7 @@ export default function LPRecordPanel({
       : money ? formatMoneyText(editVal) : String(editVal ?? '')
     const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
     const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
-    const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || 'Not Rated') : o.label
+    const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || String(emptyLabel ?? 'Not Rated')) : o.label
     return (
       <div className="form-group" style={{ ...colSt, ...boxSt, marginBottom: 0 }} key={label || editKey || ''}>
         <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
@@ -289,7 +289,7 @@ export default function LPRecordPanel({
         {f('Parent', lp.parent, 'parent', { cols: 5 })}
         {f('Fund Sleeve', lp.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
         {f('Region / Location', lp.region || '—', 'region', { cols: 3 })}
-        {f('Investor Type', lp.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS })}
+        {f('Investor Type', lp.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS, emptyLabel: '—' })}
         {f('Institutional vs HNW', lp.type, 'type', { opts: classCfg.TYPE_OPTS })}
         {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
         {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS.filter(Boolean) })}

@@ -550,7 +550,7 @@ export default function LPMaster() {
           <InfoTip title="LP Category" items={clsLegendItems} align="left" width={330} />
           <select style={{ width: 170 }} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
             <option value="">Investor Type: All</option>
-            {(classCfg?.INVESTOR_TYPE_OPTS ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+            {(classCfg?.INVESTOR_TYPE_OPTS ?? []).filter(Boolean).map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <select style={{ width: 130 }} value={incFilter} onChange={e => { setIncFilter(e.target.value); setPage(1) }}>
             <option value="">Included: All</option>
