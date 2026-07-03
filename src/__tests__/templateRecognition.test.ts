@@ -16,6 +16,7 @@ const MOCK_TEMPLATES = [
     hasGroupingRows: true,
     hasColorFlags: false,
     summaryRowsAboveHeader: 0,
+    detectKeys: [], legend: [], notes: [],
     createdAt: '2026-01-01T00:00:00',
     updatedAt: '2026-01-01T00:00:00',
     tabs: [
@@ -44,6 +45,7 @@ const MOCK_TEMPLATES = [
     hasGroupingRows: false,
     hasColorFlags: false,
     summaryRowsAboveHeader: 0,
+    detectKeys: [], legend: [], notes: [],
     createdAt: '2026-01-01T00:00:00',
     updatedAt: '2026-01-01T00:00:00',
     tabs: [
@@ -61,6 +63,7 @@ const MOCK_TEMPLATES = [
     hasGroupingRows: false,
     hasColorFlags: false,
     summaryRowsAboveHeader: 0,
+    detectKeys: [], legend: [], notes: [],
     createdAt: '2026-01-01T00:00:00',
     updatedAt: '2026-01-01T00:00:00',
     tabs: [
@@ -78,6 +81,11 @@ const MOCK_TEMPLATES = [
     hasGroupingRows: true,
     hasColorFlags: true,
     summaryRowsAboveHeader: 9,
+    detectKeys: [],
+    // hasColorFlags templates carry their colour-coding rules in `legend` (API contract:
+    // BbTemplate.legend is always an array; non-empty when the workbook is colour-coded).
+    legend: [{ style: 'Orange fill', meaning: 'RCL / recallable distribution row' }],
+    notes: [],
     createdAt: '2026-01-01T00:00:00',
     updatedAt: '2026-01-01T00:00:00',
     tabs: [
