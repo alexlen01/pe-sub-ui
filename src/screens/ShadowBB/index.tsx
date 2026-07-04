@@ -407,7 +407,7 @@ export default function ShadowBB() {
     name:        ov.name || lp.name || lp._agentName || '',
     parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: ov.investorType ?? lp.investorType ?? '',
     ig:          ov.ig,
-    cls:         (ov.cls || 'Eligible') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
+    cls:         (ov.cls || '') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
     agentCls:    ov.agentCls, region: (ov.region || lp.region || '') as LPRecord['region'],
     fundSleeve:  ov.fundSleeve ?? lp.fundSleeve,
     sp:          ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',

@@ -65,6 +65,29 @@ Selecting a row populates the **LP Classification** donut (live LP class breakdo
 latest persisted Shadow BB snapshot via `GET /api/bb/snapshots/{facilityId}/latest` — not from the
 facility row. Facilities with no Shadow BB run yet show the "No Shadow BB this cycle" empty state.
 
+## Reports
+
+The Reports screen is fully live — every tab reads persisted data via `src/services/reportService.ts`;
+nothing is recomputed client-side and there is no canned preview data.
+
+- **Collateral & Coverage** — the BB certificate. Facility and snapshot dropdowns are populated from
+  `GET /api/facilities` and `GET /api/bb/snapshots/{facilityId}`; **Generate Certificate** fetches
+  `GET /api/reports/collateral/{facilityId}?snapshotId=` and renders the certificate (summary metrics,
+  LP category breakdown, and the optional sections — coverage trend, concentration analysis,
+  reclassified LPs, quality breakdown — all built from the selected snapshot). Detail level and
+  "Include LPs" control the LP drill-down table. **Download XLSX** exports the certificate
+  (Summary / LP Categories / LPs sheets) via the `xlsx` package.
+- **Effective Advance Rates** — `GET /api/reports/ear/{facilityId}`: one row per Shadow BB run.
+- **Agent Bank Exposure** — `GET /api/reports/agent-banks`, optionally filtered to one bank.
+- **Concentration Exposures** — `GET /api/reports/concentration/{facilityId}` per selected facility
+  (or every facility, skipping those without a snapshot); the test checkboxes filter breach types.
+- **Ad Hoc Reporting** — `GET /api/lps` with category filter and client-side sort; **Run & Export**
+  downloads the result as XLSX immediately.
+- **Scheduled Reports** — read-only list from `GET /api/config/reports`.
+
+Each successful generation is recorded via `POST /api/reports/history` and the **Report History**
+card (shown with the certificate preview) lists `GET /api/reports/history`.
+
 ## Project structure
 
 ```

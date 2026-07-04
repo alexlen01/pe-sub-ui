@@ -25,10 +25,10 @@ export function parsePct(s: string | null | undefined): number {
   return isNaN(n) ? 0 : n / 100
 }
 
-function fmtM(n: number): string { return `$${n.toFixed(1)}M` }
-function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
-function fmtDeltaM(n: number): string { return `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(1)}M` }
-function fmtDeltaPct(n: number): string { return `${n < 0 ? '-' : '+'}${Math.abs(n * 100).toFixed(1)}%` }
+export function fmtM(n: number): string { return `$${n.toFixed(1)}M` }
+export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
+export function fmtDeltaM(n: number): string { return `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(1)}M` }
+export function fmtDeltaPct(n: number): string { return `${n < 0 ? '-' : '+'}${Math.abs(n * 100).toFixed(1)}%` }
 
 function isPlaceholder(s: string | null | undefined): boolean {
   return !s || s.trim() === DASH

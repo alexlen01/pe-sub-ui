@@ -292,7 +292,7 @@ export default function LPRecordPanel({
         {f('Investor Type', lp.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS, emptyLabel: '—' })}
         {f('Institutional vs HNW', lp.type, 'type', { opts: classCfg.TYPE_OPTS })}
         {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
-        {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS.filter(Boolean) })}
+        {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS, emptyLabel: 'Unclassified' })}
         {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
         {Boolean(form.cls && classCfg.CLS_CRITERIA[form.cls as string]) && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>

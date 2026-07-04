@@ -130,6 +130,38 @@ export interface ClassBreakdownRow { label: string; count: number; dollars: numb
 
 export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: number; earDelta: number }
 
+// ── Reports (mirrors pe-sub-api ReportController DTOs) ───────────────────────
+
+/** One LP-classification tier of the certificate breakdown. Money in $millions. */
+export interface ClassBreakdownReportRow {
+  cls: string; count: number; uncalledM: number; ubbM: number; rate: string
+}
+
+export interface CollateralReport {
+  facilityId: number; facilityName: string; agentBank: string
+  snapshotId: number; calculatedAt: string
+  summary: BBResult['summary']
+  totalEligibleUncalledM: number
+  classBreakdown: ClassBreakdownReportRow[]
+}
+
+/** UBS exposure per agent bank from each facility's latest snapshot. Money in $millions. */
+export interface AgentBankExposureRow {
+  agentBank: string; facilityCount: number; lpCount: number
+  ubsBBM: number; agentBBM: number; deltaM: number
+}
+
+export interface ReportHistoryEntry {
+  id: number; report: string
+  facilityId: number | null; facilityName: string | null
+  snapshotLabel: string | null; format: string | null
+  userName: string | null; createdAt: string
+}
+
+export interface RecordReportRequest {
+  report: string; facilityId?: number; snapshotLabel?: string; format?: string
+}
+
 /** Mirrors CommitBbRequest.CommitLpRow on the Java side. All fields from BB_PROCESS_FLOW Step 4. */
 export interface CommitLpRow {
   name: string; parent: string | null; spv: boolean; hq: boolean
@@ -424,14 +456,18 @@ export const api = {
 
   // ── Reports ──────────────────────────────────────────────────────────────────
   reports: {
-    collateral: (facilityId: number) =>
-      get<{ facilityId: number; calculatedAt: string; summary: BBResult['summary'] }>(
-        `/api/reports/collateral/${facilityId}`
-      ),
+    collateral: (facilityId: number, snapshotId?: number) =>
+      get<CollateralReport>(`/api/reports/collateral/${facilityId}${qs({ snapshotId })}`),
     concentration: (facilityId: number) =>
       get<{ breaches: BBResult['breaches'] }>(`/api/reports/concentration/${facilityId}`),
     ear: (facilityId: number) =>
       get<EARDataPoint[]>(`/api/reports/ear/${facilityId}`),
+    agentBanks: () =>
+      get<AgentBankExposureRow[]>('/api/reports/agent-banks'),
+    history: () =>
+      get<ReportHistoryEntry[]>('/api/reports/history'),
+    recordHistory: (body: RecordReportRequest) =>
+      post<ReportHistoryEntry>('/api/reports/history', body),
   },
 
   // ── Submissions ───────────────────────────────────────────────────────────────

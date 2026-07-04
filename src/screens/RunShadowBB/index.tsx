@@ -499,7 +499,7 @@ export default function RunShadowBB() {
     investorType: ov.investorType ?? lp.investorType ?? '',
     type:        ov.type as LPRecord['type'],
     ig:          ov.ig,
-    cls:         (ov.cls || 'Eligible') as LPRecord['cls'],
+    cls:         (ov.cls || '') as LPRecord['cls'],
     clsTag:      lp.clsTag ?? '',
     agentCls:    ov.agentCls,
     region:      (ov.region || lp.region || '') as LPRecord['region'],
