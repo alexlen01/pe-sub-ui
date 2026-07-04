@@ -15,6 +15,8 @@ import type { LPRecord } from '../../services/lpService'
 import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculationService'
 import { api } from '../../services/api'
 import type { LpClassificationRequest } from '../../services/api'
+import { BREACH_TYPE_LABEL } from '../../services/reportService'
+import type { BBBreach } from '../../types/bb'
 import { buildBusaRateFractions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import {
   SHADOW_BB_INITIAL_WIDTHS, YesNo, ShadowBBTableHead,
@@ -23,6 +25,18 @@ import {
 } from '../RunShadowBB'
 import { useColumnResize } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
+
+// Maps the snapshot's persisted breaches (server verdict against the Concentration Limits
+// config) to the rows of the breach table shown above the LP table.
+export function toBreachDisplayRows(breaches: BBBreach[]) {
+  return breaches.map(b => ({
+    severity: b.severity,
+    rule:     BREACH_TYPE_LABEL[b.type] ?? b.type,
+    detail:   b.message,
+    current:  fmtPct(b.value),
+    limit:    fmtPct(b.limit),
+  }))
+}
 
 function fmtMoneyM(m: number | null | undefined, full = false): string {
   if (m == null) return '—'
@@ -257,6 +271,9 @@ export default function ShadowBB() {
   // Raw LP records + snapshot kept in state so local overrides can trigger recomputation.
   const [rawLPs,       setRawLPs]       = useState<LPRecord[]>([])
   const [snapshot,     setSnapshot]     = useState<Record<string, unknown>>({})
+  const [snapshotBreaches, setSnapshotBreaches] = useState<BBBreach[]>([])
+  const [breachHidden,  setBreachHidden]  = useState(false)
+  const [warningHidden, setWarningHidden] = useState(false)
   const [overrideMap,  setOverrideMap]  = useState<Record<string, Partial<LPRecord> & { concLimitM?: number }>>({})
 
   // Per-LP save status for the "Saving… / ✓ Saved" indicator
@@ -314,10 +331,11 @@ export default function ShadowBB() {
       getFacilityBBSnapshot(facilityId),
       getFacilitySummaryExt(facilityId),
     ]).then(([lps, snap, ext]) => {
-      const hasSnapshot = snap != null && Object.keys(snap).length > 0
+      const hasSnapshot = snap != null && Object.keys(snap.summary).length > 0
       if (!hasSnapshot) {
         setRawLPs([])
         setSnapshot({})
+        setSnapshotBreaches([])
         setOverrideMap({})
         setSummaryExtApi(null)
         setCalcMeta(null)
@@ -326,7 +344,8 @@ export default function ShadowBB() {
         return
       }
       setRawLPs(lps as LPRecord[])
-      setSnapshot(snap ?? {})
+      setSnapshot(snap.summary)
+      setSnapshotBreaches(snap.breaches)
       setOverrideMap({})
       setCalcMeta({ facility, ts: new Date() })
       setSelectedKey(null)
@@ -689,6 +708,68 @@ export default function ShadowBB() {
           )}
         </Card>
       </div>
+
+      {/* Concentration breach table — persisted with the snapshot, evaluated against the
+          Concentration Limits config at run time. Hidden while local overrides are active,
+          because the table below then shows figures the stored verdict no longer matches. */}
+      {snapshotBreaches.length > 0 && Object.keys(overrideMap).length === 0 && (() => {
+        const rows         = toBreachDisplayRows(snapshotBreaches)
+        const hardBreaches = rows.filter(r => r.severity === 'breach')
+        const warnings     = rows.filter(r => r.severity === 'warning')
+        const breachTable = (list: typeof rows, color: string) => (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                {['Rule', 'Detail', 'Current', 'Limit'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '3px 10px', color: 'var(--navy)', fontWeight: 700 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ padding: '3px 10px', fontWeight: 600 }}>{r.rule}</td>
+                  <td style={{ padding: '3px 10px', color: 'var(--muted)' }}>{r.detail}</td>
+                  <td style={{ padding: '3px 10px', fontWeight: 700, color }}>{r.current}</td>
+                  <td style={{ padding: '3px 10px' }}>{r.limit}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+        return (
+          <div style={{ padding: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {hardBreaches.length > 0 && (
+              <div style={{ background: 'var(--red-lt)', border: '1px solid var(--red)', borderRadius: 'var(--radius)', padding: '10px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: breachHidden ? 0 : 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--red)' }}>
+                    ⚠ {hardBreaches.length} Concentration Limit {hardBreaches.length === 1 ? 'Breach' : 'Breaches'} — must resolve before submitting certificate
+                  </div>
+                  <button onClick={() => setBreachHidden(h => !h)}
+                    style={{ fontSize: 11, color: 'var(--red)', background: 'transparent', border: '1px solid var(--red)', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
+                    {breachHidden ? 'Show' : 'Hide'}
+                  </button>
+                </div>
+                {!breachHidden && breachTable(hardBreaches, 'var(--red)')}
+              </div>
+            )}
+            {warnings.length > 0 && (
+              <div style={{ background: 'var(--amber-lt)', border: '1px solid var(--amber)', borderRadius: 'var(--radius)', padding: '10px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: warningHidden ? 0 : 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--amber)' }}>
+                    ⚠ {warnings.length} Concentration {warnings.length === 1 ? 'Warning' : 'Warnings'} — approaching limit
+                  </div>
+                  <button onClick={() => setWarningHidden(h => !h)}
+                    style={{ fontSize: 11, color: 'var(--amber)', background: 'transparent', border: '1px solid var(--amber)', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
+                    {warningHidden ? 'Show' : 'Hide'}
+                  </button>
+                </div>
+                {!warningHidden && breachTable(warnings, 'var(--amber)')}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       <div style={{ padding: '0 24px 24px' }}>
         <div>

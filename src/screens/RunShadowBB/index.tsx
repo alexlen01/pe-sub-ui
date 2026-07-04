@@ -25,6 +25,7 @@ import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
 import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificationRequest } from '../../services/api'
+import type { BBBreach } from '../../types/bb'
 
 const DEFAULT_CL_M   = 25
 const DEFAULT_CL_PCT = 7.5
@@ -194,6 +195,25 @@ export type Override = {
   inc: boolean; notes: string
 }
 
+// Builds the concentration-alert view model from the server run response's breach list
+// (evaluated against the Concentration Limits config on every run). Breaches demand
+// resolution before the BB certificate goes to the agent; warnings only need monitoring.
+export function buildBreachAlerts(breaches: BBBreach[]) {
+  const hardBreaches = breaches.filter(b => b.severity === 'breach')
+  const warnings     = breaches.filter(b => b.severity === 'warning')
+  return {
+    hardBreaches,
+    warnings,
+    breachHeader: hardBreaches.length > 0
+      ? `⚠ ${hardBreaches.length} concentration ${hardBreaches.length === 1 ? 'breach' : 'breaches'} — must resolve before submitting BB certificate to agent`
+      : null,
+    warningHeader: warnings.length > 0
+      ? `⚠ ${warnings.length} concentration ${warnings.length === 1 ? 'warning' : 'warnings'} — approaching limit, monitor closely`
+      : null,
+    primaryButtonLabel: hardBreaches.length > 0 ? 'Review Breaches in BB Results' : 'View BB Results',
+  }
+}
+
 // Orders the Run Shadow BB rows in the original Agent BB file order.
 export function orderSubmissionLPs<T extends { name?: string; _agentName?: string }>(
   rows: T[],
@@ -222,6 +242,9 @@ export default function RunShadowBB() {
   const [matchQueue, setMatchQueue] = useState<Awaited<ReturnType<typeof getMatchQueue>>>([])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
+  // Concentration breaches from the server run response — the engine checks them against the
+  // Concentration Limits config on every run, so this is the authoritative list, not the local mirror.
+  const [runBreaches, setRunBreaches] = useState<BBBreach[]>([])
   const [summaryHidden, setSummaryHidden] = useState(false)
   const [abortOpen, setAbortOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -716,6 +739,7 @@ export default function RunShadowBB() {
     }
     setRunning(true)
     setLoadError(null)
+    setRunBreaches([])
     if (unclassified > 0) toast(`${unclassified} unclassified LP${unclassified !== 1 ? 's' : ''} will be treated as Excluded`, 4000, 'warning')
     toast('Shadow BB calculation started…')
 
@@ -789,7 +813,8 @@ export default function RunShadowBB() {
             rcl:             lp.rcl ?? false,
             notes:           lp.notes || null,
           }))
-          await api.bb.run(facilityId, commitRows)
+          const snap = await api.bb.run(facilityId, commitRows)
+          setRunBreaches(snap?.result?.breaches ?? [])
         } catch (e) {
           setLoadError(String(e))
           setRunning(false)
@@ -946,7 +971,7 @@ export default function RunShadowBB() {
           </Card>
         )}
 
-        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag><Button onClick={() => { setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null); navigate('shadow-bb') }}>View BB Results</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
+        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag><Button onClick={() => { setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null); navigate('shadow-bb') }}>{buildBreachAlerts(runBreaches).primaryButtonLabel}</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
 
         {result && (
           <Card title="Calculation Results" subtitle={`${submissionLPs.length} LP records processed`}>
@@ -955,6 +980,35 @@ export default function RunShadowBB() {
                 <div key={r.label} style={(r as { right?: boolean }).right ? { gridColumn: 4 } : undefined}><div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{r.label}</div><div style={{ fontSize: 13, fontWeight: (r as { hi?: boolean }).hi ? 700 : 600, color: (r as { neg?: boolean }).neg ? 'var(--danger)' : (r as { hi?: boolean }).hi ? 'var(--navy)' : 'var(--text)' }}>{String(r.value)}</div></div>
               ))}
             </div>
+
+            {runBreaches.length > 0 && (() => {
+              const { hardBreaches, warnings, breachHeader, warningHeader } = buildBreachAlerts(runBreaches)
+              const breachLine = (b: BBBreach, color: string) => (
+                <div key={`${b.type}-${b.message}`} style={{ fontSize: 11, color: 'var(--text)', marginBottom: 2 }}>
+                  {b.message} — at <strong style={{ color }}>{fmtPct(b.value)}</strong> (limit: {fmtPct(b.limit)})
+                </div>
+              )
+              return (
+                <div style={{ margin: '0 18px 14px' }}>
+                  {hardBreaches.length > 0 && (
+                    <div style={{ padding: '10px 12px', background: 'var(--red-lt)', borderRadius: 4, border: '1px solid var(--red)', marginBottom: warnings.length > 0 ? 8 : 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                        {breachHeader}
+                      </div>
+                      {hardBreaches.map(b => breachLine(b, 'var(--red)'))}
+                    </div>
+                  )}
+                  {warnings.length > 0 && (
+                    <div style={{ padding: '10px 12px', background: 'var(--amber-lt)', borderRadius: 4, border: '1px solid var(--amber)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
+                        {warningHeader}
+                      </div>
+                      {warnings.map(b => breachLine(b, 'var(--amber)'))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </Card>
         )}
       </div>

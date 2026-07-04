@@ -321,7 +321,21 @@ describe('getFacilityBBSnapshot — live mode', () => {
       new Response(JSON.stringify({ facilityId: 1, result: { summary } }), { status: 200 })
     ))
     const result = await getFacilityBBSnapshot(1)
-    expect(result).toEqual(summary)
+    expect(result).toEqual({ summary, breaches: [] })
+  })
+
+  it('passes through the snapshot breaches persisted with the run', async () => {
+    const summary  = { totalUBB: 410.2 }
+    const breaches = [
+      { type: 'single-lp', severity: 'breach', message: 'CalPERS exceeds 40% single-LP concentration', value: 0.5, limit: 0.4 },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ facilityId: 1, result: { summary, breaches } }), { status: 200 })
+    ))
+    const result = await getFacilityBBSnapshot(1)
+    expect(result?.breaches).toHaveLength(1)
+    expect(result?.breaches[0].type).toBe('single-lp')
+    expect(result?.breaches[0].limit).toBeCloseTo(0.4)
   })
 
   it('returns null when the API responds 204 (no snapshot yet)', async () => {
@@ -372,6 +386,28 @@ describe('api.bb.run — LP commit', () => {
     expect(body.lps).toHaveLength(1)
     expect(body.lps[0].name).toBe('CalPERS')
     expect(body.lps[0].ubsConc).toBe('$25.0M')
+  })
+
+  it('returns the config-driven breaches from the run response', async () => {
+    // Mirrors the API contract: the engine evaluates the conc_limits config on every run and
+    // persists the verdict in the snapshot — the UI must surface this list, not recompute it.
+    const withBreaches = {
+      ...snapshot,
+      result: {
+        ...snapshot.result,
+        breaches: [
+          { type: 'single-lp', severity: 'breach',  message: 'CalPERS exceeds 40% single-LP concentration', value: 0.5,    limit: 0.4 },
+          { type: 'top10',     severity: 'warning', message: 'Top-10 LPs between 80–90% of UBS BB',          value: 0.8333, limit: 0.9 },
+        ],
+      },
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(withBreaches), { status: 201 })))
+
+    const result = await api.bb.run(1, [lp])
+    expect(result.result.breaches).toHaveLength(2)
+    expect(result.result.breaches[0].type).toBe('single-lp')
+    expect(result.result.breaches[0].limit).toBeCloseTo(0.4)
+    expect(result.result.breaches[1].severity).toBe('warning')
   })
 
   it('POSTs with no body when no LPs provided', async () => {

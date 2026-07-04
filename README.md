@@ -46,7 +46,17 @@ The main workflow is a five-step wizard:
 2. **Review Extraction** — verify canonical field mapping (13 matched columns, 1 unmatched); map or discard unrecognised columns; extracted LP table shows name, Agent LP classification (lifted from the agent column or group-header section rows), commitment, uncalled capital, AUM, S&P / Moody's, advance rate, BB contribution, % of BB, concentration limit; click any row for full field detail including NAV, Fitch, Transferee, Parent / Sponsor
 3. **LP Match Queue** — review fuzzy name-match decisions for each extracted LP row. **Commit Decisions** persists the accepted LPs into LP Master (create new / update matched), deduped on `(facility, investor name)`
 4. **LP Classification & Rate Assignment** (`RunShadowBB`) — edits the **persisted** LP records created in step 3 (live mode reads `api.lps.list({ facilityId })`, not the match queue). **Save** writes the classification & rate edits back to LP Master via `PATCH /api/lps/classification`
-5. **Run Shadow BB** — computes and persists the BB snapshot from the saved LP records
+5. **Run Shadow BB** — computes and persists the BB snapshot from the saved LP records. The
+   run response's `result.breaches` (evaluated server-side against the Concentration Limits in
+   Config) render as attention alerts under Calculation Results: a red box for breaches
+   ("must resolve before submitting BB certificate to agent"), an amber box for warnings, and
+   the primary action relabels to **Review Breaches in BB Results** while breaches exist
+
+The **Shadow BB Results** screen shows the same persisted breach verdict above the LP table:
+collapsible red (breach) and amber (warning) panels listing rule, detail, and actual vs configured
+limit, sourced from the latest snapshot via `getFacilityBBSnapshot` (which returns
+`{ summary, breaches }`). The panels hide while local overrides are active, since the stored
+verdict no longer matches the recomputed table.
 
 ## Dashboard
 

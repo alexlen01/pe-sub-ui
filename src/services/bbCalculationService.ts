@@ -1,6 +1,7 @@
 import { api, type BBSummaryExt } from './api'
 export type { BBSummaryExt }
 import type { LPRecord } from './lpService'
+import type { BBBreach } from '../types/bb'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -142,9 +143,18 @@ export function computePortfolioBB(
 
 // ── Selector functions (API-first) ────────────────────────────────────────────
 
-export async function getFacilityBBSnapshot(facilityId: number): Promise<Record<string, unknown> | null> {
+export interface FacilityBBSnapshotView {
+  summary: Record<string, unknown>
+  /** Concentration breaches persisted with the snapshot — the engine's verdict against the
+   *  Concentration Limits config at run time. */
+  breaches: BBBreach[]
+}
+
+export async function getFacilityBBSnapshot(facilityId: number): Promise<FacilityBBSnapshotView | null> {
   const snapshot = await api.bb.latestSnapshot(facilityId)
-  return (snapshot?.result?.summary as unknown as Record<string, unknown>) ?? null
+  const summary = (snapshot?.result?.summary as unknown as Record<string, unknown>) ?? null
+  if (!summary) return null
+  return { summary, breaches: snapshot?.result?.breaches ?? [] }
 }
 
 export async function getFacilitySummaryExt(facilityId: number): Promise<BBSummaryExt | null> {
