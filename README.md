@@ -34,6 +34,17 @@ npm run package:sh         # same via bash
 npm run generate:agent-bb  # generate public/Agent-BB-Blue-Owl-GP-Stakes-V-May-2026.xlsx for upload testing
 ```
 
+## Container image
+
+`Dockerfile` builds the SPA and serves it with unprivileged nginx (non-root, port 8080).
+`nginx.conf` proxies `/api` to the `pe-sub-api` Kubernetes service, so the same-origin `/api`
+convention (and the TopBar Live badge's `/api/ping` poll) works in-cluster exactly as it does
+under the Vite dev proxy. Deployment manifests live in `pe-sub-infra` (`k8s/base/ui/`).
+
+```bash
+docker build -t pe-sub-ui:latest .
+```
+
 ## Live vs mock mode
 
 The app detects whether `pe-sub-api` is reachable on startup. When the API is available all data is fetched live; otherwise the app falls back to static mock data so the UI can be developed and reviewed without a running backend. A status indicator in the top bar shows the current mode.
