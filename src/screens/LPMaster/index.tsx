@@ -16,6 +16,7 @@ import { api, type LpClassificationRequest } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
+import { competitionRank } from '../../utils/rank'
 
 function formatMoneyText(value: unknown): string {
   const s = String(value ?? '').trim()
@@ -47,34 +48,34 @@ function pctNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
-function lpClassificationRow(lp: LPRecord, originalName?: string): LpClassificationRequest['rows'][number] {
+function lpClassificationRow(LPRecord: LPRecord, originalName?: string): LpClassificationRequest['rows'][number] {
   return {
-    name:              lp.name,
+    name:              LPRecord.name,
     originalName,
-    parent:            lp.parent ?? '',
-    spv:               lp.spv,
-    investorType:      lp.investorType ?? '',
-    instVsHnw:         lp.type,
-    type:              lp.type,
-    region:            lp.region ?? '',
-    ig:                lp.ig,
-    cls:               lp.cls,
-    agentCls:          lp.agentCls ?? '',
-    sp:                lp.sp ?? '',
-    mdy:               lp.mdy ?? '',
-    fitch:             lp.fitch ?? '',
-    aum:               lp.aum ?? '',
-    nav:               lp.nav ?? '',
-    pension:           lp.pension ?? '',
-    pensionFunded:     lp.pensionFunded ?? '',
-    capCommit:         lp.capCommit ?? '',
-    uc:                lp.uc ?? '',
-    ubsAdvRatePct:     pctNumber(lp.rate),
-    agentRatePct:      pctNumber(lp.agentRate),
-    ubsConcLimitPct:   pctNumber(lp.ubsConc),
-    agentConcLimitPct: pctNumber(lp.agentConc),
-    inc:               lp.inc,
-    notes:             lp.notes ?? '',
+    parent:            LPRecord.parent ?? '',
+    spv:               LPRecord.spv,
+    investorType:      LPRecord.investorType ?? '',
+    instVsHnw:         LPRecord.type,
+    type:              LPRecord.type,
+    region:            LPRecord.region ?? '',
+    ig:                LPRecord.ig,
+    cls:               LPRecord.cls,
+    agentCls:          LPRecord.agentCls ?? '',
+    sp:                LPRecord.sp ?? '',
+    mdy:               LPRecord.mdy ?? '',
+    fitch:             LPRecord.fitch ?? '',
+    aum:               LPRecord.aum ?? '',
+    nav:               LPRecord.nav ?? '',
+    pension:           LPRecord.pension ?? '',
+    pensionFunded:     LPRecord.pensionFunded ?? '',
+    capCommit:         LPRecord.capCommit ?? '',
+    uc:                LPRecord.uc ?? '',
+    ubsAdvRatePct:     pctNumber(LPRecord.rate),
+    agentRatePct:      pctNumber(LPRecord.agentRate),
+    ubsConcLimitPct:   pctNumber(LPRecord.ubsConc),
+    agentConcLimitPct: pctNumber(LPRecord.agentConc),
+    inc:               LPRecord.inc,
+    notes:             LPRecord.notes ?? '',
   }
 }
 
@@ -147,6 +148,15 @@ const moneyForFacilityEdit = (display: string) => {
 
 type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string; collateralDate: string }
 type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation'
+
+export function rankLPsByUncalledCapital(rows: LPRecord[]): Record<string, number> {
+  return competitionRank(
+    rows,
+    (LPRecord, index) => LPRecord.name ?? `LPRecord-${index}`,
+    LPRecord => parseMoneyToNumber(LPRecord.uc) ?? Number.NEGATIVE_INFINITY,
+    (a, b) => (a.name ?? '').localeCompare(b.name ?? ''),
+  )
+}
 
 function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
   facility: FacilityRow | null
@@ -328,11 +338,11 @@ export default function LPMaster() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return lpData.filter(lp => {
-      const matchQ    = !q || (lp.name ?? '').toLowerCase().includes(q) || (lp.parent ?? '').toLowerCase().includes(q)
-      const matchCls  = !clsFilter  || lp.cls === clsFilter
-      const matchType = !typeFilter || (lp.investorType ?? '') === typeFilter
-      const matchInc  = !incFilter  || (incFilter === 'Y' ? lp.inc : !lp.inc)
+    return lpData.filter(LPRecord => {
+      const matchQ    = !q || (LPRecord.name ?? '').toLowerCase().includes(q) || (LPRecord.parent ?? '').toLowerCase().includes(q)
+      const matchCls  = !clsFilter  || LPRecord.cls === clsFilter
+      const matchType = !typeFilter || (LPRecord.investorType ?? '') === typeFilter
+      const matchInc  = !incFilter  || (incFilter === 'Y' ? LPRecord.inc : !LPRecord.inc)
       return matchQ && matchCls && matchType && matchInc
     })
   }, [lpData, search, clsFilter, typeFilter, incFilter])
@@ -343,41 +353,43 @@ export default function LPMaster() {
       desc: classCfg.CLS_CRITERIA[cls] ?? '',
     }))
   }, [classCfg])
+  const rankByName = useMemo(() => rankLPsByUncalledCapital(lpData), [lpData])
 
   const sortColumns = useMemo(() => [
-    { key: 'name',         getValue: (lp: LPRecord) => lp.name },
-    { key: 'fundSleeve',   getValue: (lp: LPRecord) => lp.fundSleeve ?? '' },
-    { key: 'parent',       getValue: (lp: LPRecord) => lp.parent ?? '' },
-    { key: 'spv',          getValue: (lp: LPRecord) => lp.spv ? 'Yes' : 'No' },
-    { key: 'region',       getValue: (lp: LPRecord) => lp.region ?? '' },
-    { key: 'investorType', getValue: (lp: LPRecord) => lp.investorType ?? '' },
-    { key: 'instHnw',      getValue: (lp: LPRecord) => lp.type === 'HNW' ? 'HNW' : 'Institutional' },
-    { key: 'agentCls',     getValue: (lp: LPRecord) => lp.agentCls ?? '' },
-    { key: 'cls',          getValue: (lp: LPRecord) => lp.cls ?? '' },
-    { key: 'inc',          getValue: (lp: LPRecord) => lp.inc ? 'Yes' : 'No' },
-    { key: 'ig',           getValue: (lp: LPRecord) => lp.ig ? 'Yes' : 'No' },
-    { key: 'sp',           getValue: (lp: LPRecord) => lp.sp ?? '' },
-    { key: 'mdy',          getValue: (lp: LPRecord) => lp.mdy ?? '' },
-    { key: 'fitch',        getValue: (lp: LPRecord) => lp.fitch ?? '' },
-    { key: 'lpSize',       getValue: (lp: LPRecord) => lp.aum || lp.nav || lp.pension || '' },
-    { key: 'sizeMeasure',  getValue: (lp: LPRecord) => lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : '' },
-    { key: 'capCommit',    getValue: (lp: LPRecord) => lp.capCommit ?? '' },
-    { key: 'pctCapCommit', getValue: (lp: LPRecord) => lp.pctCapCommit ?? '' },
-    { key: 'calledCap',    getValue: (lp: LPRecord) => lp.calledCap ?? '' },
-    { key: 'uc',           getValue: (lp: LPRecord) => lp.uc ?? '' },
-    { key: 'pctUncalled',  getValue: (lp: LPRecord) => lp.pctUncalled ?? '' },
-    { key: 'pctCalled',    getValue: (lp: LPRecord) => lp.pctCalled ?? '' },
-    { key: 'agentRate',    getValue: (lp: LPRecord) => lp.agentRate ?? '' },
-    { key: 'rate',         getValue: (lp: LPRecord) => lp.rate ?? '' },
-    { key: 'agentConc',    getValue: (lp: LPRecord) => lp.agentConc ?? '' },
-    { key: 'ubsConc',      getValue: (lp: LPRecord) => lp.ubsConc ?? '' },
-    { key: 'agentExcess',  getValue: (lp: LPRecord) => lp.agentExcessConc ?? '' },
-    { key: 'ubsExcess',    getValue: (lp: LPRecord) => lp.ubsExcessConc ?? '' },
-    { key: 'abb',          getValue: (lp: LPRecord) => lp.abb ?? '' },
-    { key: 'ubb',          getValue: (lp: LPRecord) => lp.ubb ?? '' },
-    { key: 'notes',        getValue: (lp: LPRecord) => lp.notes ?? '' },
-  ], [])
-  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
+    { key: 'rank',         getValue: (LPRecord: LPRecord) => rankByName[LPRecord.name ?? ''] ?? '' },
+    { key: 'name',         getValue: (LPRecord: LPRecord) => LPRecord.name },
+    { key: 'fundSleeve',   getValue: (LPRecord: LPRecord) => LPRecord.fundSleeve ?? '' },
+    { key: 'parent',       getValue: (LPRecord: LPRecord) => LPRecord.parent ?? '' },
+    { key: 'spv',          getValue: (LPRecord: LPRecord) => LPRecord.spv ? 'Yes' : 'No' },
+    { key: 'region',       getValue: (LPRecord: LPRecord) => LPRecord.region ?? '' },
+    { key: 'investorType', getValue: (LPRecord: LPRecord) => LPRecord.investorType ?? '' },
+    { key: 'instHnw',      getValue: (LPRecord: LPRecord) => LPRecord.type === 'HNW' ? 'HNW' : 'Institutional' },
+    { key: 'agentCls',     getValue: (LPRecord: LPRecord) => LPRecord.agentCls ?? '' },
+    { key: 'cls',          getValue: (LPRecord: LPRecord) => LPRecord.cls ?? '' },
+    { key: 'inc',          getValue: (LPRecord: LPRecord) => LPRecord.inc ? 'Yes' : 'No' },
+    { key: 'ig',           getValue: (LPRecord: LPRecord) => LPRecord.ig ? 'Yes' : 'No' },
+    { key: 'sp',           getValue: (LPRecord: LPRecord) => LPRecord.sp ?? '' },
+    { key: 'mdy',          getValue: (LPRecord: LPRecord) => LPRecord.mdy ?? '' },
+    { key: 'fitch',        getValue: (LPRecord: LPRecord) => LPRecord.fitch ?? '' },
+    { key: 'lpSize',       getValue: (LPRecord: LPRecord) => LPRecord.aum || LPRecord.nav || LPRecord.pension || '' },
+    { key: 'sizeMeasure',  getValue: (LPRecord: LPRecord) => LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '' },
+    { key: 'capCommit',    getValue: (LPRecord: LPRecord) => LPRecord.capCommit ?? '' },
+    { key: 'pctCapCommit', getValue: (LPRecord: LPRecord) => LPRecord.pctCapCommit ?? '' },
+    { key: 'calledCap',    getValue: (LPRecord: LPRecord) => LPRecord.calledCap ?? '' },
+    { key: 'uc',           getValue: (LPRecord: LPRecord) => LPRecord.uc ?? '' },
+    { key: 'pctUncalled',  getValue: (LPRecord: LPRecord) => LPRecord.pctUncalled ?? '' },
+    { key: 'pctCalled',    getValue: (LPRecord: LPRecord) => LPRecord.pctCalled ?? '' },
+    { key: 'agentRate',    getValue: (LPRecord: LPRecord) => LPRecord.agentRate ?? '' },
+    { key: 'rate',         getValue: (LPRecord: LPRecord) => LPRecord.rate ?? '' },
+    { key: 'agentConc',    getValue: (LPRecord: LPRecord) => LPRecord.agentConc ?? '' },
+    { key: 'ubsConc',      getValue: (LPRecord: LPRecord) => LPRecord.ubsConc ?? '' },
+    { key: 'agentExcess',  getValue: (LPRecord: LPRecord) => LPRecord.agentExcessConc ?? '' },
+    { key: 'ubsExcess',    getValue: (LPRecord: LPRecord) => LPRecord.ubsExcessConc ?? '' },
+    { key: 'abb',          getValue: (LPRecord: LPRecord) => LPRecord.abb ?? '' },
+    { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubb ?? '' },
+    { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
+  ], [rankByName])
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'name', direction: 'asc' })
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
     rank: 52, name: 220, fundSleeve: 140, parent: 160, spv: 54,
@@ -388,15 +400,15 @@ export default function LPMaster() {
     agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
   })
-  const selectedRank = selected ? sortedRows.findIndex(lp => lp.name === selected.name) + 1 : undefined
+  const selectedRank = selected ? rankByName[selected.name ?? ''] : undefined
 
   const handleSave = async (updated: LPRecord) => {
     const originalName = selected?.name
-    setLpData(lpData.map(lp => lp.name === originalName ? updated : lp))
+    setLpData(lpData.map(LPRecord => LPRecord.name === originalName ? updated : LPRecord))
     setSelected(updated)
     if (facFilter?.id != null) {
       try {
-        await api.lps.saveClassification({
+        await api.lpRecords.saveClassification({
           facilityId: facFilter.id,
           audit: true,
           rows: [lpClassificationRow(updated, originalName)],
@@ -557,7 +569,7 @@ export default function LPMaster() {
             <option value="Y">Included (Y)</option>
             <option value="N">Excluded from BB</option>
           </select>
-          <Button variant="secondary" size="sm" onClick={() => toast('LP master exported to Excel.')}>&#x2193; Export</Button>
+          <Button variant="secondary" size="sm" onClick={() => toast('LPRecord master exported to Excel.')}>&#x2193; Export</Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
             {filtered.length} of {lpData.length} LPs
           </span>
@@ -604,48 +616,48 @@ export default function LPMaster() {
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((lp, i) => {
-              const sizeMeasure = lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : '—'
-              const lpSizeVal   = lp.aum || lp.nav || lp.pension || '—'
-              const instHnw     = (lp.type === 'HNW' ? 'HNW' : lp.type ? 'Institutional' : '—')
+            {pageItems.map((LPRecord, i) => {
+              const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '—'
+              const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pension || '—'
+              const instHnw     = (LPRecord.type === 'HNW' ? 'HNW' : LPRecord.type ? 'Institutional' : '—')
               return (
-              <tr key={lp.name ?? `lp-${i}`} className={selected?.name === lp.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(lp)} style={{ cursor: 'pointer' }}>
-                <td>{i + 1}</td>
-                <td title={lp.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <strong>{lp.name}</strong>
-                  {lp.rcl && <span className="rcl-badge">R</span>}
-                  {lp.tf  && <span className="tf-badge">T</span>}
+              <tr key={LPRecord.name ?? `LPRecord-${i}`} className={selected?.name === LPRecord.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
+                <td>{rankByName[LPRecord.name ?? ''] ?? '—'}</td>
+                <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <strong>{LPRecord.name}</strong>
+                  {LPRecord.rcl && <span className="rcl-badge">R</span>}
+                  {LPRecord.tf  && <span className="tf-badge">T</span>}
                 </td>
-                <td title={lp.fundSleeve || '—'}>{lp.fundSleeve || '—'}</td>
-                <td title={lp.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{lp.parent || '—'}</td>
-                <td>{lp.spv ? 'Yes' : 'No'}</td>
-                <td>{lp.region || '—'}</td>
-                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.investorType || '—'}</td>
+                <td title={LPRecord.fundSleeve || '—'}>{LPRecord.fundSleeve || '—'}</td>
+                <td title={LPRecord.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{LPRecord.parent || '—'}</td>
+                <td>{LPRecord.spv ? 'Yes' : 'No'}</td>
+                <td>{LPRecord.region || '—'}</td>
+                <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LPRecord.investorType || '—'}</td>
                 <td>{instHnw}</td>
-                <td title={lp.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{lp.agentCls || '—'}</td>
-                <td><Tag>{lp.cls}</Tag></td>
-                <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: lp.inc ? '#e6f4ea' : 'var(--tbl)', color: lp.inc ? 'var(--green)' : 'var(--muted)' }}>{lp.inc ? 'Yes' : 'No'}</span></td>
-                <td>{lp.ig ? 'Yes' : 'No'}</td>
-                <td>{lp.sp || '—'}</td>
-                <td>{lp.mdy || '—'}</td>
-                <td>{lp.fitch || '—'}</td>
+                <td title={LPRecord.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{LPRecord.agentCls || '—'}</td>
+                <td><Tag>{LPRecord.cls}</Tag></td>
+                <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: LPRecord.inc ? '#e6f4ea' : 'var(--tbl)', color: LPRecord.inc ? 'var(--green)' : 'var(--muted)' }}>{LPRecord.inc ? 'Yes' : 'No'}</span></td>
+                <td>{LPRecord.ig ? 'Yes' : 'No'}</td>
+                <td>{LPRecord.sp || '—'}</td>
+                <td>{LPRecord.mdy || '—'}</td>
+                <td>{LPRecord.fitch || '—'}</td>
                 <td className="num">{tableMoney(lpSizeVal)}</td>
                 <td>{sizeMeasure}</td>
-                <td className="num">{tableMoney(lp.capCommit)}</td>
-                <td className="num">{lp.pctCapCommit || '—'}</td>
-                <td className="num">{tableMoney(lp.calledCap)}</td>
-                <td className="num">{tableMoney(lp.uc)}</td>
-                <td className="num">{lp.pctUncalled || '—'}</td>
-                <td className="num">{lp.pctCalled || '—'}</td>
-                <td className="num">{lp.agentRate || '—'}</td>
-                <td className="num">{lp.rate || '—'}</td>
-                <td className="num">{lp.agentConc || '—'}</td>
-                <td className="num">{lp.ubsConc || '—'}</td>
-                <td className="num">{tableMoney(lp.agentExcessConc)}</td>
-                <td className="num">{tableMoney(lp.ubsExcessConc)}</td>
-                <td className={`num ${!lp.abb || lp.abb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.abb)}</td>
-                <td className={`num ${lp.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(lp.ubb)}</td>
-                <td title={lp.notes || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lp.notes || '—'}</td>
+                <td className="num">{tableMoney(LPRecord.capCommit)}</td>
+                <td className="num">{LPRecord.pctCapCommit || '—'}</td>
+                <td className="num">{tableMoney(LPRecord.calledCap)}</td>
+                <td className="num">{tableMoney(LPRecord.uc)}</td>
+                <td className="num">{LPRecord.pctUncalled || '—'}</td>
+                <td className="num">{LPRecord.pctCalled || '—'}</td>
+                <td className="num">{LPRecord.agentRate || '—'}</td>
+                <td className="num">{LPRecord.rate || '—'}</td>
+                <td className="num">{LPRecord.agentConc || '—'}</td>
+                <td className="num">{LPRecord.ubsConc || '—'}</td>
+                <td className="num">{tableMoney(LPRecord.agentExcessConc)}</td>
+                <td className="num">{tableMoney(LPRecord.ubsExcessConc)}</td>
+                <td className={`num ${!LPRecord.abb || LPRecord.abb === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.abb)}</td>
+                <td className={`num ${LPRecord.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.ubb)}</td>
+                <td title={LPRecord.notes || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LPRecord.notes || '—'}</td>
               </tr>
               )
             })}
@@ -677,9 +689,9 @@ export default function LPMaster() {
       </Card>
 
       {selected && (
-        <DraggablePanel className="lp-detail-overlay" storageKey="lp-master-detail">
+        <DraggablePanel className="LPRecord-detail-overlay" storageKey="lp-master-detail">
           <LPRecordPanel
-            lp={selected}
+            LPRecord={selected}
             open={!!selected}
             onClose={() => setSelected(null)}
             onSave={handleSave}

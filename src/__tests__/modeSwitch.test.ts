@@ -44,15 +44,14 @@ describe('FacilityRow extended type', () => {
   })
 })
 
-// ── LPRecord = LP alignment ───────────────────────────────────────────────────
+// ── LPRecord = LPRecord alignment ───────────────────────────────────────────────────
 
-import type { LPRecord } from '../services/lpService'
-import type { LP } from '../types'
+import type { LPRecord } from '../types'
 
-describe('LPRecord type alignment with LP', () => {
+describe('LPRecord type alignment with LPRecord', () => {
   it('LPRecord has pension and pensionFunded as strings (no cast needed)', () => {
-    const lp: LPRecord = {
-      name: 'Test LP', parent: '', spv: false, hq: false,
+    const LPRecord: LPRecord = {
+      name: 'Test LPRecord', parent: '', spv: false, hq: false,
       type: 'Institutional', region: 'North America', ig: false,
       cls: 'Rated', clsTag: 'tag-rated', sp: '', mdy: '', fitch: '',
       aum: '', nav: '', pension: '$10M', pensionFunded: '80%',
@@ -62,12 +61,12 @@ describe('LPRecord type alignment with LP', () => {
       abb: '', ubb: '', uec: '', delta: '',
       inc: true, rcl: false, tf: false, notes: '',
     }
-    expect(lp.pension).toBe('$10M')
-    expect(lp.pensionFunded).toBe('80%')
+    expect(LPRecord.pension).toBe('$10M')
+    expect(LPRecord.pensionFunded).toBe('80%')
   })
 
-  it('LPRecord is assignable to LP without cast', () => {
-    const getName = (lp: LP): string => lp.name
+  it('LPRecord is assignable to LPRecord without cast', () => {
+    const getName = (LPRecord: LPRecord): string => LPRecord.name
     const record: LPRecord = {
       name: 'Typed Fund', parent: '', spv: false, hq: false,
       type: 'Institutional', region: 'North America', ig: false,

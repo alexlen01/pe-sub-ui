@@ -225,10 +225,10 @@ describe('buildDocRecognition', () => {
     expect(byLabel['Column header row']).toMatch(/stacked/i)
   })
 
-  it('renders 4 LP-category sections for AEP VII', () => {
+  it('renders 4 LPRecord-category sections for AEP VII', () => {
     const rows = buildDocRecognition(getTemplateProfile('4')!)
     const byLabel = Object.fromEntries(rows.map(r => [r.label, r.value]))
-    expect(byLabel['LP grouping']).toMatch(/4 LP-category sections/)
+    expect(byLabel['LP grouping']).toMatch(/4 LPRecord-category sections/)
   })
 
   it('renders legend count when hasColorFlags is true', () => {

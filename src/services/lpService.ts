@@ -1,23 +1,23 @@
 import { api } from './api'
-import type { LP } from '../types'
+import type { LPRecord as LPRecordType } from '../types'
 
-export type LPRecord = LP
+export type LPRecord = LPRecordType
 
 // ── API exports ────────────────────────────────────────────────────────────────
 
 export async function getLPs(): Promise<LPRecord[]> {
-  return api.lps.list({})
+  return api.lpRecords.list({})
 }
 
 export async function getLPByName(name: string): Promise<LPRecord | null> {
-  const matches = await api.lps.lookup(name)
-  return matches.find(lp => lp.name === name) ?? null
+  const matches = await api.lpRecords.lookup(name)
+  return matches.find(LPRecord => LPRecord.name === name) ?? null
 }
 
 export async function getLPsForFacility(facilityId: number): Promise<LPRecord[]> {
-  return api.lps.list({ facilityId })
+  return api.lpRecords.list({ facilityId })
 }
 
 export async function lookupLPsByName(name: string): Promise<LPRecord[]> {
-  return api.lps.lookup(name)
+  return api.lpRecords.lookup(name)
 }

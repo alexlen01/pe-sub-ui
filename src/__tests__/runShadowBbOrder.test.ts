@@ -11,13 +11,13 @@ type Row = { name?: string; _agentName?: string }
 const apiRows: Row[] = [
   { name: 'Zephyr Capital', _agentName: 'Zephyr Capital' },
   { name: 'Apex Partners',  _agentName: 'Apex Partners'  },
-  { name: 'Meridian LP',    _agentName: 'Meridian LP'    },
+  { name: 'Meridian LPRecord',    _agentName: 'Meridian LPRecord'    },
 ]
 
 describe('orderSubmissionLPs — live mode', () => {
   it('preserves the API (source_seq) order exactly', () => {
     const out = orderSubmissionLPs(apiRows, [], true)
-    expect(out.map(r => r.name)).toEqual(['Zephyr Capital', 'Apex Partners', 'Meridian LP'])
+    expect(out.map(r => r.name)).toEqual(['Zephyr Capital', 'Apex Partners', 'Meridian LPRecord'])
   })
 
   it('does not alphabetize', () => {
@@ -30,14 +30,14 @@ describe('orderSubmissionLPs — prototype mode', () => {
   it('orders rows by the match queue upload order (by id), not alphabetically', () => {
     // Queue carries the Agent BB file order via ascending id; rows arrive shuffled.
     const queue = [
-      { id: 30, agentName: 'Meridian LP',    masterName: 'Meridian LP'    },
+      { id: 30, agentName: 'Meridian LPRecord',    masterName: 'Meridian LPRecord'    },
       { id: 10, agentName: 'Zephyr Capital', masterName: 'Zephyr Capital' },
       { id: 20, agentName: 'Apex Partners',  masterName: 'Apex Partners'  },
     ]
     const shuffled: Row[] = [apiRows[1], apiRows[2], apiRows[0]]
     const out = orderSubmissionLPs(shuffled, queue, false)
     // id 10 → Zephyr, id 20 → Apex, id 30 → Meridian
-    expect(out.map(r => r.name)).toEqual(['Zephyr Capital', 'Apex Partners', 'Meridian LP'])
+    expect(out.map(r => r.name)).toEqual(['Zephyr Capital', 'Apex Partners', 'Meridian LPRecord'])
   })
 
   it('matches rows by matched master name when the agent name differs', () => {
@@ -56,10 +56,10 @@ describe('orderSubmissionLPs — prototype mode', () => {
   it('sends rows with no queue position to the end', () => {
     const queue = [{ id: 1, agentName: 'Apex Partners', masterName: 'Apex Partners' }]
     const rows: Row[] = [
-      { name: 'Orphan LP',     _agentName: 'Orphan LP'     },
+      { name: 'Orphan LPRecord',     _agentName: 'Orphan LPRecord'     },
       { name: 'Apex Partners', _agentName: 'Apex Partners' },
     ]
     const out = orderSubmissionLPs(rows, queue, false)
-    expect(out.map(r => r.name)).toEqual(['Apex Partners', 'Orphan LP'])
+    expect(out.map(r => r.name)).toEqual(['Apex Partners', 'Orphan LPRecord'])
   })
 })

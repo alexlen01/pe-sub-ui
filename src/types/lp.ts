@@ -7,7 +7,7 @@ export type InvestorType =
   | 'Insurance Company' | 'Insurance' | 'Healthcare' | 'Corporate'
   | 'Other Institutional'
 
-export interface LP {
+export interface LPRecord {
   name: string
   parent: string
   spv: boolean
@@ -52,6 +52,7 @@ export interface LP {
   uec: string
   // Agent classification (may differ from UBS cls)
   agentCls?: string
+  agentClsSource?: 'EXTRACTED' | 'DERIVED' | 'USER_EDITED' | string
   // ── Shadow BB alignment (Shadow_BB.xlsx, 28-column model) ──
   // `cls` carries the UBS LP Category; `agentCls` the Agent LP Category.
   // `rate` carries the UBS Advance Rate; `agentRate` the Agent Advance Rate.

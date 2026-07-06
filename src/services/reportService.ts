@@ -113,7 +113,7 @@ export function buildAgentBankRows(rows: AgentBankExposureRow[]): AgentBankDispl
 
 /** Maps a configured concentration-test label to the engine's breach type. */
 export function breachTypeForTest(label: string): BreachType | null {
-  if (label.includes('Single-LP')) return 'single-lp'
+  if (label.includes('single-lp')) return 'single-lp'
   if (label.includes('Top-10'))    return 'top10'
   if (label.includes('Unrated'))   return 'unrated'
   if (label.includes('Non-US'))    return 'non-us'
@@ -126,7 +126,7 @@ export function filterBreachesByTests(breaches: BBBreach[], selectedTests: strin
 }
 
 export const BREACH_TYPE_LABEL: Record<BreachType, string> = {
-  'single-lp': 'Single-LP limit',
+  'single-lp': 'single-lp limit',
   'top10':     'Top-10 concentration',
   'unrated':   'Unrated aggregate',
   'non-us':    'Non-US aggregate',

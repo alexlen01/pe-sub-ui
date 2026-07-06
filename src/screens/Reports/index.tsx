@@ -34,7 +34,7 @@ const CERT_SECTIONS = [
   { id: 'catSummary',    label: 'LP Category Summary' },
   { id: 'coverageTrend', label: 'Coverage Ratio Trend' },
   { id: 'concAnalysis',  label: 'Concentration Limit Analysis' },
-  { id: 'reclass',       label: 'Reclassified LP Detail' },
+  { id: 'reclass',       label: 'Reclassified LPRecord Detail' },
   { id: 'quality',       label: 'Collateral Quality Breakdown' },
 ] as const
 type CertSectionId = typeof CERT_SECTIONS[number]['id']
@@ -131,18 +131,18 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
   const certRows  = buildCertRows(report)
   const classRows = buildCertClassRows(report)
   const allLps: ComputedLP[] = snapshot?.result?.lps ?? []
-  const lps = includeLps === 'all' ? allLps : allLps.filter(lp => lp.inc)
+  const lps = includeLps === 'all' ? allLps : allLps.filter(LPRecord => LPRecord.inc)
   const highlightVariance = includeLps === 'variance'
   const breaches = snapshot?.result?.breaches ?? []
-  const reclassed = allLps.filter(lp => lp.rcl)
+  const reclassed = allLps.filter(LPRecord => LPRecord.rcl)
   const trendRows = buildEarTrendRows(
     snapshots
       .filter(s => s.result?.summary)
       .map(s => ({ calculatedAt: s.calculatedAt, ear: s.result.summary.ear,
                    agentEar: s.result.summary.agentEar, earDelta: s.result.summary.earDelta }))
   )
-  const hqUncalledM    = allLps.filter(lp => lp.highQuality).reduce((s, lp) => s + parseM(lp.uc), 0)
-  const otherUncalledM = allLps.filter(lp => !lp.highQuality).reduce((s, lp) => s + parseM(lp.uc), 0)
+  const hqUncalledM    = allLps.filter(LPRecord => LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uc), 0)
+  const otherUncalledM = allLps.filter(LPRecord => !LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uc), 0)
 
   return (
     <div>
@@ -218,10 +218,10 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
 
         {detail !== 'exec' && sections.reclass && reclassed.length > 0 && (
           <table className="cert-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th>Reclassified LP</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">UBS BB</th></tr></thead>
+            <thead><tr><th>Reclassified LPRecord</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">UBS BB</th></tr></thead>
             <tbody>
-              {reclassed.map((lp, i) => (
-                <tr key={i}><td>{lp.name}</td><td className="num">{lp.cls}</td><td className="num">{lp.uc}</td><td className="num">{lp.ubb}</td></tr>
+              {reclassed.map((LPRecord, i) => (
+                <tr key={i}><td>{LPRecord.name}</td><td className="num">{LPRecord.cls}</td><td className="num">{LPRecord.uc}</td><td className="num">{LPRecord.ubb}</td></tr>
               ))}
             </tbody>
           </table>
@@ -231,24 +231,24 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
           <table className="cert-table" style={{ marginBottom: 14 }}>
             <thead><tr><th>Collateral Quality</th><th className="num"># LPs</th><th className="num">Uncalled Cap.</th></tr></thead>
             <tbody>
-              <tr><td>High quality (Rated / Unrated tiers)</td><td className="num">{allLps.filter(lp => lp.highQuality).length}</td><td className="num">{fmtM(hqUncalledM)}</td></tr>
-              <tr><td>Other</td><td className="num">{allLps.filter(lp => !lp.highQuality).length}</td><td className="num">{fmtM(otherUncalledM)}</td></tr>
+              <tr><td>High quality (Rated / Unrated tiers)</td><td className="num">{allLps.filter(LPRecord => LPRecord.highQuality).length}</td><td className="num">{fmtM(hqUncalledM)}</td></tr>
+              <tr><td>Other</td><td className="num">{allLps.filter(LPRecord => !LPRecord.highQuality).length}</td><td className="num">{fmtM(otherUncalledM)}</td></tr>
             </tbody>
           </table>
         )}
 
-        {detail === 'lp' && (
+        {detail === 'LPRecord' && (
           <table className="cert-table">
-            <thead><tr><th>LP</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">Rate</th><th className="num">UBS BB</th><th className="num">Delta</th></tr></thead>
+            <thead><tr><th>LPRecord</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">Rate</th><th className="num">UBS BB</th><th className="num">Delta</th></tr></thead>
             <tbody>
-              {lps.map((lp, i) => (
+              {lps.map((LPRecord, i) => (
                 <tr key={i}>
-                  <td>{lp.name}</td>
-                  <td className="num">{lp.cls}</td>
-                  <td className="num">{lp.uc}</td>
-                  <td className="num">{lp.rate}</td>
-                  <td className="num">{lp.ubb}</td>
-                  <td className="num" style={highlightVariance && lp.deltaM !== 0 ? { color: 'var(--red)', fontWeight: 700 } : {}}>{lp.delta}</td>
+                  <td>{LPRecord.name}</td>
+                  <td className="num">{LPRecord.cls}</td>
+                  <td className="num">{LPRecord.uc}</td>
+                  <td className="num">{LPRecord.rate}</td>
+                  <td className="num">{LPRecord.ubb}</td>
+                  <td className="num" style={highlightVariance && LPRecord.deltaM !== 0 ? { color: 'var(--red)', fontWeight: 700 } : {}}>{LPRecord.delta}</td>
                 </tr>
               ))}
             </tbody>
@@ -302,7 +302,7 @@ export default function Reports() {
   const [colSnapshotId, setColSnapshotId] = useState('')
   const [includeLps, setIncludeLps]       = useState('included')
   const [watermark, setWatermark]         = useState('DRAFT - For Internal Review')
-  const [detail, setDetail]               = useState('lp')
+  const [detail, setDetail]               = useState('LPRecord')
   const [certFormat, setCertFormat]       = useState('PDF')
   const [sections, setSections]           = useState<Record<CertSectionId, boolean>>({
     catSummary: true, coverageTrend: true, concAnalysis: true, reclass: false, quality: false,
@@ -457,7 +457,7 @@ export default function Reports() {
   const runAdhoc = async () => {
     setBusy(true)
     try {
-      const lps = await api.lps.list({
+      const lps = await api.lpRecords.list({
         facilityId: adhocFacilityId === 'all' ? undefined : Number(adhocFacilityId),
         cls: adhocCls === 'All' ? undefined : adhocCls,
       })
@@ -465,16 +465,16 @@ export default function Reports() {
         adhocSort === 'name' ? a.name.localeCompare(b.name)
         : adhocSort === 'aum' ? parseM(b.aum) - parseM(a.aum)
         : parseM(b.uc) - parseM(a.uc))
-      const columns = ['LP Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
-      const rows = sorted.map(lp => [lp.name, lp.cls, lp.uc, lp.aum, lp.region, lp.inc ? 'Y' : 'N'] as Array<string | number>)
+      const columns = ['LPRecord Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
+      const rows = sorted.map(LPRecord => [LPRecord.name, LPRecord.cls, LPRecord.uc, LPRecord.aum, LPRecord.region, LPRecord.inc ? 'Y' : 'N'] as Array<string | number>)
       setPreview({
         kind: 'table',
-        title: 'Ad Hoc LP Query',
-        subtitle: `${adhocFacilityId === 'all' ? 'All facilities' : facilityName(adhocFacilityId)} · category: ${adhocCls} · ${sorted.length} LP(s)`,
+        title: 'Ad Hoc LPRecord Query',
+        subtitle: `${adhocFacilityId === 'all' ? 'All facilities' : facilityName(adhocFacilityId)} · category: ${adhocCls} · ${sorted.length} LPRecord(s)`,
         columns, rows,
-        exportName: 'adhoc-lp-query.xlsx',
+        exportName: 'adhoc-LPRecord-query.xlsx',
       })
-      exportXlsx('adhoc-lp-query.xlsx', [rowsToSheet('LPs', columns, rows)])
+      exportXlsx('adhoc-LPRecord-query.xlsx', [rowsToSheet('LPs', columns, rows)])
       logReport('Ad Hoc Reporting',
         adhocFacilityId === 'all' ? undefined : Number(adhocFacilityId), currentMonth, 'XLSX')
       toast('Ad hoc query exported to Excel.')
@@ -488,14 +488,14 @@ export default function Reports() {
     const classRows = buildCertClassRows(report)
     const sheets: XlsxSheet[] = [
       { name: 'Summary', rows: certRows.map(r => ({ Metric: r.metric, 'UBS (BUSA)': r.ubs, Agent: r.agent })) },
-      { name: 'LP Categories', rows: classRows.map(r => ({ Category: r.cls, 'LPs': r.n, 'Uncalled Cap.': r.uc, 'UBS BB': r.ubb, Rate: r.rate })) },
+      { name: 'LPRecord Categories', rows: classRows.map(r => ({ Category: r.cls, 'LPs': r.n, 'Uncalled Cap.': r.uc, 'UBS BB': r.ubb, Rate: r.rate })) },
     ]
     const lps: ComputedLP[] = snapshot?.result?.lps ?? []
-    if (detail === 'lp' && lps.length > 0) {
+    if (detail === 'LPRecord' && lps.length > 0) {
       sheets.push({
         name: 'LPs',
-        rows: (includeLps === 'all' ? lps : lps.filter(lp => lp.inc)).map(lp => ({
-          LP: lp.name, Category: lp.cls, Uncalled: lp.uc, Rate: lp.rate, 'UBS BB': lp.ubb, Delta: lp.delta,
+        rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.inc)).map(LPRecord => ({
+          LPRecord: LPRecord.name, Category: LPRecord.cls, Uncalled: LPRecord.uc, Rate: LPRecord.rate, 'UBS BB': LPRecord.ubb, Delta: LPRecord.delta,
         })),
       })
     }
@@ -561,7 +561,7 @@ export default function Reports() {
               <hr className="sep" />
               <div className="form-group">
                 <label className="form-label">Detail Level</label>
-                {[['lp', 'LP-level drill-down'], ['facility', 'Facility summary only'], ['exec', 'Executive summary only']].map(([value, label]) => (
+                {[['LPRecord', 'LP-level drill-down'], ['facility', 'Facility summary only'], ['exec', 'Executive summary only']].map(([value, label]) => (
                   <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6, cursor: 'pointer' }}>
                     <input type="radio" name="detail" checked={detail === value} onChange={() => setDetail(value)} /> {label}
                   </label>
@@ -613,7 +613,7 @@ export default function Reports() {
           {tab === 'agent-bank' && (
             <div>
               <PaneTitle title="Agent Bank Exposure"
-                desc="UBS exposure by agent bank — BB value, LP count, and variance from each agent's submitted BB." />
+                desc="UBS exposure by agent bank — BB value, LPRecord count, and variance from each agent's submitted BB." />
               <div className="form-group"><label className="form-label">Agent Bank</label>
                 <select style={{ width: '100%' }} value={bankFilter} onChange={e => setBankFilter(e.target.value)}>
                   <option value="all">All Agent Banks</option>
@@ -666,7 +666,7 @@ export default function Reports() {
               <div className="form-group"><label className="form-label">Sort By</label>
                 <select style={{ width: '100%' }} value={adhocSort} onChange={e => setAdhocSort(e.target.value)}>
                   <option value="uc">Uncalled Capital (desc)</option>
-                  <option value="name">LP Name</option>
+                  <option value="name">LPRecord Name</option>
                   <option value="aum">AUM (desc)</option>
                 </select>
               </div>

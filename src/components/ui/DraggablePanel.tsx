@@ -8,7 +8,7 @@ interface DraggablePanelProps {
 }
 
 type Point = { x: number; y: number }
-const HEADER_SELECTOR = '.draggable-panel-handle, .card-header, .lp-detail-hdr'
+const HEADER_SELECTOR = '.draggable-panel-handle, .card-header, .LPRecord-detail-hdr'
 
 function loadPosition(storageKey?: string): Point {
   if (!storageKey || typeof window === 'undefined') return { x: 0, y: 0 }
@@ -37,7 +37,7 @@ function isInteractiveTarget(target: EventTarget | null, container: HTMLElement)
 }
 
 export default function DraggablePanel({ children, className, style, storageKey }: DraggablePanelProps) {
-  const docked = className?.includes('lp-detail-overlay') ?? false
+  const docked = className?.includes('LPRecord-detail-overlay') ?? false
   const [offset, setOffset] = useState<Point>(() => loadPosition(storageKey))
   const panelRef = useRef<HTMLDivElement | null>(null)
   const offsetRef = useRef(offset)
@@ -150,7 +150,7 @@ export default function DraggablePanel({ children, className, style, storageKey 
       style={{
         ...style,
         transform: docked ? undefined : `translate(${offset.x}px, ${offset.y}px)`,
-        position: style?.position ?? (className?.includes('lp-detail-overlay') ? undefined : 'relative'),
+        position: style?.position ?? (className?.includes('LPRecord-detail-overlay') ? undefined : 'relative'),
         zIndex: docked ? style?.zIndex : offset.x || offset.y ? 60 : style?.zIndex,
       }}
     >

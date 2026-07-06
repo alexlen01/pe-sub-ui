@@ -8,7 +8,7 @@ const MOCK_ALIAS_GROUPS = [
         { id: 1, text: 'Investor Name',               tier: 'Core', bank: null },
         { id: 2, text: 'Investor Name (Agent Records)', tier: 'Core', bank: null },
         { id: 3, text: 'Investor',                     tier: 'Core', bank: null },
-        { id: 4, text: 'LP Name',                      tier: 'Core', bank: null },
+        { id: 4, text: 'LPRecord Name',                      tier: 'Core', bank: null },
       ] },
     { id: 4, canonical: 'Parent / Sponsor', lpMasterField: 'Identity & Core Hierarchy - Parent / Sponsor', disambiguation: null,
       aliases: [

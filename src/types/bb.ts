@@ -1,6 +1,6 @@
-import type { LP } from './lp'
+import type { LPRecord } from './lp'
 
-export interface ComputedLP extends LP {
+export interface ComputedLP extends LPRecord {
   uec: string
   uecM: number
   ubbM: number

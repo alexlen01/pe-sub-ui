@@ -9,7 +9,7 @@ import type { BBBreach } from '../types/bb'
 
 const singleLpBreach: BBBreach = {
   type: 'single-lp', severity: 'breach',
-  message: 'CalPERS exceeds 40% single-LP concentration', value: 0.5, limit: 0.4,
+  message: 'CalPERS exceeds 40% single-lp concentration', value: 0.5, limit: 0.4,
 }
 const top10Warning: BBBreach = {
   type: 'top10', severity: 'warning',
@@ -31,7 +31,7 @@ describe('buildBreachAlerts', () => {
   })
 
   it('pluralises the breach header for multiple breaches', () => {
-    const second: BBBreach = { ...singleLpBreach, message: 'CalSTRS exceeds 40% single-LP concentration' }
+    const second: BBBreach = { ...singleLpBreach, message: 'CalSTRS exceeds 40% single-lp concentration' }
     const model = buildBreachAlerts([singleLpBreach, second])
     expect(model.breachHeader).toBe(
       '⚠ 2 concentration breaches — must resolve before submitting BB certificate to agent')

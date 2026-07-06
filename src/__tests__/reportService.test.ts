@@ -195,12 +195,12 @@ describe('buildAgentBankRows', () => {
 
 describe('concentration test mapping', () => {
   const BREACHES: BBBreach[] = [
-    { type: 'single-lp', severity: 'breach',  message: 'CalPERS exceeds 15% single-LP concentration', value: 0.68, limit: 0.15 },
+    { type: 'single-lp', severity: 'breach',  message: 'CalPERS exceeds 15% single-lp concentration', value: 0.68, limit: 0.15 },
     { type: 'top10',     severity: 'warning', message: 'Top-10 LPs between 50–60% of UBS BB',          value: 0.55, limit: 0.60 },
   ]
 
   it('maps configured test labels to engine breach types', () => {
-    expect(breachTypeForTest('Single-LP limit breach (>15% of UBS BB)')).toBe('single-lp')
+    expect(breachTypeForTest('single-lp limit breach (>15% of UBS BB)')).toBe('single-lp')
     expect(breachTypeForTest('Top-10 LP concentration breach (>60% of UBS BB)')).toBe('top10')
     expect(breachTypeForTest('Unrated aggregate exposure (>50% of UBS BB)')).toBe('unrated')
     expect(breachTypeForTest('Non-US LP aggregate exposure (>30% of UBS BB)')).toBe('non-us')
@@ -210,10 +210,10 @@ describe('concentration test mapping', () => {
   it('keeps only breaches whose type matches a selected test', () => {
     const rows = buildBreachRows(
       [{ facility: 'Apex Growth Fund IV', breaches: BREACHES }],
-      ['Single-LP limit breach (>15% of UBS BB)'],
+      ['single-lp limit breach (>15% of UBS BB)'],
     )
     expect(rows).toHaveLength(1)
-    expect(rows[0].test).toBe('Single-LP limit')
+    expect(rows[0].test).toBe('single-lp limit')
     expect(rows[0].value).toBe('68.0%')
     expect(rows[0].limit).toBe('15.0%')
   })

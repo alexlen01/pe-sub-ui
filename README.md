@@ -56,7 +56,7 @@ The main workflow is a five-step wizard:
 1. **Upload** — select facility, agent bank, period, and file; optional notes
 2. **Review Extraction** — verify canonical field mapping (13 matched columns, 1 unmatched); map or discard unrecognised columns; extracted LP table shows name, Agent LP classification (lifted from the agent column or group-header section rows), commitment, uncalled capital, AUM, S&P / Moody's, advance rate, BB contribution, % of BB, concentration limit; click any row for full field detail including NAV, Fitch, Transferee, Parent / Sponsor
 3. **LP Match Queue** — review fuzzy name-match decisions for each extracted LP row. **Commit Decisions** persists the accepted LPs into LP Master (create new / update matched), deduped on `(facility, investor name)`
-4. **LP Classification & Rate Assignment** (`RunShadowBB`) — edits the **persisted** LP records created in step 3 (live mode reads `api.lps.list({ facilityId })`, not the match queue). **Save** writes the classification & rate edits back to LP Master via `PATCH /api/lps/classification`
+4. **LP Classification & Rate Assignment** (`RunShadowBB`) — edits the **persisted** LP records created in step 3 (live mode reads `api.lpRecords.list({ facilityId })`, not the match queue). **Save** writes the classification & rate edits back to LP Master via `PATCH /api/lpRecords/classification`
 5. **Run Shadow BB** — computes and persists the BB snapshot from the saved LP records. The
    run response's `result.breaches` (evaluated server-side against the Concentration Limits in
    Config) render as attention alerts under Calculation Results: a red box for breaches
@@ -102,7 +102,7 @@ nothing is recomputed client-side and there is no canned preview data.
 - **Agent Bank Exposure** — `GET /api/reports/agent-banks`, optionally filtered to one bank.
 - **Concentration Exposures** — `GET /api/reports/concentration/{facilityId}` per selected facility
   (or every facility, skipping those without a snapshot); the test checkboxes filter breach types.
-- **Ad Hoc Reporting** — `GET /api/lps` with category filter and client-side sort; **Run & Export**
+- **Ad Hoc Reporting** — `GET /api/lpRecords` with category filter and client-side sort; **Run & Export**
   downloads the result as XLSX immediately.
 - **Scheduled Reports** — read-only list from `GET /api/config/reports`.
 

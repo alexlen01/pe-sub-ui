@@ -285,25 +285,25 @@ describe('getLPs / getLPByName / lookupLPsByName — live', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('getLPs returns the API LP list', async () => {
-    stubFetch({ '/api/lps': [{ name: 'CalPERS' }, { name: 'CalSTRS' }] })
+    stubFetch({ '/api/lpRecords': [{ name: 'CalPERS' }, { name: 'CalSTRS' }] })
     const lps = await getLPs()
     expect(lps.map(l => l.name)).toEqual(['CalPERS', 'CalSTRS'])
   })
 
   it('getLPByName returns the exact match from lookup', async () => {
-    stubFetch({ '/api/lps/lookup': [{ name: 'CalPERS' }, { name: 'CalPERS Trust' }] })
-    const lp = await getLPByName('CalPERS')
-    expect(lp?.name).toBe('CalPERS')
+    stubFetch({ '/api/lpRecords/lookup': [{ name: 'CalPERS' }, { name: 'CalPERS Trust' }] })
+    const LPRecord = await getLPByName('CalPERS')
+    expect(LPRecord?.name).toBe('CalPERS')
   })
 
   it('getLPByName returns null when no exact match', async () => {
-    stubFetch({ '/api/lps/lookup': [{ name: 'CalPERS Trust' }] })
-    const lp = await getLPByName('CalPERS')
-    expect(lp).toBeNull()
+    stubFetch({ '/api/lpRecords/lookup': [{ name: 'CalPERS Trust' }] })
+    const LPRecord = await getLPByName('CalPERS')
+    expect(LPRecord).toBeNull()
   })
 
   it('lookupLPsByName passes through API results', async () => {
-    stubFetch({ '/api/lps/lookup': [{ name: 'Apollo Global' }] })
+    stubFetch({ '/api/lpRecords/lookup': [{ name: 'Apollo Global' }] })
     const rows = await lookupLPsByName('apollo')
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('Apollo Global')
@@ -327,7 +327,7 @@ describe('getFacilityBBSnapshot — live mode', () => {
   it('passes through the snapshot breaches persisted with the run', async () => {
     const summary  = { totalUBB: 410.2 }
     const breaches = [
-      { type: 'single-lp', severity: 'breach', message: 'CalPERS exceeds 40% single-LP concentration', value: 0.5, limit: 0.4 },
+      { type: 'single-lp', severity: 'breach', message: 'CalPERS exceeds 40% single-lp concentration', value: 0.5, limit: 0.4 },
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ facilityId: 1, result: { summary, breaches } }), { status: 200 })
@@ -359,7 +359,7 @@ describe('getFacilityBBSnapshot — live mode', () => {
 describe('api.bb.run — LP commit', () => {
   const snapshot = { id: 7, facilityId: 1, calculatedAt: '2026-06-12T21:00:00', result: { lps: [], summary: { totalUBB: 120.5 }, breaches: [] } }
 
-  const lp: CommitLpRow = {
+  const LPRecord: CommitLpRow = {
     name: 'CalPERS', parent: null, spv: false, hq: true,
     type: 'Institutional', region: 'North America', ig: true, cls: 'Rated',
     sp: 'AAA', mdy: 'Aaa', fitch: '',
@@ -376,7 +376,7 @@ describe('api.bb.run — LP commit', () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 201 }))
     vi.stubGlobal('fetch', fetchSpy)
 
-    const result = await api.bb.run(1, [lp])
+    const result = await api.bb.run(1, [LPRecord])
     expect(result.id).toBe(7)
 
     const call = fetchSpy.mock.calls[0] as [string, RequestInit]
@@ -396,14 +396,14 @@ describe('api.bb.run — LP commit', () => {
       result: {
         ...snapshot.result,
         breaches: [
-          { type: 'single-lp', severity: 'breach',  message: 'CalPERS exceeds 40% single-LP concentration', value: 0.5,    limit: 0.4 },
+          { type: 'single-lp', severity: 'breach',  message: 'CalPERS exceeds 40% single-lp concentration', value: 0.5,    limit: 0.4 },
           { type: 'top10',     severity: 'warning', message: 'Top-10 LPs between 80–90% of UBS BB',          value: 0.8333, limit: 0.9 },
         ],
       },
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(withBreaches), { status: 201 })))
 
-    const result = await api.bb.run(1, [lp])
+    const result = await api.bb.run(1, [LPRecord])
     expect(result.result.breaches).toHaveLength(2)
     expect(result.result.breaches[0].type).toBe('single-lp')
     expect(result.result.breaches[0].limit).toBeCloseTo(0.4)
@@ -422,20 +422,20 @@ describe('api.bb.run — LP commit', () => {
 
   it('throws on API error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })))
-    await expect(api.bb.run(1, [lp])).rejects.toThrow('500')
+    await expect(api.bb.run(1, [LPRecord])).rejects.toThrow('500')
   })
 })
 
-// ── api.lps.saveClassification — Shadow BB "Save" ─────────────────────────────
+// ── api.lpRecords.saveClassification — Shadow BB "Save" ─────────────────────────────
 
-describe('api.lps.saveClassification', () => {
+describe('api.lpRecords.saveClassification', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('PATCHes the classification rows and returns the updated count', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ updated: 2 }), { status: 200 }))
     vi.stubGlobal('fetch', fetchSpy)
 
-    const result = await api.lps.saveClassification({
+    const result = await api.lpRecords.saveClassification({
       facilityId: 3,
       effectiveDate: '2026-06',
       rows: [
@@ -446,7 +446,7 @@ describe('api.lps.saveClassification', () => {
     expect(result.updated).toBe(2)
 
     const call = fetchSpy.mock.calls[0] as [string, RequestInit]
-    expect(call[0]).toBe('/api/lps/classification')
+    expect(call[0]).toBe('/api/lpRecords/classification')
     expect(call[1].method).toBe('PATCH')
     const body = JSON.parse(call[1].body as string) as { facilityId: number; rows: Array<{ name: string }> }
     expect(body.facilityId).toBe(3)
@@ -456,6 +456,6 @@ describe('api.lps.saveClassification', () => {
 
   it('throws on API error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 400 })))
-    await expect(api.lps.saveClassification({ facilityId: 1, rows: [] })).rejects.toThrow('400')
+    await expect(api.lpRecords.saveClassification({ facilityId: 1, rows: [] })).rejects.toThrow('400')
   })
 })

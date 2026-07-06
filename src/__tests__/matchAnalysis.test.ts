@@ -16,7 +16,7 @@ const matchingConfig: MatchingConfig = {
     retirementNormalize: true,
   },
   legalSuffixes: [
-    { abbr: 'LP', full: 'Limited Partnership', strip: true },
+    { abbr: 'LPRecord', full: 'Limited Partnership', strip: true },
   ],
   knownAbbreviations: [],
   abbrevRegexMap: {},

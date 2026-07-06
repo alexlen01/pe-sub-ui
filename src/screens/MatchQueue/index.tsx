@@ -73,11 +73,11 @@ function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: Q
   }
   return (
     <div
-      className={overlay ? 'lp-detail-overlay' : undefined}
+      className={overlay ? 'LPRecord-detail-overlay' : undefined}
       style={overlay ? undefined : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
     >
-      <div className="lp-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div><div className="lp-detail-name" style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
+      <div className="LPRecord-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div><div className="LPRecord-detail-name" style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#fff', lineHeight: 1, padding: 2, opacity: 0.7 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -276,7 +276,7 @@ export default function MatchQueue() {
       }
       setCommitting(false)
     }
-    toast(`${acceptedCount} accepted · ${rejectedCount} new LP${rejectedCount !== 1 ? 's' : ''} ready for Shadow BB.`, 3200, 'success')
+    toast(`${acceptedCount} accepted · ${rejectedCount} new LPRecord${rejectedCount !== 1 ? 's' : ''} ready for Shadow BB.`, 3200, 'success')
     navigate('run-shadow-bb')
   }
   const selectedRow = selectedId ? queue.find(r => r.id === selectedId) ?? null : null
@@ -308,7 +308,7 @@ export default function MatchQueue() {
             <thead>
               <tr>
                 <th style={{ width: widths.checkbox, position: 'relative' }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
-                <SortableHeader sortKey="agentName"  sort={sort} onSort={requestSort} style={{ width: widths.agentName }}                        onResizeStart={onResizeStart}>Agent LP Name</SortableHeader>
+                <SortableHeader sortKey="agentName"  sort={sort} onSort={requestSort} style={{ width: widths.agentName }}                        onResizeStart={onResizeStart}>Agent LPRecord Name</SortableHeader>
                 <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort} style={{ width: widths.masterName }}                       onResizeStart={onResizeStart}>Matched LP Master Record</SortableHeader>
                 <SortableHeader sortKey="score"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.score, textAlign: 'right' }} onResizeStart={onResizeStart}>Confidence</SortableHeader>
                 <SortableHeader sortKey="quality"    sort={sort} onSort={requestSort} style={{ width: widths.quality }}                          onResizeStart={onResizeStart}>Quality</SortableHeader>

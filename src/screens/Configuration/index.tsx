@@ -199,7 +199,7 @@ export default function Configuration() {
                 ))}
               </tbody>
             </table>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LP.</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LPRecord.</div>
           </div>
         </Card>
 

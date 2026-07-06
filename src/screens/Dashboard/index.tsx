@@ -17,7 +17,7 @@ import { getClassificationConfig, type ClassificationConfig } from '../../servic
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
-  { label: 'Needs Review', desc: 'Submission has unresolved issues — LP matches or eligibility disputes — requiring credit officer action.' },
+  { label: 'Needs Review', desc: 'Submission has unresolved issues — LPRecord matches or eligibility disputes — requiring credit officer action.' },
   { label: 'In Progress',  desc: 'Submission uploaded; credit officer is working through matching, classification, and Shadow BB.' },
   { label: 'Not Started',  desc: 'No Shadow BB submission processed for this cycle.' },
 ]
@@ -141,8 +141,8 @@ export default function Dashboard() {
     if (facilityLPs.length === 0) return null
     const total = facilityLPs.length
     const counts = new Map<string, number>()
-    for (const lp of facilityLPs) {
-      const key = lp.cls || ''
+    for (const LPRecord of facilityLPs) {
+      const key = LPRecord.cls || ''
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     const segments = Array.from(counts.entries())
@@ -176,8 +176,8 @@ export default function Dashboard() {
       </>,
       color: 'black',
     },
-    { label: 'Total LP Records',   value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
-    { label: 'Pending LP Reviews', value: '—', sub: selectedFacility?.name ?? '', color: 'amber' },
+    { label: 'Total LPRecord Records',   value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
+    { label: 'Pending LPRecord Reviews', value: '—', sub: selectedFacility?.name ?? '', color: 'amber' },
     { label: 'Last BB Run',        value: selectedFacility ? formatLastRun(selectedFacility.lastRunAt) : '—', sub: selectedFacility?.name ?? '',          color: 'green' },
   ]
 
@@ -232,7 +232,7 @@ export default function Dashboard() {
             title="LP Category"
             subtitle={
               !selectedFacility
-                ? 'Select a facility to view LP breakdown'
+                ? 'Select a facility to view LPRecord breakdown'
                 : donut
                   ? `${selectedFacility.name} · ${donut.total.toLocaleString()} LPs`
                   : `${selectedFacility.name} · No LP data`
@@ -240,7 +240,7 @@ export default function Dashboard() {
           >
             {donut
               ? <DonutChart segments={donut.segments} total={donut.total} />
-              : <div style={{ minHeight: 168, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>Select a facility to view LP breakdown</div>
+              : <div style={{ minHeight: 168, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>Select a facility to view LPRecord breakdown</div>
             }
           </Card>
 

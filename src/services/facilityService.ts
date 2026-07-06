@@ -217,7 +217,7 @@ const ACTIVITY_EXCLUDED = new Set(['Login', 'Config Change', 'Export'])
 function activityColor(event: string): string {
   if (event === 'Upload') return '#2E75B6'
   if (event.includes('BB') || event.includes('Shadow') || event.includes('Calculated')) return '#007A38'
-  if (event.includes('LP')) return '#C65C00'
+  if (event.includes('LPRecord')) return '#C65C00'
   return '#767676'
 }
 

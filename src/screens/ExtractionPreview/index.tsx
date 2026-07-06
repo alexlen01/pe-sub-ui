@@ -25,6 +25,7 @@ interface ExtractedRow {
   parent?: string
   transferee?: boolean
   agentClass?: string
+  agentClsSource?: string
   commit?: string
   calledCap?: string
   uncalled?: string
@@ -246,6 +247,21 @@ const CHIP: Record<string, React.CSSProperties> = {
 
 const HDR: React.CSSProperties = { whiteSpace: 'nowrap', verticalAlign: 'middle', overflow: 'hidden', textOverflow: 'ellipsis' }
 
+function agentClsSourceText(source: string | undefined, hasAgentClass: boolean): string {
+  const value = String(source ?? '').toUpperCase()
+  if (value === 'EXTRACTED') return 'Agent LP Category came directly from the Agent BB file.'
+  if (value === 'DERIVED') return 'Agent LP Category was auto-assigned from Investor Type and available investor profile data.'
+  if (!hasAgentClass) return 'Agent LP Category was not available. Analyst input is required.'
+  return 'Agent LP Category source is not recorded.'
+}
+
+function agentClsSourceTone(source: string | undefined): React.CSSProperties {
+  const value = String(source ?? '').toUpperCase()
+  if (value === 'EXTRACTED') return { background: 'var(--tbl)', color: 'var(--navy)', borderColor: 'var(--border)' }
+  if (value === 'DERIVED') return { background: 'var(--amber-lt)', color: 'var(--amber)', borderColor: 'rgba(180,83,9,.35)' }
+  return { background: 'var(--danger-lt)', color: 'var(--danger)', borderColor: 'rgba(185,28,28,.25)' }
+}
+
 
 function LPDetailPanel({
   row, onClose, onDiscard, fieldMap, overlay = false, compact = false,
@@ -259,6 +275,8 @@ function LPDetailPanel({
 }) {
   const lpFields = detailFieldsFromMapping(fieldMap)
   const detailFields = lpFields.length ? lpFields : FALLBACK_DETAIL_FIELDS
+  const sourceNote = agentClsSourceText(row.agentClsSource, Boolean(row.agentClass))
+  const sourceTone = agentClsSourceTone(row.agentClsSource)
   return (
     <div
       style={overlay
@@ -273,14 +291,17 @@ function LPDetailPanel({
           display: 'flex', flexDirection: 'column', background: 'var(--card)',
         }}
     >
-      <div className="lp-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+      <div className="LPRecord-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>Row #{row.id} — Field Detail</div>
+          <div className="LPRecord-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>Row #{row.id} — Field Detail</div>
           <div title={row.name} style={{ fontSize: 11, marginTop: 2, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}{row.transferee ? <TransfereeMark /> : null}</div>
         </div>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#fff', lineHeight: 1, padding: 0, opacity: 0.7, flexShrink: 0 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
+        <div style={{ fontSize: 11, lineHeight: 1.45, padding: '8px 10px', marginBottom: 10, border: `1px solid ${sourceTone.borderColor}`, borderRadius: 4, background: sourceTone.background, color: sourceTone.color }}>
+          {sourceNote}
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {detailFields.map(({ key, extracted, label, canonical, money }, i) => {
             const mapping = fieldMap.find(m => m.extracted === extracted)
@@ -552,6 +573,19 @@ export default function ExtractionPreview() {
     return () => ro.disconnect()
   }, [])
 
+  const agentClassStats = useMemo(() => {
+    let extractedCount = 0
+    let derivedCount = 0
+    let missingCount = 0
+    for (const row of extracted) {
+      const source = String(row.agentClsSource ?? '').toUpperCase()
+      if (source === 'EXTRACTED') extractedCount += 1
+      else if (source === 'DERIVED') derivedCount += 1
+      else if (!String(row.agentClass ?? '').trim()) missingCount += 1
+    }
+    return { extractedCount, derivedCount, missingCount, total: extracted.length }
+  }, [extracted])
+
   const gridColumns = useMemo(() => columnsFromCanonicals(canonicals), [canonicals])
   const mappedCanonicals = useMemo(
     () => new Set(fieldMap.map(m => EXTRACTED_TO_CANONICAL[m.extracted] ?? canonicalName(m.canonical))),
@@ -727,7 +761,7 @@ export default function ExtractionPreview() {
     } else {
       toast('Extraction confirmed. Running LP name matching...')
       setTimeout(() => {
-        toast(`LP matching complete. ${extracted.length} records sent to match queue.`)
+        toast(`LPRecord matching complete. ${extracted.length} records sent to match queue.`)
         startTransition(() => navigate('match-queue'))
       }, 2000)
     }
@@ -775,7 +809,7 @@ export default function ExtractionPreview() {
 
             <div>
               <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
-                LP-category sections{profile.groupHeaders.length > 0 ? ` (${profile.groupHeaders.length} · each followed by a subtotal row, excluded)` : ''}
+                LPRecord-category sections{profile.groupHeaders.length > 0 ? ` (${profile.groupHeaders.length} · each followed by a subtotal row, excluded)` : ''}
               </div>
               {profile.groupHeaders.length > 0 ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -802,7 +836,7 @@ export default function ExtractionPreview() {
             <div style={{ padding: '0 18px 14px' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', paddingTop: 5, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>✓ Matched</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead><tr style={{ background: 'var(--tbl)' }}>{['Extracted Column','Canonical LP Field','Group','Match'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: 'var(--tbl)' }}>{['Extracted Column','Canonical LPRecord Field','Group','Match'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {fieldMap.map((m, i) => (
                     <tr key={i}>
@@ -866,8 +900,22 @@ export default function ExtractionPreview() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: 'var(--danger-lt)', border: '1px solid rgba(185,28,28,.25)', borderRadius: 6, fontSize: 12, color: 'var(--danger)' }}>
             <span style={{ fontSize: 16, lineHeight: 1.3, flexShrink: 0 }}>⚠</span>
             <span>
-              <strong>{activeUnrecog.length} unmatched column{activeUnrecog.length !== 1 ? 's' : ''}</strong> must be mapped to a canonical field or discarded before LP matching can run.
+              <strong>{activeUnrecog.length} unmatched column{activeUnrecog.length !== 1 ? 's' : ''}</strong> must be mapped to a canonical field or discarded before LPRecord matching can run.
               Use the <strong>Canonical Field Mapping</strong> section above to resolve each one.
+            </span>
+          </div>
+        )}
+
+        {extracted.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: agentClassStats.derivedCount > 0 ? 'var(--amber-lt)' : 'var(--tbl)', border: `1px solid ${agentClassStats.derivedCount > 0 ? 'rgba(180,83,9,.35)' : 'var(--border)'}`, borderRadius: 6, fontSize: 12, color: agentClassStats.derivedCount > 0 ? 'var(--amber)' : 'var(--muted)' }}>
+            <span style={{ fontWeight: 700, color: 'var(--navy)', flexShrink: 0 }}>Agent LP Category</span>
+            <span>
+              {agentClassStats.derivedCount > 0
+                ? `${agentClassStats.derivedCount} LP Classification${agentClassStats.derivedCount === 1 ? '' : 's'} applied automatically from Investor Type/profile data.`
+                : 'No LP Classifications were auto-assigned from Investor Type/profile data.'}
+              {' '}
+              {agentClassStats.extractedCount} came directly from the Agent BB file.
+              {agentClassStats.missingCount > 0 ? ` ${agentClassStats.missingCount} remain blank and require analyst input.` : ''}
             </span>
           </div>
         )}
@@ -875,7 +923,7 @@ export default function ExtractionPreview() {
         {/* LP data table + Field Detail overlay */}
         <div>
           <Card
-            title={`Extracted LP Data — ${extracted.length} Records`}
+            title={`Extracted LPRecord Data — ${extracted.length} Records`}
             subtitle={
               selectedLP
                 ? `Row #${selectedLP.id} selected`
@@ -931,7 +979,7 @@ export default function ExtractionPreview() {
               </div>
 
               {selectedLP && (
-                <DraggablePanel className="lp-detail-overlay extraction-detail-overlay" storageKey="extraction-preview-detail">
+                <DraggablePanel className="LPRecord-detail-overlay extraction-detail-overlay" storageKey="extraction-preview-detail">
                   <LPDetailPanel
                     row={selectedLP}
                     onClose={() => setSelectedLPId(null)}
@@ -965,7 +1013,7 @@ export default function ExtractionPreview() {
 
     <Modal open={discardConfirmId != null} onClose={() => setDiscardConfirmId(null)} title="Discard Row?" subtitle="This extracted LP row will be permanently removed."
       footer={<><Button variant="secondary" onClick={() => setDiscardConfirmId(null)}>Cancel</Button><Button variant="danger" onClick={handleDiscard}>Discard</Button></>}>
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row will be deleted before LP matching runs. It will not appear in the Match Queue. To restore it, re-upload the Agent BB.</div>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row will be deleted before LPRecord matching runs. It will not appear in the Match Queue. To restore it, re-upload the Agent BB.</div>
     </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>

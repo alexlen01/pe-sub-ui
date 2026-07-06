@@ -25,6 +25,7 @@ import {
 } from '../RunShadowBB'
 import { useColumnResize } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
+import { competitionRank } from '../../utils/rank'
 
 // Maps the snapshot's persisted breaches (server verdict against the Concentration Limits
 // config) to the rows of the breach table shown above the LP table.
@@ -170,18 +171,18 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
   pushBreak('LP Category', 'Classification', ext.clsBreakdown)
 
   const detailAoa: Cell[][] = [['Investor Name', 'Classification', 'Uncalled', 'UBS Eligible', 'Conc. Excess', 'Rate', 'UBS BB', 'Agent BB', 'Delta', 'Included']]
-  for (const lp of rows) {
+  for (const LPRecord of rows) {
     detailAoa.push([
-      lp.name ?? '', lp.cls ?? '',
-      fullDollar(lp.ucM), fullDollar(lp.uecM), fullDollar(lp.concExcessM),
-      lp.rate ?? '', fullDollar(lp.ubbM), fullDollar(lp.abbM), fullDollar(lp.deltaM),
-      lp.inc && lp.cls !== 'Excluded' ? 'Y' : 'N',
+      LPRecord.name ?? '', LPRecord.cls ?? '',
+      fullDollar(LPRecord.ucM), fullDollar(LPRecord.uecM), fullDollar(LPRecord.concExcessM),
+      LPRecord.rate ?? '', fullDollar(LPRecord.ubbM), fullDollar(LPRecord.abbM), fullDollar(LPRecord.deltaM),
+      LPRecord.inc && LPRecord.cls !== 'Excluded' ? 'Y' : 'N',
     ])
   }
 
   const wb = utils.book_new()
   utils.book_append_sheet(wb, utils.aoa_to_sheet(summaryAoa), 'Summary')
-  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LP Detail')
+  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LPRecord Detail')
   writeFile(wb, `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`)
 }
 
@@ -192,32 +193,32 @@ function pctFromConc(value: string | undefined | null, totalUncalledM: number): 
   return concM > 0 && totalUncalledM > 0 ? Number(((concM / totalUncalledM) * 100).toFixed(2)) : ''
 }
 
-function buildOverride(lp: ComputedLPRecord, totalUncalledM: number, defaultConcLimitPct: number | ''): Override {
-  const lpSizeCriteria = lp.aum ? 'AUM' : lp.nav ? 'NAV' : lp.pension ? 'Assets' : ''
+function buildOverride(LPRecord: ComputedLPRecord, totalUncalledM: number, defaultConcLimitPct: number | ''): Override {
+  const lpSizeCriteria = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : ''
   return {
-    name:              lp.name ?? '',
-    parent:            lp.parent ?? '',
-    spv:               !!lp.spv,
-    investorType:      lp.investorType ?? '',
-    type:              lp.type ?? 'Institutional',
-    ig:                !!lp.ig,
-    cls:               lp.cls ?? '',
-    agentCls:          lp.agentCls ?? '',
-    region:            lp.region ?? '',
-    fundSleeve:        lp.fundSleeve ?? '',
-    sp:                lp.sp && lp.sp !== 'NR' ? lp.sp : '',
-    mdy:               lp.mdy && lp.mdy !== 'NR' ? lp.mdy : '',
-    fitch:             lp.fitch && lp.fitch !== 'NR' ? lp.fitch : '',
-    lpSizeBil:         lp.aum || lp.nav || lp.pension || '',
+    name:              LPRecord.name ?? '',
+    parent:            LPRecord.parent ?? '',
+    spv:               !!LPRecord.spv,
+    investorType:      LPRecord.investorType ?? '',
+    type:              LPRecord.type ?? 'Institutional',
+    ig:                !!LPRecord.ig,
+    cls:               LPRecord.cls ?? '',
+    agentCls:          LPRecord.agentCls ?? '',
+    region:            LPRecord.region ?? '',
+    fundSleeve:        LPRecord.fundSleeve ?? '',
+    sp:                LPRecord.sp && LPRecord.sp !== 'NR' ? LPRecord.sp : '',
+    mdy:               LPRecord.mdy && LPRecord.mdy !== 'NR' ? LPRecord.mdy : '',
+    fitch:             LPRecord.fitch && LPRecord.fitch !== 'NR' ? LPRecord.fitch : '',
+    lpSizeBil:         LPRecord.aum || LPRecord.nav || LPRecord.pension || '',
     lpSizeCriteria,
-    capCommit:         lp.capCommit ?? '',
-    ucM:               lp.uc ?? '',
-    ubsAdvRatePct:     parsePct(lp.rate),
-    agentRatePct:      parsePct(lp.agentRate),
-    concLimitPct:      pctFromConc(lp.ubsConc, totalUncalledM) || defaultConcLimitPct,
-    agentConcLimitPct: pctFromConc(lp.agentConc, totalUncalledM),
-    inc:               !!lp.inc,
-    notes:             lp.notes ?? '',
+    capCommit:         LPRecord.capCommit ?? '',
+    ucM:               LPRecord.uc ?? '',
+    ubsAdvRatePct:     parsePct(LPRecord.rate),
+    agentRatePct:      parsePct(LPRecord.agentRate),
+    concLimitPct:      pctFromConc(LPRecord.ubsConc, totalUncalledM) || defaultConcLimitPct,
+    agentConcLimitPct: pctFromConc(LPRecord.agentConc, totalUncalledM),
+    inc:               !!LPRecord.inc,
+    notes:             LPRecord.notes ?? '',
   }
 }
 
@@ -276,7 +277,7 @@ export default function ShadowBB() {
   const [warningHidden, setWarningHidden] = useState(false)
   const [overrideMap,  setOverrideMap]  = useState<Record<string, Partial<LPRecord> & { concLimitM?: number }>>({})
 
-  // Per-LP save status for the "Saving… / ✓ Saved" indicator
+  // Per-LPRecord save status for the "Saving… / ✓ Saved" indicator
   const [saveStatuses, setSaveStatuses] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
@@ -297,8 +298,8 @@ export default function ShadowBB() {
     return [
       { label: 'UBS Advance Rate',   desc: `UBS (BUSA) advance rate applied to eligible uncalled capital: ${busaDesc || 'loaded from database configuration'}.` },
       { label: 'Agent Advance Rate', desc: 'Advance rate assigned by the facility Agent.' },
-      { label: 'Agent BB',           desc: "The Agent's borrowing base contribution for this LP: eligible uncalled capital x Agent advance rate, after concentration limits." },
-      { label: 'UBS BB',             desc: 'The UBS borrowing base contribution for this LP: eligible uncalled capital x UBS advance rate, after the UBS per-LP concentration limit.' },
+      { label: 'Agent BB',           desc: "The Agent's borrowing base contribution for this LPRecord: eligible uncalled capital x Agent advance rate, after concentration limits." },
+      { label: 'UBS BB',             desc: 'The UBS borrowing base contribution for this LPRecord: eligible uncalled capital x UBS advance rate, after the UBS per-LP concentration limit.' },
     ]
   }, [classCfg])
 
@@ -358,7 +359,7 @@ export default function ShadowBB() {
   // patch in the server snapshot summary so the persisted figures show correctly.
   const result = useMemo<BBResult>(() => {
     if (rawLPs.length === 0) return computePortfolioBB([], bbParams, busaRates)
-    const merged = rawLPs.map(lp => ({ ...lp, ...(overrideMap[lp.name ?? ''] ?? {}) }))
+    const merged = rawLPs.map(LPRecord => ({ ...LPRecord, ...(overrideMap[LPRecord.name ?? ''] ?? {}) }))
     const computed = computePortfolioBB(merged, bbParams, busaRates)
     const hasOverrides = Object.keys(overrideMap).length > 0
     return hasOverrides || Object.keys(snapshot).length === 0
@@ -367,7 +368,7 @@ export default function ShadowBB() {
   }, [rawLPs, overrideMap, bbParams, snapshot, busaRates])
 
   const resultTotalUncalledM = useMemo(
-    () => (result.lps as ComputedLPRecord[]).reduce((s, lp) => s + lp.ucM, 0),
+    () => (result.lps as ComputedLPRecord[]).reduce((s, LPRecord) => s + LPRecord.ucM, 0),
     [result.lps],
   )
   const defaultConcLimitPct = useMemo(
@@ -376,17 +377,17 @@ export default function ShadowBB() {
   )
 
   const shadowRows = useMemo<SubmissionLP[]>(
-    () => (result.lps as ComputedLPRecord[]).map(lp => ({
-      ...lp,
-      _key: lp.name ?? '',
+    () => (result.lps as ComputedLPRecord[]).map(LPRecord => ({
+      ...LPRecord,
+      _key: LPRecord.name ?? '',
       _isNew: false,
-      _agentName: lp.name ?? '',
+      _agentName: LPRecord.name ?? '',
     })),
     [result.lps],
   )
 
   const overrides = useMemo<Record<string, Override>>(
-    () => Object.fromEntries((result.lps as ComputedLPRecord[]).map(lp => [lp.name ?? '', buildOverride(lp, resultTotalUncalledM, defaultConcLimitPct)])),
+    () => Object.fromEntries((result.lps as ComputedLPRecord[]).map(LPRecord => [LPRecord.name ?? '', buildOverride(LPRecord, resultTotalUncalledM, defaultConcLimitPct)])),
     [result.lps, resultTotalUncalledM, defaultConcLimitPct],
   )
 
@@ -410,10 +411,12 @@ export default function ShadowBB() {
   )
 
   const rankByKey = useMemo(() => {
-    const ranked = [...shadowRows].sort((a, b) =>
-      parseMoneyM(overrides[b._key]?.ucM) - parseMoneyM(overrides[a._key]?.ucM)
+    return competitionRank(
+      shadowRows,
+      LPRecord => LPRecord._key,
+      LPRecord => parseMoneyM(overrides[LPRecord._key]?.ucM),
+      (a, b) => (a.name ?? a._agentName ?? '').localeCompare(b.name ?? b._agentName ?? ''),
     )
-    return Object.fromEntries(ranked.map((lp, i) => [lp._key, i + 1]))
   }, [shadowRows, overrides])
 
   const selectedLP = useMemo(
@@ -421,28 +424,28 @@ export default function ShadowBB() {
     [shadowRows, selectedKey],
   )
 
-  const sbOvToLP = (lp: SubmissionLP, ov: Override): LPRecord => ({
-    ...(lp as LPRecord),
-    name:        ov.name || lp.name || lp._agentName || '',
-    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: ov.investorType ?? lp.investorType ?? '',
+  const sbOvToLP = (LPRecord: SubmissionLP, ov: Override): LPRecord => ({
+    ...(LPRecord as LPRecord),
+    name:        ov.name || LPRecord.name || LPRecord._agentName || '',
+    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: ov.investorType ?? LPRecord.investorType ?? '',
     ig:          ov.ig,
-    cls:         (ov.cls || '') as LPRecord['cls'], clsTag: lp.clsTag ?? '',
-    agentCls:    ov.agentCls, region: (ov.region || lp.region || '') as LPRecord['region'],
-    fundSleeve:  ov.fundSleeve ?? lp.fundSleeve,
+    cls:         (ov.cls || '') as LPRecord['cls'], clsTag: LPRecord.clsTag ?? '',
+    agentCls:    ov.agentCls, region: (ov.region || LPRecord.region || '') as LPRecord['region'],
+    fundSleeve:  ov.fundSleeve ?? LPRecord.fundSleeve,
     sp:          ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
-    aum:         ov.lpSizeCriteria === 'AUM' ? (ov.lpSizeBil || '') : (lp.aum ?? ''),
-    nav:         ov.lpSizeCriteria === 'NAV' ? (ov.lpSizeBil || '') : (lp.nav ?? ''),
-    pension:     lp.pension ?? '', pensionFunded: lp.pensionFunded ?? '',
-    capCommit:   ov.capCommit ?? '', uc: ov.ucM != null ? String(ov.ucM) : (lp.uc ?? ''),
-    rate:        typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (lp.rate ?? ''),
-    agentRate:   typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct}%`  : (lp.agentRate ?? ''),
-    agentConc:   typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (lp.agentConc ?? ''),
-    ubsConc:     typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : (lp.ubsConc ?? ''),
-    inc: ov.inc, notes: ov.notes ?? '', rcl: lp.rcl ?? false, tf: lp.tf ?? false, hq: lp.hq ?? false,
-    abb: lp.abb ?? '', ubb: lp.ubb ?? '', delta: lp.delta ?? '', uec: lp.uec ?? '',
-    pctCapCommit: lp.pctCapCommit ?? '', calledCap: lp.calledCap ?? '',
-    pctUncalled: lp.pctUncalled ?? '', pctCalled: lp.pctCalled ?? '',
-    agentExcessConc: lp.agentExcessConc, ubsExcessConc: lp.ubsExcessConc,
+    aum:         ov.lpSizeCriteria === 'AUM' ? (ov.lpSizeBil || '') : (LPRecord.aum ?? ''),
+    nav:         ov.lpSizeCriteria === 'NAV' ? (ov.lpSizeBil || '') : (LPRecord.nav ?? ''),
+    pension:     LPRecord.pension ?? '', pensionFunded: LPRecord.pensionFunded ?? '',
+    capCommit:   ov.capCommit ?? '', uc: ov.ucM != null ? String(ov.ucM) : (LPRecord.uc ?? ''),
+    rate:        typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (LPRecord.rate ?? ''),
+    agentRate:   typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct}%`  : (LPRecord.agentRate ?? ''),
+    agentConc:   typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (LPRecord.agentConc ?? ''),
+    ubsConc:     typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : (LPRecord.ubsConc ?? ''),
+    inc: ov.inc, notes: ov.notes ?? '', rcl: LPRecord.rcl ?? false, tf: LPRecord.tf ?? false, hq: LPRecord.hq ?? false,
+    abb: LPRecord.abb ?? '', ubb: LPRecord.ubb ?? '', delta: LPRecord.delta ?? '', uec: LPRecord.uec ?? '',
+    pctCapCommit: LPRecord.pctCapCommit ?? '', calledCap: LPRecord.calledCap ?? '',
+    pctUncalled: LPRecord.pctUncalled ?? '', pctCalled: LPRecord.pctCalled ?? '',
+    agentExcessConc: LPRecord.agentExcessConc, ubsExcessConc: LPRecord.ubsExcessConc,
   })
 
   const sbLpToOv = (saved: LPRecord, prev: Override): Override => ({
@@ -508,7 +511,7 @@ export default function ShadowBB() {
         inc:               draft.inc,
         notes:             draft.notes ?? '',
       }
-      await api.lps.saveClassification({ facilityId, rows: [row] })
+      await api.lpRecords.saveClassification({ facilityId, rows: [row] })
       setSaveStatuses(s => ({ ...s, [lpName]: 'saved' }))
       clearTimeout(saveTimers.current[lpName])
       saveTimers.current[lpName] = setTimeout(() => {
@@ -525,46 +528,46 @@ export default function ShadowBB() {
 
   const filtered = useMemo(() => clsFilter ? shadowRows.filter(r => overrides[r._key]?.cls === clsFilter) : shadowRows, [shadowRows, overrides, clsFilter])
   const sortColumns = useMemo(() => {
-    const getOverride = (lp: SubmissionLP) => overrides[lp._key]
-    const getComputed = (lp: SubmissionLP) => {
-      const ov = getOverride(lp)
+    const getOverride = (LPRecord: SubmissionLP) => overrides[LPRecord._key]
+    const getComputed = (LPRecord: SubmissionLP) => {
+      const ov = getOverride(LPRecord)
       return ov ? calcRow(ov, totalCommitM, totalUncalledM) : null
     }
     return [
-      { key: 'rank',         getValue: (lp: SubmissionLP) => rankByKey[lp._key] ?? '' },
-      { key: 'name',         getValue: (lp: SubmissionLP) => getOverride(lp)?.name || lp.name || lp._agentName || '' },
-      { key: 'fundSleeve',   getValue: (lp: SubmissionLP) => getOverride(lp)?.fundSleeve ?? lp.fundSleeve ?? '' },
-      { key: 'parent',       getValue: (lp: SubmissionLP) => getOverride(lp)?.parent ?? '' },
-      { key: 'spv',          getValue: (lp: SubmissionLP) => !!getOverride(lp)?.spv },
-      { key: 'region',       getValue: (lp: SubmissionLP) => getOverride(lp)?.region ?? lp.region ?? '' },
-      { key: 'investorType', getValue: (lp: SubmissionLP) => getOverride(lp)?.investorType ?? lp.investorType ?? '' },
-      { key: 'cls',          getValue: (lp: SubmissionLP) => getOverride(lp)?.cls ?? '' },
-      { key: 'type',         getValue: (lp: SubmissionLP) => getOverride(lp)?.type ?? '' },
-      { key: 'ig',           getValue: (lp: SubmissionLP) => !!getOverride(lp)?.ig },
-      { key: 'agentCls',     getValue: (lp: SubmissionLP) => getOverride(lp)?.agentCls ?? '' },
-      { key: 'sp', getValue: (lp: SubmissionLP) => getOverride(lp)?.sp ?? '' },
-      { key: 'mdy', getValue: (lp: SubmissionLP) => getOverride(lp)?.mdy ?? '' },
-      { key: 'fitch', getValue: (lp: SubmissionLP) => getOverride(lp)?.fitch ?? '' },
-      { key: 'lpSizeBil', getValue: (lp: SubmissionLP) => getOverride(lp)?.lpSizeBil ?? '' },
-      { key: 'lpSizeCriteria', getValue: (lp: SubmissionLP) => getOverride(lp)?.lpSizeCriteria ?? '' },
-      { key: 'capCommit', getValue: (lp: SubmissionLP) => parseMoneyM(getOverride(lp)?.capCommit) },
-      { key: 'ucM', getValue: (lp: SubmissionLP) => parseMoneyM(getOverride(lp)?.ucM) },
-      { key: 'ubsAdvRatePct', getValue: (lp: SubmissionLP) => getOverride(lp)?.ubsAdvRatePct ?? '' },
-      { key: 'agentRatePct', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentRatePct ?? '' },
-      { key: 'concLimitPct', getValue: (lp: SubmissionLP) => getOverride(lp)?.concLimitPct ?? '' },
-      { key: 'agentConcLimitPct', getValue: (lp: SubmissionLP) => getOverride(lp)?.agentConcLimitPct ?? '' },
-      { key: 'cmtPct', getValue: (lp: SubmissionLP) => getComputed(lp)?.cmtPct ?? '' },
-      { key: 'calledM', getValue: (lp: SubmissionLP) => getComputed(lp)?.calledM ?? '' },
-      { key: 'pctUncalled', getValue: (lp: SubmissionLP) => getComputed(lp)?.pctUncalled ?? '' },
-      { key: 'pctCalled', getValue: (lp: SubmissionLP) => getComputed(lp)?.pctCalled ?? '' },
-      { key: 'agentExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentExcess ?? '' },
-      { key: 'ubsExcess', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsExcess ?? '' },
-      { key: 'agentBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.agentBBCalc ?? '' },
-      { key: 'pctAgentBB', getValue: (lp: SubmissionLP) => totalAgentBBCalc > 0 ? (getComputed(lp)?.agentBBCalc ?? 0) / totalAgentBBCalc : 0 },
-      { key: 'ubsBBCalc', getValue: (lp: SubmissionLP) => getComputed(lp)?.ubsBBCalc ?? '' },
-      { key: 'pctUbsBB', getValue: (lp: SubmissionLP) => totalUbsBBCalc > 0 ? (getComputed(lp)?.ubsBBCalc ?? 0) / totalUbsBBCalc : 0 },
-      { key: 'included', getValue: (lp: SubmissionLP) => !!getComputed(lp)?.included },
-      { key: 'notes', getValue: (lp: SubmissionLP) => getOverride(lp)?.notes ?? '' },
+      { key: 'rank',         getValue: (LPRecord: SubmissionLP) => rankByKey[LPRecord._key] ?? '' },
+      { key: 'name',         getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.name || LPRecord.name || LPRecord._agentName || '' },
+      { key: 'fundSleeve',   getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fundSleeve ?? LPRecord.fundSleeve ?? '' },
+      { key: 'parent',       getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.parent ?? '' },
+      { key: 'spv',          getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.spv },
+      { key: 'region',       getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.region ?? LPRecord.region ?? '' },
+      { key: 'investorType', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.investorType ?? LPRecord.investorType ?? '' },
+      { key: 'cls',          getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.cls ?? '' },
+      { key: 'type',         getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.type ?? '' },
+      { key: 'ig',           getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.ig },
+      { key: 'agentCls',     getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentCls ?? '' },
+      { key: 'sp', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.sp ?? '' },
+      { key: 'mdy', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.mdy ?? '' },
+      { key: 'fitch', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fitch ?? '' },
+      { key: 'lpSizeBil', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.lpSizeBil ?? '' },
+      { key: 'lpSizeCriteria', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.lpSizeCriteria ?? '' },
+      { key: 'capCommit', getValue: (LPRecord: SubmissionLP) => parseMoneyM(getOverride(LPRecord)?.capCommit) },
+      { key: 'ucM', getValue: (LPRecord: SubmissionLP) => parseMoneyM(getOverride(LPRecord)?.ucM) },
+      { key: 'ubsAdvRatePct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.ubsAdvRatePct ?? '' },
+      { key: 'agentRatePct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentRatePct ?? '' },
+      { key: 'concLimitPct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.concLimitPct ?? '' },
+      { key: 'agentConcLimitPct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentConcLimitPct ?? '' },
+      { key: 'cmtPct', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.cmtPct ?? '' },
+      { key: 'calledM', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.calledM ?? '' },
+      { key: 'pctUncalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctUncalled ?? '' },
+      { key: 'pctCalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctCalled ?? '' },
+      { key: 'agentExcess', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.agentExcess ?? '' },
+      { key: 'ubsExcess', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.ubsExcess ?? '' },
+      { key: 'agentBBCalc', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.agentBBCalc ?? '' },
+      { key: 'pctAgentBB', getValue: (LPRecord: SubmissionLP) => totalAgentBBCalc > 0 ? (getComputed(LPRecord)?.agentBBCalc ?? 0) / totalAgentBBCalc : 0 },
+      { key: 'ubsBBCalc', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.ubsBBCalc ?? '' },
+      { key: 'pctUbsBB', getValue: (LPRecord: SubmissionLP) => totalUbsBBCalc > 0 ? (getComputed(LPRecord)?.ubsBBCalc ?? 0) / totalUbsBBCalc : 0 },
+      { key: 'included', getValue: (LPRecord: SubmissionLP) => !!getComputed(LPRecord)?.included },
+      { key: 'notes', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.notes ?? '' },
     ]
   }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
@@ -577,7 +580,7 @@ export default function ShadowBB() {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
       e.preventDefault()
-      const idx = sortedRows.findIndex(lp => lp._key === selectedKey)
+      const idx = sortedRows.findIndex(LPRecord => LPRecord._key === selectedKey)
       if (idx === -1) return
       const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
       if (nextIdx < 0 || nextIdx >= sortedRows.length) return
@@ -610,11 +613,11 @@ export default function ShadowBB() {
     const busaMap: Record<string, BkRow> = { '90%': { rate: '90%', count: 0, dollars: 0, pct: 0 }, '75%': { rate: '75%', count: 0, dollars: 0, pct: 0 }, '65%': { rate: '65%', count: 0, dollars: 0, pct: 0 }, '50%': { rate: '50%', count: 0, dollars: 0, pct: 0 }, '0%': { rate: '0%', count: 0, dollars: 0, pct: 0 } }
     const agentMap: Record<string, BkRow> = {}
     const clsMap: Record<string, BkRow & { label: string }> = { 'Rated Investors': { label: 'Rated Investors', count: 0, dollars: 0, pct: 0 }, 'Unrated Investors': { label: 'Unrated Investors', count: 0, dollars: 0, pct: 0 }, 'Eligible Investors': { label: 'Eligible Investors', count: 0, dollars: 0, pct: 0 }, 'Excluded Investors': { label: 'Excluded Investors', count: 0, dollars: 0, pct: 0 } }
-    for (const lp of lps) {
-      const bkey = lp.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += lp.ucM }
-      const akey = lp.agentRate || '0%'; if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += lp.ucM
-      const clsLabel = canonicalClassBucket(lp.cls)
-      clsMap[clsLabel].count++; clsMap[clsLabel].dollars += lp.ucM
+    for (const LPRecord of lps) {
+      const bkey = LPRecord.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += LPRecord.ucM }
+      const akey = LPRecord.agentRate || '0%'; if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += LPRecord.ucM
+      const clsLabel = canonicalClassBucket(LPRecord.cls)
+      clsMap[clsLabel].count++; clsMap[clsLabel].dollars += LPRecord.ucM
     }
     const sortedByUC = [...lps].sort((a, b) => b.ucM - a.ucM)
     const agentBBM = summary.totalABB
@@ -774,19 +777,19 @@ export default function ShadowBB() {
       <div style={{ padding: '0 24px 24px' }}>
         <div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LP`}
+            <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LPRecord`}
               action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
                   <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>
                     <ShadowBBTableHead sort={sort} onSort={requestSort} widths={bbWidths} onResizeStart={bbResizeStart} />
                     <tbody>
-                      {pageItems.map(lp => {
-                        const key = lp._key
+                      {pageItems.map(LPRecord => {
+                        const key = LPRecord._key
                         const ov = overrides[key] ?? {} as Override
                         const selected = key === selectedKey
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
-                        const n = ov.name || lp.name || lp._agentName || '—'
+                        const n = ov.name || LPRecord.name || LPRecord._agentName || '—'
                         const st = saveStatuses[key]
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)} style={{ cursor: 'pointer' }}>
@@ -802,8 +805,8 @@ export default function ShadowBB() {
                             <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
-                            <td>{ov.region || lp.region || '—'}</td>
-                            <td title={ov.investorType || lp.investorType || '—'}>{ov.investorType || lp.investorType || '—'}</td>
+                            <td>{ov.region || LPRecord.region || '—'}</td>
+                            <td title={ov.investorType || LPRecord.investorType || '—'}>{ov.investorType || LPRecord.investorType || '—'}</td>
                             <td>{ov.type || '—'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
@@ -845,9 +848,9 @@ export default function ShadowBB() {
                   </div>
                 </div>
                 {selectedLP && selectedKey && overrides[selectedKey] && (
-                  <DraggablePanel className="lp-detail-overlay" storageKey="shadow-bb-lp-record">
+                  <DraggablePanel className="LPRecord-detail-overlay" storageKey="shadow-bb-LPRecord-record">
                     <LPRecordPanel
-                      lp={sbOvToLP(selectedLP, overrides[selectedKey])}
+                      LPRecord={sbOvToLP(selectedLP, overrides[selectedKey])}
                       open={true}
                       rank={rankByKey[selectedKey]}
                       running={false}

@@ -117,7 +117,7 @@ export default function MatchThresholds() {
             <Slider field="noMatch"     label="No-match / new-LP threshold" min={0} max={thresholds.reviewQueue - 1} fmt={v => `${v}%`} />
             <div className="info-box" style={{ marginTop: 8 }}>
               ≥ <strong>{thresholds.autoAccept}%</strong> auto-accepted. <strong>{thresholds.reviewQueue}%–{thresholds.autoAccept - 1}%</strong> high-confidence review.
-              {' '}<strong>{thresholds.noMatch ?? 50}%–{thresholds.reviewQueue - 1}%</strong> low-confidence review. Below <strong>{thresholds.noMatch ?? 50}%</strong> queued as a potential new LP. Nothing is auto-rejected.
+              {' '}<strong>{thresholds.noMatch ?? 50}%–{thresholds.reviewQueue - 1}%</strong> low-confidence review. Below <strong>{thresholds.noMatch ?? 50}%</strong> queued as a potential new LPRecord. Nothing is auto-rejected.
             </div>
           </div>
         </Card>
@@ -232,7 +232,7 @@ export default function MatchThresholds() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input
               type="text"
-              placeholder="e.g. Monarch Alt Capital LP"
+              placeholder="e.g. Monarch Alt Capital LPRecord"
               style={{ flex: 1 }}
               value={testName}
               onChange={e => setTestName(e.target.value)}

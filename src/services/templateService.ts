@@ -300,8 +300,8 @@ export function buildDocRecognition(
     ? `Rows ${profile.headerRow} (stacked — joined before matching)`
     : `Row ${profile.headerRow}`
   const grouping = profile.groupHeaders.length > 0
-    ? `${profile.groupHeaders.length} LP-category sections (subtotal row excluded per section)`
-    : 'Flat list — no LP-category sections'
+    ? `${profile.groupHeaders.length} LPRecord-category sections (subtotal row excluded per section)`
+    : 'Flat list — no LPRecord-category sections'
   const matched = opts.columnsMatched ?? mapColumns(profile).filter(c => c.mapping).length
   const total   = opts.columnsTotal ?? profile.columns.length
 

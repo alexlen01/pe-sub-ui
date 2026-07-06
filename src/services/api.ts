@@ -1,4 +1,4 @@
-import type { Facility, LP, BBSnapshot, BBResult } from '../types'
+import type { Facility, LPRecord, BBSnapshot, BBResult } from '../types'
 
 export type MatchBand = 'AUTO_ACCEPT' | 'REVIEW_HIGH' | 'REVIEW_LOW' | 'NO_MATCH'
 export interface MatchCandidate { name: string; score: number; action: string; band?: MatchBand }
@@ -12,17 +12,17 @@ export interface MatchAnalysis {
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
-type ApiLP = LP & {
+type ApiLP = LPRecord & {
   investor_type?: string
   inst_vs_hnw?: string
   region_location?: string
 }
 
-function normalizeLP(row: ApiLP): LP {
+function normalizeLP(row: ApiLP): LPRecord {
   return {
     ...row,
     investorType: row.investorType ?? row.investor_type ?? '',
-    type: (row.type ?? row.instVsHnw ?? row.inst_vs_hnw ?? '') as LP['type'],
+    type: (row.type ?? row.instVsHnw ?? row.inst_vs_hnw ?? '') as LPRecord['type'],
     region: row.region ?? row.regionLocation ?? row.region_location ?? '',
   }
 }
@@ -132,7 +132,7 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 
 // ── Reports (mirrors pe-sub-api ReportController DTOs) ───────────────────────
 
-/** One LP-classification tier of the certificate breakdown. Money in $millions. */
+/** One LPRecord-classification tier of the certificate breakdown. Money in $millions. */
 export interface ClassBreakdownReportRow {
   cls: string; count: number; uncalledM: number; ubbM: number; rate: string
 }
@@ -168,6 +168,7 @@ export interface CommitLpRow {
   investorType?: string | null
   type: string; region: string; ig: boolean; cls: string
   agentCls?: string | null
+  agentClsSource?: string | null
   sp: string; mdy: string; fitch: string
   aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
   capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
@@ -193,6 +194,8 @@ export interface ExtractedLP {
 export interface AgentExtractedRow {
   id: number; name: string
   agentClass?: string
+  agentClsSource?: string
+  investorType?: string
   commit: string; uncalled: string; aum: string; nav: string
   lpSizeBil?: string; lpSizeCriteria?: string
   sp: string; moodys: string; fitch: string
@@ -231,6 +234,7 @@ export interface LpClassificationRequest {
     ig?: boolean              // Investment Grade?
     cls?: string              // UBS LP Category
     agentCls?: string         // Agent LP Category
+    agentClsSource?: string   // EXTRACTED, DERIVED, or USER_EDITED
     sp?: string; mdy?: string; fitch?: string
     // Scale (manual)
     aum?: string              // Assets Under Management
@@ -418,21 +422,21 @@ export const api = {
   },
 
   // ── LPs ─────────────────────────────────────────────────────────────────────
-  lps: {
+  lpRecords: {
     list: (params: { facilityId?: number; cls?: string; search?: string } = {}) =>
-      get<ApiLP[]>(`/api/lps${qs(params)}`).then(rows => rows.map(normalizeLP)),
+      get<ApiLP[]>(`/api/lpRecords${qs(params)}`).then(rows => rows.map(normalizeLP)),
     get: (id: number) =>
-      get<ApiLP>(`/api/lps/${id}`).then(normalizeLP),
-    update: (id: number, data: Partial<LP>) =>
-      patch<ApiLP>(`/api/lps/${id}`, data).then(normalizeLP),
+      get<ApiLP>(`/api/lpRecords/${id}`).then(normalizeLP),
+    update: (id: number, data: Partial<LPRecord>) =>
+      patch<ApiLP>(`/api/lpRecords/${id}`, data).then(normalizeLP),
     // Batch-save the classification & rate edits from the Shadow BB screen onto persisted
     // LP Master records. Rows are matched to existing records by (facilityId, name).
     saveClassification: (body: LpClassificationRequest) =>
-      patch<{ updated: number }>('/api/lps/classification', body),
+      patch<{ updated: number }>('/api/lpRecords/classification', body),
     lookup: (name: string) =>
-      get<ApiLP[]>(`/api/lps/lookup${qs({ name })}`).then(rows => rows.map(normalizeLP)),
+      get<ApiLP[]>(`/api/lpRecords/lookup${qs({ name })}`).then(rows => rows.map(normalizeLP)),
     rates: (effectiveDate?: string) =>
-      get<LpRate[]>(`/api/lps/rates${qs({ effective_date: effectiveDate })}`),
+      get<LpRate[]>(`/api/lpRecords/rates${qs({ effective_date: effectiveDate })}`),
   },
 
   // ── LP Master (bank-wide) ────────────────────────────────────────────────────

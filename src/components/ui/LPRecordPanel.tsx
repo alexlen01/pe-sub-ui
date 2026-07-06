@@ -35,21 +35,30 @@ function billionToMoney(b: string | number | undefined | null): string {
     : ''
 }
 
-function inferLpSizeCriteria(lp: LPRecord): LpSizeCriteria {
-  if (moneyToBillion(lp.aum) != null) return 'AUM'
-  if (moneyToBillion(lp.nav) != null) return 'NAV'
-  if (moneyToBillion(lp.pension) != null) return 'Assets'
+function inferLpSizeCriteria(LPRecord: LPRecord): LpSizeCriteria {
+  if (moneyToBillion(LPRecord.aum) != null) return 'AUM'
+  if (moneyToBillion(LPRecord.nav) != null) return 'NAV'
+  if (moneyToBillion(LPRecord.pension) != null) return 'Assets'
   return ''
 }
 
-function lpSizeValue(lp: LPRecord, criteria: string): string {
-  const source = criteria === 'NAV' ? lp.nav : criteria === 'Assets' ? lp.pension : lp.aum
+function agentClsSourceNote(source: string | undefined | null, hasAgentCls: boolean): string {
+  const value = String(source ?? '').toUpperCase()
+  if (value === 'EXTRACTED') return 'Agent LP Category came directly from the Agent BB file.'
+  if (value === 'DERIVED') return 'Agent LP Category was auto-assigned from Investor Type and available investor profile data.'
+  if (!hasAgentCls) return 'Agent LP Category is blank. Analyst input is required.'
+  if (value === 'USER_EDITED') return 'Agent LP Category was edited by an analyst.'
+  return 'Agent LP Category source is not recorded.'
+}
+
+function lpSizeValue(LPRecord: LPRecord, criteria: string): string {
+  const source = criteria === 'NAV' ? LPRecord.nav : criteria === 'Assets' ? LPRecord.pension : LPRecord.aum
   const b = moneyToBillion(source)
   return b == null ? '' : String(Number(b.toFixed(3)))
 }
 
-function applyLpSizeToRecord(lp: LPRecord, form: Record<string, unknown>): LPRecord {
-  const next = { ...lp, ...form as Partial<LPRecord> } as LPRecord
+function applyLpSizeToRecord(LPRecord: LPRecord, form: Record<string, unknown>): LPRecord {
+  const next = { ...LPRecord, ...form as Partial<LPRecord> } as LPRecord
   const size = billionToMoney(form.lpSize as string | number | undefined)
   switch (form.lpSizeCriteria) {
     case 'AUM': next.aum = size; break
@@ -84,10 +93,10 @@ function formatMoneyText(value: unknown): string {
 
 
 export interface LPRecordPanelProps {
-  lp: LPRecord | null
+  LPRecord: LPRecord | null
   open: boolean
   onClose: () => void
-  onSave: (lp: LPRecord) => void
+  onSave: (LPRecord: LPRecord) => void
   canEdit?: boolean
   running?: boolean
   rank?: number
@@ -97,7 +106,7 @@ export interface LPRecordPanelProps {
 }
 
 export default function LPRecordPanel({
-  lp, open, onClose, onSave, canEdit = true, running = false, rank,
+  LPRecord, open, onClose, onSave, canEdit = true, running = false, rank,
   totalAgentBB, totalUbsBB, enableReclassify = false,
 }: LPRecordPanelProps) {
   const [subview,   setSubview]   = useState<null | 'reclassify'>(null)
@@ -120,24 +129,25 @@ export default function LPRecordPanel({
   }, [open])
 
   useEffect(() => {
-    if (!lp) return
-    const lpSizeCriteria = inferLpSizeCriteria(lp)
+    if (!LPRecord) return
+    const lpSizeCriteria = inferLpSizeCriteria(LPRecord)
     setSubview(null)
     setForm({
-      name: lp.name ?? '', parent: lp.parent ?? '', spv: lp.spv, agentCls: lp.agentCls ?? '',
-      fundSleeve: lp.fundSleeve ?? '',
-      investorType: lp.investorType ?? '', type: lp.type ?? '', cls: lp.cls ?? '', ig: lp.ig,
-      region: lp.region ?? '', hq: lp.hq,
-      sp: lp.sp ?? '', mdy: lp.mdy ?? '', fitch: lp.fitch ?? '',
-      aum: lp.aum ?? '', nav: lp.nav ?? '', pension: lp.pension || 'N/A', pensionFunded: lp.pensionFunded || 'N/A',
-      lpSizeCriteria, lpSize: lpSizeValue(lp, lpSizeCriteria),
-      capCommit: lp.capCommit ?? '', pctCapCommit: lp.pctCapCommit ?? '', calledCap: lp.calledCap ?? '',
-      uc: lp.uc ?? '', pctUncalled: lp.pctUncalled ?? '', pctCalled: lp.pctCalled ?? '',
-      rate: lp.rate ?? '', agentRate: lp.agentRate ?? '',
-      agentConc: lp.agentConc ?? '', ubsConc: lp.ubsConc ?? '', abb: lp.abb ?? '', ubb: lp.ubb ?? '',
-      inc: lp.inc, notes: lp.notes ?? '',
+      name: LPRecord.name ?? '', parent: LPRecord.parent ?? '', spv: LPRecord.spv, agentCls: LPRecord.agentCls ?? '',
+      agentClsSource: LPRecord.agentClsSource ?? '',
+      fundSleeve: LPRecord.fundSleeve ?? '',
+      investorType: LPRecord.investorType ?? '', type: LPRecord.type ?? '', cls: LPRecord.cls ?? '', ig: LPRecord.ig,
+      region: LPRecord.region ?? '', hq: LPRecord.hq,
+      sp: LPRecord.sp ?? '', mdy: LPRecord.mdy ?? '', fitch: LPRecord.fitch ?? '',
+      aum: LPRecord.aum ?? '', nav: LPRecord.nav ?? '', pension: LPRecord.pension || 'N/A', pensionFunded: LPRecord.pensionFunded || 'N/A',
+      lpSizeCriteria, lpSize: lpSizeValue(LPRecord, lpSizeCriteria),
+      capCommit: LPRecord.capCommit ?? '', pctCapCommit: LPRecord.pctCapCommit ?? '', calledCap: LPRecord.calledCap ?? '',
+      uc: LPRecord.uc ?? '', pctUncalled: LPRecord.pctUncalled ?? '', pctCalled: LPRecord.pctCalled ?? '',
+      rate: LPRecord.rate ?? '', agentRate: LPRecord.agentRate ?? '',
+      agentConc: LPRecord.agentConc ?? '', ubsConc: LPRecord.ubsConc ?? '', abb: LPRecord.abb ?? '', ubb: LPRecord.ubb ?? '',
+      inc: LPRecord.inc, notes: LPRecord.notes ?? '',
     })
-  }, [lp?.name])
+  }, [LPRecord?.name])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -145,11 +155,11 @@ export default function LPRecordPanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  if (!open || !lp) return null
+  if (!open || !LPRecord) return null
   if (!classCfg || !eligCfg) {
     return (
       <div style={{ height: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 18, color: 'var(--muted)', fontSize: 12 }}>
-        Loading LP configuration...
+        Loading LPRecord configuration...
       </div>
     )
   }
@@ -167,13 +177,16 @@ export default function LPRecordPanel({
       const value = k === 'notes' && typeof rawValue === 'string' ? rawValue.slice(0, NOTES_MAX) : rawValue
       const next = { ...p, [k]: value }
       if (k === 'cls' && !p.rate) next.rate = classCfg.UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
-      if (k === 'agentCls') next.agentRate = agentRateForClass(String(value)) || next.agentRate
-      if (k === 'lpSizeCriteria' && lp) next.lpSize = lpSizeValue(applyLpSizeToRecord(lp, p), String(value))
+      if (k === 'agentCls') {
+        next.agentClsSource = 'USER_EDITED'
+        next.agentRate = agentRateForClass(String(value)) || next.agentRate
+      }
+      if (k === 'lpSizeCriteria' && LPRecord) next.lpSize = lpSizeValue(applyLpSizeToRecord(LPRecord, p), String(value))
       return next
     })
 
   const handleSave = () => {
-    const eff = applyLpSizeToRecord(lp, form)
+    const eff = applyLpSizeToRecord(LPRecord, form)
     const c = computeLPRecord(eff, undefined, busaRates)
     const capCommitM = parseM(eff.capCommit)
     const calledCapM = capCommitM - parseM(eff.uc)
@@ -181,8 +194,8 @@ export default function LPRecordPanel({
     onSave({
       ...eff,
       fundSleeve: form.fundSleeve as string | undefined,
-      rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE[form.cls as string] || classCfg.BUSA_RATE_MAP[form.cls as string] || lp.rate,
-      clsTag: classCfg.CLS_TAG_MAP[form.cls as string] ?? lp.clsTag,
+      rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE[form.cls as string] || classCfg.BUSA_RATE_MAP[form.cls as string] || LPRecord.rate,
+      clsTag: classCfg.CLS_TAG_MAP[form.cls as string] ?? LPRecord.clsTag,
       hq: c.busaRate === 0.90,
       calledCap: fmtM(calledCapM),
       pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
@@ -196,12 +209,12 @@ export default function LPRecordPanel({
 
   const handleReclassify = () => {
     onSave({
-      ...lp,
+      ...LPRecord,
       cls: newCls as LPRecord['cls'],
       rcl: true,
-      clsTag: classCfg.CLS_TAG_MAP[newCls] ?? lp.clsTag,
-      rate: classCfg.UBS_CLS_DEFAULT_RATE[newCls] ?? classCfg.BUSA_RATE_MAP[newCls] ?? lp.rate,
-      notes: (lp.notes ? lp.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}`,
+      clsTag: classCfg.CLS_TAG_MAP[newCls] ?? LPRecord.clsTag,
+      rate: classCfg.UBS_CLS_DEFAULT_RATE[newCls] ?? classCfg.BUSA_RATE_MAP[newCls] ?? LPRecord.rate,
+      notes: (LPRecord.notes ? LPRecord.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}`,
     } as LPRecord)
     setSubview(null)
   }
@@ -260,7 +273,7 @@ export default function LPRecordPanel({
   const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '6px 16px' }
 
   const renderDetail = () => {
-    const eff = applyLpSizeToRecord(lp, form)
+    const eff = applyLpSizeToRecord(LPRecord, form)
     const c = computeLPRecord(eff, undefined, busaRates)
     const capCommitM = parseM(eff.capCommit)
     const ucM = parseM(eff.uc)
@@ -283,17 +296,21 @@ export default function LPRecordPanel({
     return (
       <div style={COLS}>
         {sec('Identification & Classification')}
-        {calc('Rank', rank ?? '—', { cols: 1, width: 64, formula: 'Ordinal rank in the current LP view' })}
-        {f('Investor Name', lp.name, 'name', { cols: 5 })}
-        {f('SPV?', lp.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
-        {f('Parent', lp.parent, 'parent', { cols: 5 })}
-        {f('Fund Sleeve', lp.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
-        {f('Region / Location', lp.region || '—', 'region', { cols: 3 })}
-        {f('Investor Type', lp.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS, emptyLabel: '—' })}
-        {f('Institutional vs HNW', lp.type, 'type', { opts: classCfg.TYPE_OPTS })}
-        {f('Agent LP Classification', lp.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
-        {f('UBS LP Classification', lp.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS, emptyLabel: 'Unclassified' })}
-        {f('Investment Grade?', lp.ig ? 'Yes' : 'No', 'ig', { chk: true })}
+        {calc('Rank', rank ?? '—', { cols: 1, width: 64, formula: 'Rank by uncalled capital; ties share a rank' })}
+        {f('Investor Name', LPRecord.name, 'name', { cols: 5 })}
+        {f('SPV?', LPRecord.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
+        {f('Parent', LPRecord.parent, 'parent', { cols: 5 })}
+        {f('Fund Sleeve', LPRecord.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
+        {f('Region / Location', LPRecord.region || '—', 'region', { cols: 3 })}
+        {f('Investor Type', LPRecord.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS, emptyLabel: '—' })}
+        {f('Institutional vs HNW', LPRecord.type, 'type', { opts: classCfg.TYPE_OPTS })}
+        {f('Agent LP Classification', LPRecord.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
+        {f('Agent Classification Source', LPRecord.agentClsSource || '—', 'agentClsSource', { ro: true })}
+        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
+          {agentClsSourceNote(String(form.agentClsSource ?? ''), Boolean(form.agentCls))}
+        </div>
+        {f('UBS LP Classification', LPRecord.cls, 'cls', { opts: classCfg.UBS_CLS_OPTS, emptyLabel: 'Unclassified' })}
+        {f('Investment Grade?', LPRecord.ig ? 'Yes' : 'No', 'ig', { chk: true })}
         {Boolean(form.cls && classCfg.CLS_CRITERIA[form.cls as string]) && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
             <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[form.cls as string]}
@@ -301,32 +318,32 @@ export default function LPRecordPanel({
         )}
 
         {sec('Credit Ratings')}
-        {f('S&P', lp.sp, 'sp', { opts: classCfg.SP_RATING_OPTS, cols: 2 })}
-        {f("Moody's", lp.mdy, 'mdy', { opts: classCfg.MDY_RATING_OPTS, cols: 2 })}
-        {f('Fitch', lp.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
+        {f('S&P', LPRecord.sp, 'sp', { opts: classCfg.SP_RATING_OPTS, cols: 2 })}
+        {f("Moody's", LPRecord.mdy, 'mdy', { opts: classCfg.MDY_RATING_OPTS, cols: 2 })}
+        {f('Fitch', LPRecord.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
 
         {sec('Capital Metrics')}
         {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B' })}
         {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: classCfg.LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
-        {f('Capital Commitments', lp.capCommit, 'capCommit', { money: true })}
-        {calc('% of Capital Commitments', lp.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
+        {f('Capital Commitments', LPRecord.capCommit, 'capCommit', { money: true })}
+        {calc('% of Capital Commitments', LPRecord.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
         {calc('Called Capital', calledCapStr, { money: true, formula: 'Capital Commitments − Uncalled Capital' })}
-        {f('Uncalled Capital', lp.uc, 'uc', { money: true })}
-        {calc('% of Uncalled Capital', lp.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
+        {f('Uncalled Capital', LPRecord.uc, 'uc', { money: true })}
+        {calc('% of Uncalled Capital', LPRecord.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
         {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
         {sec('Borrowing Base Calculation')}
-        {f('Agent Advance Rate', lp.agentRate, 'agentRate')}
-        {f('UBS Advance Rate', lp.rate, 'rate')}
-        {f('Agent Concentration Limit', lp.agentConc, 'agentConc')}
-        {f('UBS Concentration Limit', lp.ubsConc, 'ubsConc')}
+        {f('Agent Advance Rate', LPRecord.agentRate, 'agentRate')}
+        {f('UBS Advance Rate', LPRecord.rate, 'rate')}
+        {f('Agent Concentration Limit', LPRecord.agentConc, 'agentConc')}
+        {f('UBS Concentration Limit', LPRecord.ubsConc, 'ubsConc')}
         {calc('Agent Excess Concentration', agentExcessStr, { money: true, formula: 'Excess uncalled above Agent concentration limit' })}
         {calc('UBS Excess Concentration', ubsExcessStr, { money: true, formula: 'Excess uncalled above UBS concentration limit' })}
         {calc('Agent Borrowing Base', agentBBStr, { money: true, formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
         {totalAgentBB != null && totalAgentBB > 0 && calc('% of Agent BB', agentBBM > 0 ? fmtPct(agentBBM / totalAgentBB) : '—', { formula: 'Agent BB ÷ total facility Agent BB' })}
         {calc('UBS Borrowing Base', c.ubb, { money: true, pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
         {totalUbsBB != null && totalUbsBB > 0 && calc('% of UBS BB', c.ubbM > 0 ? fmtPct(c.ubbM / totalUbsBB) : '—', { formula: 'UBS BB ÷ total facility UBS BB' })}
-        {f('Eligible (Included in BB)', lp.inc ? 'Yes' : 'No', 'inc', { chk: true, wide: true, accent: true })}
+        {f('Eligible (Included in BB)', LPRecord.inc ? 'Yes' : 'No', 'inc', { chk: true, wide: true, accent: true })}
 
         {sec('Additional Details')}
         <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
@@ -368,9 +385,9 @@ export default function LPRecordPanel({
           onChange={e => setRationale(e.target.value)}
         />
       </div>
-      {newCls !== lp.cls && (
+      {newCls !== LPRecord.cls && (
         <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', borderRadius: 4, fontSize: 12 }}>
-          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{lp.rate || classCfg.UBS_CLS_DEFAULT_RATE[lp.cls] || classCfg.BUSA_RATE_MAP[lp.cls]}</strong> to <strong>{classCfg.UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
+          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{LPRecord.rate || classCfg.UBS_CLS_DEFAULT_RATE[LPRecord.cls] || classCfg.BUSA_RATE_MAP[LPRecord.cls]}</strong> to <strong>{classCfg.UBS_CLS_DEFAULT_RATE[newCls]}</strong>. Shadow BB will need to be recalculated.
         </div>
       )}
     </div>
@@ -380,19 +397,19 @@ export default function LPRecordPanel({
 
   return (
     <div style={{ height: '100%', maxHeight: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div className="lp-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
+      <div className="LPRecord-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
-            <div className="lp-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lp.name}>
-              {lp.name}
+            <div className="LPRecord-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={LPRecord.name}>
+              {LPRecord.name}
               {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.65, fontSize: 12 }}> / {subviewTitle}</span>}
             </div>
             <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
-              <Tag>{lp.cls}</Tag>
-              <span style={{ fontSize: 11, opacity: .7 }}>{lp.rate || classCfg.UBS_CLS_DEFAULT_RATE[lp.cls] || classCfg.BUSA_RATE_MAP[lp.cls] || '—'} UBS · {lp.agentRate || '—'} Agent</span>
+              <Tag>{LPRecord.cls}</Tag>
+              <span style={{ fontSize: 11, opacity: .7 }}>{LPRecord.rate || classCfg.UBS_CLS_DEFAULT_RATE[LPRecord.cls] || classCfg.BUSA_RATE_MAP[LPRecord.cls] || '—'} UBS · {LPRecord.agentRate || '—'} Agent</span>
               {running && <span style={{ fontSize: 10, opacity: .8 }}>Calculating…</span>}
-              {lp.rcl && <span className="rcl-badge">Reclassified</span>}
-              {lp.tf  && <span className="tf-badge">Transferee</span>}
+              {LPRecord.rcl && <span className="rcl-badge">Reclassified</span>}
+              {LPRecord.tf  && <span className="tf-badge">Transferee</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, lineHeight: 1, opacity: .7, padding: 0, marginTop: -2 }}>×</button>
@@ -407,16 +424,16 @@ export default function LPRecordPanel({
       <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         {subview === 'reclassify' ? (
           <>
-            <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LP Record</Button>
+            <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LPRecord Record</Button>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button disabled={newCls === lp.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
+              <Button disabled={newCls === LPRecord.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
             </div>
           </>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8 }}>
-              {enableReclassify && editable && <Button variant="secondary" onClick={() => { setNewCls(lp.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
+              {enableReclassify && editable && <Button variant="secondary" onClick={() => { setNewCls(LPRecord.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
