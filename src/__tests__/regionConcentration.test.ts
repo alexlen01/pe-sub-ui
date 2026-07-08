@@ -33,4 +33,8 @@ describe('Non-US concentration rule keys off the region token, not the label', (
     expect(nonUsBreach([lp('North America'), lp('North America')])).toBeUndefined()
     expect(nonUsBreach([lp('North America'), lp('Europe'), lp('Europe')])).toBeDefined()
   })
+
+  it('counts a bespoke free-text jurisdiction as non-US (region-unknown, conservative)', () => {
+    expect(nonUsBreach([lp('NAM|US|DE'), lp('Grand Fenwick'), lp('Grand Fenwick')])).toBeDefined()
+  })
 })

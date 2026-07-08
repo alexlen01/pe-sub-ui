@@ -315,6 +315,18 @@ describe('getLPs / getLPByName / lookupLPsByName — live', () => {
     expect(lps.map(l => l.name)).toEqual(['CalPERS', 'CalSTRS'])
   })
 
+  it('getLPs passes the facility-specific rank through from the API', async () => {
+    // The API serves the persisted competition rank (by uncalled capital) on each LP record;
+    // non-rankable LPs (e.g. Excluded / not-included) carry a null rank.
+    stubFetch({ '/api/lpRecords': [
+      { name: 'CalPERS', rank: 1 },
+      { name: 'CalSTRS', rank: 2 },
+      { name: 'Tiny Fund LLC', rank: null },
+    ] })
+    const lps = await getLPs()
+    expect(lps.map(l => l.rank)).toEqual([1, 2, null])
+  })
+
   it('getLPByName returns the exact match from lookup', async () => {
     stubFetch({ '/api/lpRecords/lookup': [{ name: 'CalPERS' }, { name: 'CalPERS Trust' }] })
     const LPRecord = await getLPByName('CalPERS')

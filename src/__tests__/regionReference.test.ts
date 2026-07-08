@@ -69,6 +69,13 @@ describe('token <-> label round-trip', () => {
     expect(regionOf('')).toBe('')
     expect(regionOf('Atlantis')).toBe('')
   })
+
+  it('accepts a bespoke free-text jurisdiction verbatim (region-unknown)', () => {
+    // The typeahead saves raw text when nothing matches; it must render exactly as entered and
+    // resolve to no macro region (so it is treated conservatively as non-US downstream).
+    expect(formatRegion('Principality of Sealand')).toBe('Principality of Sealand')
+    expect(regionOf('Principality of Sealand')).toBe('')
+  })
 })
 
 describe('toRegionToken (backfill normaliser)', () => {
