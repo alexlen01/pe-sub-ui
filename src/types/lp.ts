@@ -12,10 +12,9 @@ export interface LPRecord {
   parent: string
   spv: boolean
   hq: boolean
-  type: InvestorType
+  instVsHnw: InvestorType
   investorType?: string
   investor_type?: string
-  instVsHnw?: string
   inst_vs_hnw?: string
   regionLocation?: string
   region_location?: string
@@ -64,5 +63,6 @@ export interface LPRecord {
   inc: boolean
   rcl: boolean
   tf: boolean
+  rank?: number | null
   notes: string
 }

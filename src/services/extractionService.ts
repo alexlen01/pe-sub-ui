@@ -46,6 +46,15 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
     const bb = (r.agentBBRaw as number) || 0
     const eligible = (r.eligibleCommitmentRaw as number) || 0
     const excess = Math.max(0, u - eligible)
+    // Agent BB % ("% of Borrowing Base") is each LP's share of the facility borrowing
+    // base = its BB contribution ÷ total BB. When the Agent BB file maps a Borrowing Base
+    // column but no BB-% column, we derive it here and flag it so the extraction review
+    // grid can highlight the cell and message that the value was calculated, not extracted.
+    // The API serializes absent columns as "" (not null), so treat blank as not-provided.
+    const bbProvided     = String(r.agentBBFmt ?? '').trim() !== ''
+    const pctBBProvided  = String(r.pctBBFmt ?? '').trim() !== ''
+    const computedPctBB  = totalBB && bb ? formatPct(bb / totalBB) : ''
+    const pctBBCalculated = bbProvided && !pctBBProvided && computedPctBB !== ''
     return {
       ...r,
       pctCalledFmt,
@@ -54,7 +63,9 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
       excessConcFmt: r.excessConcFmt ?? (u ? formatMoney(excess) : ''),
       eligibleCommitmentFmt: r.eligibleCommitmentFmt ?? (eligible ? formatMoney(eligible) : ''),
       agentBBFmt: r.agentBBFmt ?? (bb ? formatMoney(bb) : ''),
-      pctBBFmt:   r.pctBBFmt ?? (totalBB && bb ? formatPct(bb / totalBB) : ''),
+      // Only the BB-mapped-without-BB% case changes; every other row keeps its prior value.
+      pctBBFmt:   pctBBCalculated ? computedPctBB : (r.pctBBFmt ?? computedPctBB),
+      pctBBCalculated,
     }
   })
 }

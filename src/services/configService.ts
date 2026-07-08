@@ -27,12 +27,14 @@ export const getWizardSteps = async (): Promise<string[]> => (await getWizardCon
 export const getEligibilityConfig = (): Promise<EligibilityConfig> => api.config.eligibility()
 export const getReportConfig = (): Promise<ReportConfig> => api.config.reports()
 export const getClassificationConfig = async (): Promise<ClassificationConfig> => {
-  const cfg = await api.config.classification()
+  const [cfg, masterInvestorTypes] = await Promise.all([
+    api.config.classification(),
+    api.lpMaster.investorTypes().catch(() => [] as string[]),
+  ])
+  const investorTypeOpts = mergeOptions(cfg.INVESTOR_TYPE_OPTS, masterInvestorTypes)
   return {
     ...cfg,
-    INVESTOR_TYPE_OPTS: cfg.INVESTOR_TYPE_OPTS[0] === ''
-      ? cfg.INVESTOR_TYPE_OPTS
-      : ['', ...cfg.INVESTOR_TYPE_OPTS],
+    INVESTOR_TYPE_OPTS: investorTypeOpts,
   }
 }
 export const getMatchingConfig = (): Promise<MatchingConfig> => api.config.matching()
@@ -42,9 +44,8 @@ export function ubsClassFromAgentRate(
   agentRatePct: number | '' | undefined,
 ): string {
   if (typeof agentRatePct !== 'number') return ''
-  if (agentRatePct <= 0) return 'Excluded'
   const tiers = [...cfg.AGENT_RATE_UBS_TIERS].sort((a, b) => b.min - a.min)
-  return tiers.find(t => agentRatePct >= t.min)?.cls ?? 'Other Institutional'
+  return tiers.find(t => agentRatePct >= t.min)?.cls ?? ''
 }
 
 export function ubsClassFromAgentCls(
@@ -55,110 +56,74 @@ export function ubsClassFromAgentCls(
   return cfg.AGENT_CLS_UBS_MAP[agentCls] ?? ''
 }
 
-export function agentClassFromInvestorProfile(input: ClassificationRuleInput): string {
-  const investorType = normalizeText(input.investorType)
-  const notes = normalizeText(input.notes)
-  if (input.spv || HARD_EXCLUSION.test(`${investorType} ${notes}`)) return 'Ineligible Investors'
+const normalizeDashes = (value: string): string => value.replace(/[\u2010-\u2015]/g, '-')
 
-  if (hasInvestmentGradeRating(input)) return 'Rated Included'
-
-  if (/family office|hnw|high net worth/.test(investorType)) return 'Ineligible Investors'
-  if (/institutional|endowment|foundation|insurance|sovereign|pension|corporate|healthcare|fund of funds|fof/.test(investorType)) {
-    return 'Non-Rated Included'
+/** BUSA advance rate (percent, e.g. 90) for a classification from either taxonomy,
+ *  matching keys dash-insensitively across BUSA_RATE_MAP and UBS_CLS_DEFAULT_RATE. */
+export function busaRatePctForCls(cfg: ClassificationConfig, cls: string | undefined): number | '' {
+  if (!cls) return ''
+  const wanted = normalizeDashes(cls)
+  for (const map of [cfg.BUSA_RATE_MAP, cfg.UBS_CLS_DEFAULT_RATE]) {
+    for (const [key, raw] of Object.entries(map)) {
+      if (normalizeDashes(key) !== wanted) continue
+      const n = parseFloat(String(raw).replace('%', '').trim())
+      if (!Number.isFinite(n)) continue
+      return n > 1 ? n : n * 100
+    }
   }
-
   return ''
 }
 
-export function investorTypeFromAgentClass(agentCls: string | undefined): string {
-  const value = normalizeText(agentCls)
-  if (/pension/.test(value)) return 'Pension Fund'
-  if (/endowment/.test(value)) return 'Endowment'
-  if (/foundation/.test(value)) return 'Foundation'
-  if (/family office/.test(value)) return 'Family Office'
-  if (/sovereign/.test(value)) return 'Sovereign Wealth Fund'
-  if (/fund of funds|fof/.test(value)) return 'Fund of Funds'
-  if (/insurance/.test(value)) return 'Insurance Company'
-  if (/healthcare/.test(value)) return 'Healthcare'
-  if (/corporate/.test(value)) return 'Corporate'
-  if (/\bhnw\b|high net worth/.test(value)) return 'HNW'
+/** Class-default per-LP concentration limit (percent of total uncalled capital)
+ *  from eligibility config's CLS_CONC_LIMIT_DEFAULTS map (cls_conc_limit_defaults
+ *  config key), matched dash-insensitively. '' when unconfigured for the class. */
+export function clsConcLimitPctForCls(
+  cfg: Pick<EligibilityConfig, 'CLS_CONC_LIMIT_DEFAULTS'> | null,
+  cls: string | undefined,
+): number | '' {
+  if (!cfg?.CLS_CONC_LIMIT_DEFAULTS || !cls) return ''
+  const wanted = normalizeDashes(cls)
+  for (const [key, pct] of Object.entries(cfg.CLS_CONC_LIMIT_DEFAULTS)) {
+    if (normalizeDashes(key) !== wanted) continue
+    return typeof pct === 'number' && Number.isFinite(pct) ? pct : ''
+  }
   return ''
 }
 
-export interface ClassificationRuleInput {
-  investorType?: string
-  sp?: string
-  mdy?: string
-  fitch?: string
-  lpSizeBil?: string
-  lpSizeCriteria?: string
-  notes?: string
-  spv?: boolean
-}
-
-const HARD_EXCLUSION = /\b(sanction|bad actor|kyc|erisa|side letter|non[-\s]?cooperative|ineligible|excluded|gp sleeve|sponsor affiliate|affiliate)\b/i
-
-export function ubsClassFromInvestorProfile(
-  _cfg: ClassificationConfig,
-  input: ClassificationRuleInput,
-): string {
-  const investorType = normalizeText(input.investorType)
-  const notes = normalizeText(input.notes)
-  if (input.spv || HARD_EXCLUSION.test(`${investorType} ${notes}`)) return 'Excluded'
-
-  if (hasInvestmentGradeRating(input)) return 'Rated Investor'
-
-  const sizeM = parseProfileMoneyM(input.lpSizeBil)
-  const sizeCriteria = normalizeText(input.lpSizeCriteria)
-
-  if (/family office|hnw|high net worth/.test(investorType)) return 'Excluded'
-  if (/fund of funds|fof/.test(investorType) && sizeM >= 10_000) return 'FoF & Other > $10Bn AUM'
-  if (/pension|public pension/.test(investorType) && sizeM >= 5_000 && /asset|aum|nav|pension/.test(sizeCriteria)) {
-    return 'Corp Pension > $5Bn Assets'
+/** Accepted per-LP concentration-limit range (percent) for a classification, from the
+ *  CLS_CONC_LIMIT_BOUNDS map (cls_conc_limit_bounds config key), matched dash-insensitively.
+ *  Returns null when unconfigured for the class or the range is malformed. Used by the LP
+ *  record entry form to warn — without blocking — on out-of-range limits. */
+export function clsConcLimitBoundsForCls(
+  cfg: Pick<EligibilityConfig, 'CLS_CONC_LIMIT_BOUNDS'> | null,
+  cls: string | undefined,
+): { min: number; max: number } | null {
+  if (!cfg?.CLS_CONC_LIMIT_BOUNDS || !cls) return null
+  const wanted = normalizeDashes(cls)
+  for (const [key, range] of Object.entries(cfg.CLS_CONC_LIMIT_BOUNDS)) {
+    if (normalizeDashes(key) !== wanted) continue
+    const min = Number(range?.min)
+    const max = Number(range?.max)
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+    return { min, max }
   }
-  if (/institutional|endowment|foundation|insurance|sovereign|pension|corporate|healthcare/.test(investorType)) {
-    if (/nav/.test(sizeCriteria) && sizeM >= 1_000) return 'Unrated NAV > $1Bn'
-    return 'Other Institutional'
+  return null
+}
+
+function mergeOptions(...groups: string[][]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  seen.add('')
+  for (const group of groups) {
+    for (const raw of group) {
+      const value = String(raw ?? '').trim()
+      const key = value.toLowerCase()
+      if (!value || seen.has(key)) continue
+      out.push(value)
+      seen.add(key)
+    }
   }
-
-  return ''
-}
-
-function normalizeText(value: string | undefined | null): string {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function hasInvestmentGradeRating(input: ClassificationRuleInput): boolean {
-  return isSpInvestmentGrade(input.sp) || isMoodysInvestmentGrade(input.mdy) || isSpInvestmentGrade(input.fitch)
-}
-
-function isSpInvestmentGrade(raw: string | undefined): boolean {
-  const rating = String(raw ?? '').trim().toUpperCase()
-  if (!rating || rating === 'NR' || rating === 'N/R') return false
-  const order = ['AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-']
-  return order.includes(rating)
-}
-
-function isMoodysInvestmentGrade(raw: string | undefined): boolean {
-  const rating = String(raw ?? '').trim().toUpperCase()
-  if (!rating || rating === 'NR' || rating === 'N/R') return false
-  const order = ['AAA', 'AA1', 'AA2', 'AA3', 'A1', 'A2', 'A3', 'BAA1', 'BAA2', 'BAA3']
-  return order.includes(rating)
-}
-
-function parseProfileMoneyM(raw: string | undefined | null): number {
-  const s = String(raw ?? '').trim()
-  if (!s) return 0
-  const m = s.match(/([\d,.]+)\s*([KMBT])?/i)
-  if (!m) return 0
-  let value = Number(m[1].replace(/,/g, ''))
-  if (!Number.isFinite(value)) return 0
-  const unit = (m[2] || '').toUpperCase()
-  if (unit === 'T') value *= 1_000_000
-  else if (unit === 'B') value *= 1_000
-  else if (unit === 'K') value /= 1_000
-  else if (!unit && (s.includes('$') || value >= 100_000)) value /= 1_000_000
-  return value
+  return ['', ...out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))]
 }
 
 export function parseRatePct(raw: string | undefined | null): number {
@@ -179,4 +144,8 @@ export function buildBusaRateFractions(cfg: ClassificationConfig): Record<string
     if (Number.isFinite(rate)) out[cls] = rate
   }
   return out
+}
+
+export function busaClassificationOptions(cfg: Pick<ClassificationConfig, 'BUSA_RATE_MAP'>): string[] {
+  return ['', ...Object.keys(cfg.BUSA_RATE_MAP).filter(Boolean)]
 }

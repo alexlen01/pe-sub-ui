@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
+import { formatRegion } from '../../config/regionReference'
 import { useApp } from '../../context/AppContext'
 import { api, type CollateralReport } from '../../services/api'
 import { getReportConfig, type ReportConfig } from '../../services/configService'
@@ -466,7 +467,7 @@ export default function Reports() {
         : adhocSort === 'aum' ? parseM(b.aum) - parseM(a.aum)
         : parseM(b.uc) - parseM(a.uc))
       const columns = ['LPRecord Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
-      const rows = sorted.map(LPRecord => [LPRecord.name, LPRecord.cls, LPRecord.uc, LPRecord.aum, LPRecord.region, LPRecord.inc ? 'Y' : 'N'] as Array<string | number>)
+      const rows = sorted.map(LPRecord => [LPRecord.name, LPRecord.cls, LPRecord.uc, LPRecord.aum, formatRegion(LPRecord.region), LPRecord.inc ? 'Y' : 'N'] as Array<string | number>)
       setPreview({
         kind: 'table',
         title: 'Ad Hoc LPRecord Query',

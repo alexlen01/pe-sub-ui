@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
-import { useSortableRows } from '../../hooks/useTableSort'
+import { SortableHeader, useSortableRows, type SortSpec } from '../../hooks/useTableSort'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import DraggablePanel from '../../components/ui/DraggablePanel'
+import { formatRegion } from '../../config/regionReference'
 import { useApp } from '../../context/AppContext'
 import { computePortfolioBB, fmtM, fmtPct, getFacilityBBSnapshot, getFacilitySummaryExt, parseM } from '../../services/bbCalculationService'
 import { getLPsForFacility } from '../../services/lpService'
@@ -17,13 +18,13 @@ import { api } from '../../services/api'
 import type { LpClassificationRequest } from '../../services/api'
 import { BREACH_TYPE_LABEL } from '../../services/reportService'
 import type { BBBreach } from '../../types/bb'
-import { buildBusaRateFractions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
+import { buildBusaRateFractions, busaClassificationOptions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import {
-  SHADOW_BB_INITIAL_WIDTHS, YesNo, ShadowBBTableHead,
+  YesNo,
   calcRow, fmtBillionDisplay, fmtFull, parseMoneyM, parsePct, pctStr,
   type Override, type SubmissionLP,
 } from '../RunShadowBB'
-import { useColumnResize } from '../../hooks/useColumnResize'
+import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
 import { competitionRank } from '../../utils/rank'
 
@@ -80,8 +81,117 @@ const BLUE_HD: React.CSSProperties = { background: '#0F2560', color: '#fff', pad
 const COL_HD: React.CSSProperties  = { padding: '7px 10px', color: 'var(--muted)', fontWeight: 700, fontSize: 9, textTransform: 'uppercase', borderBottom: '1px solid var(--border)', background: 'var(--tbl)' }
 const CELL: React.CSSProperties    = { padding: '3px 10px', color: 'var(--text)', fontSize: 11 }
 
+const SHADOW_RESULTS_INITIAL_WIDTHS: ColWidths = {
+  rank: 64, name: 220, fundSleeve: 140, parent: 160, spv: 54,
+  region: 140, investorType: 140, instVsHnw: 152, agentCls: 166, cls: 174,
+  included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
+  lpSizeCriteria: 107, lpSizeBil: 84, capCommit: 138, cmtPct: 157,
+  calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
+  agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
+  concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
+  agentBBCalc: 138, pctAgentBB: 110, ubsBBCalc: 128, pctUbsBB: 110, notes: 180,
+}
+
+function ShadowResultsTableHead({ sort, onSort, widths, onResizeStart }: {
+  sort: SortSpec | null
+  onSort: (key: string) => void
+  widths?: ColWidths
+  onResizeStart?: (col: string, e: React.MouseEvent) => void
+}) {
+  const w = (key: keyof typeof SHADOW_RESULTS_INITIAL_WIDTHS) => widths?.[key] ?? SHADOW_RESULTS_INITIAL_WIDTHS[key]
+  return (
+    <thead>
+      <tr>
+        <SortableHeader sortKey="rank"              sort={sort} onSort={onSort} className="num" style={{ width: w('rank') }}                  onResizeStart={onResizeStart}>Rank</SortableHeader>
+        <SortableHeader sortKey="name"              sort={sort} onSort={onSort} style={{ width: w('name') }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
+        <SortableHeader sortKey="fundSleeve"        sort={sort} onSort={onSort} style={{ width: w('fundSleeve') }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
+        <SortableHeader sortKey="parent"            sort={sort} onSort={onSort} style={{ width: w('parent') }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
+        <SortableHeader sortKey="spv"               sort={sort} onSort={onSort} style={{ width: w('spv') }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
+        <SortableHeader sortKey="region"            sort={sort} onSort={onSort} style={{ width: w('region') }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
+        <SortableHeader sortKey="investorType"      sort={sort} onSort={onSort} style={{ width: w('investorType') }}                  onResizeStart={onResizeStart}>Investor Type</SortableHeader>
+        <SortableHeader sortKey="instVsHnw"         sort={sort} onSort={onSort} style={{ width: w('instVsHnw') }}                     onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
+        <SortableHeader sortKey="agentCls"          sort={sort} onSort={onSort} style={{ width: w('agentCls') }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
+        <SortableHeader sortKey="cls"               sort={sort} onSort={onSort} style={{ width: w('cls') }}                           onResizeStart={onResizeStart}>UBS LP Classification</SortableHeader>
+        <SortableHeader sortKey="included"          sort={sort} onSort={onSort} style={{ width: w('included'), textAlign: 'center' }} onResizeStart={onResizeStart}>Eligible</SortableHeader>
+        <SortableHeader sortKey="ig"                sort={sort} onSort={onSort} style={{ width: w('ig') }}                            onResizeStart={onResizeStart}>Investment Grade</SortableHeader>
+        <SortableHeader sortKey="sp"                sort={sort} onSort={onSort} style={{ width: w('sp') }}                            onResizeStart={onResizeStart}>S&amp;P</SortableHeader>
+        <SortableHeader sortKey="mdy"               sort={sort} onSort={onSort} style={{ width: w('mdy') }}                           onResizeStart={onResizeStart}>Moody's</SortableHeader>
+        <SortableHeader sortKey="fitch"             sort={sort} onSort={onSort} style={{ width: w('fitch') }}                         onResizeStart={onResizeStart}>Fitch</SortableHeader>
+        <SortableHeader sortKey="lpSizeCriteria"    sort={sort} onSort={onSort} style={{ width: w('lpSizeCriteria') }}                onResizeStart={onResizeStart}>Size Measure</SortableHeader>
+        <SortableHeader sortKey="lpSizeBil"         sort={sort} onSort={onSort} className="num" style={{ width: w('lpSizeBil') }}     onResizeStart={onResizeStart}>LP Size</SortableHeader>
+        <SortableHeader sortKey="capCommit"         sort={sort} onSort={onSort} className="num" style={{ width: w('capCommit') }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
+        <SortableHeader sortKey="cmtPct"            sort={sort} onSort={onSort} className="num" style={{ width: w('cmtPct') }}        onResizeStart={onResizeStart}>% of Capital Commitments</SortableHeader>
+        <SortableHeader sortKey="calledM"           sort={sort} onSort={onSort} className="num" style={{ width: w('calledM') }}       onResizeStart={onResizeStart}>Called Capital</SortableHeader>
+        <SortableHeader sortKey="ucM"               sort={sort} onSort={onSort} className="num" style={{ width: w('ucM') }}           onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
+        <SortableHeader sortKey="pctUncalled"       sort={sort} onSort={onSort} className="num" style={{ width: w('pctUncalled') }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
+        <SortableHeader sortKey="pctCalled"         sort={sort} onSort={onSort} className="num" style={{ width: w('pctCalled') }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
+        <SortableHeader sortKey="agentRatePct"      sort={sort} onSort={onSort} className="num" style={{ width: w('agentRatePct') }}  onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
+        <SortableHeader sortKey="ubsAdvRatePct"     sort={sort} onSort={onSort} className="num" style={{ width: w('ubsAdvRatePct') }} onResizeStart={onResizeStart}>UBS Advance Rate</SortableHeader>
+        <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={onSort} className="num" style={{ width: w('agentConcLimitPct') }} onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
+        <SortableHeader sortKey="concLimitPct"      sort={sort} onSort={onSort} className="num" style={{ width: w('concLimitPct') }}  onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
+        <SortableHeader sortKey="agentExcess"       sort={sort} onSort={onSort} className="num" style={{ width: w('agentExcess') }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>
+        <SortableHeader sortKey="ubsExcess"         sort={sort} onSort={onSort} className="num" style={{ width: w('ubsExcess') }}     onResizeStart={onResizeStart}>UBS Excess Concentration</SortableHeader>
+        <SortableHeader sortKey="agentBBCalc"       sort={sort} onSort={onSort} className="num" style={{ width: w('agentBBCalc') }}   onResizeStart={onResizeStart}>Agent Borrowing Base</SortableHeader>
+        <SortableHeader sortKey="pctAgentBB"        sort={sort} onSort={onSort} className="num" style={{ width: w('pctAgentBB') }}    onResizeStart={onResizeStart}>% of Agent BB</SortableHeader>
+        <SortableHeader sortKey="ubsBBCalc"         sort={sort} onSort={onSort} className="num" style={{ width: w('ubsBBCalc') }}     onResizeStart={onResizeStart}>UBS Borrowing Base</SortableHeader>
+        <SortableHeader sortKey="pctUbsBB"          sort={sort} onSort={onSort} className="num" style={{ width: w('pctUbsBB') }}      onResizeStart={onResizeStart}>% of UBS BB</SortableHeader>
+        <SortableHeader sortKey="notes"             sort={sort} onSort={onSort} style={{ width: w('notes') }}                         onResizeStart={onResizeStart}>Notes</SortableHeader>
+      </tr>
+    </thead>
+  )
+}
+
 interface KVRow { k: string; v: string; bold?: boolean; hl?: boolean }
 interface BkRow { rate?: string; label?: string; count: number; dollars: number; pct: number }
+
+const DEFAULT_BUSA_RATES = ['90%', '75%', '65%', '50%', '0%']
+const DEFAULT_AGENT_RATES = ['90%', '75%', '60%', '50%', '0%']
+
+function rateOrderValue(rate: string): number {
+  const n = parseFloat(rate.replace('%', ''))
+  return Number.isFinite(n) ? n : -1
+}
+
+function normalizeRateLabel(raw: string | undefined | null): string {
+  const n = parseFloat(String(raw ?? '').replace('%', '').trim())
+  return Number.isFinite(n) ? `${Math.round(n)}%` : String(raw ?? '').trim()
+}
+
+function uniqueRatesFromMap(map: Record<string, string> | undefined, fallback: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of Object.values(map ?? {})) {
+    const rate = normalizeRateLabel(raw)
+    const key = rate.toLowerCase()
+    if (!rate || seen.has(key)) continue
+    seen.add(key)
+    out.push(rate)
+  }
+  return (out.length > 0 ? out : fallback.map(normalizeRateLabel)).sort((a, b) => rateOrderValue(b) - rateOrderValue(a))
+}
+
+function completeRateBreakdown(rows: BkRow[] | undefined, rates: string[]): Array<BkRow & { rate: string }> {
+  const byRate = new Map<string, BkRow & { rate: string }>()
+  const normalizedRates = rates.map(normalizeRateLabel)
+  const scheduled = new Set(normalizedRates.map(rate => rate.toLowerCase()))
+  const extraRates: string[] = []
+  for (const row of rows ?? []) {
+    const rate = normalizeRateLabel(row.rate ?? row.label)
+    if (!rate) continue
+    const key = rate.toLowerCase()
+    const existing = byRate.get(key)
+    if (existing) {
+      existing.count += row.count
+      existing.dollars += row.dollars
+      existing.pct += row.pct
+    } else {
+      byRate.set(key, { ...row, rate })
+    }
+    if (!scheduled.has(key)) extraRates.push(rate)
+  }
+  const extras = [...new Set(extraRates)].sort((a, b) => rateOrderValue(b) - rateOrderValue(a))
+  return [...normalizedRates, ...extras].map(rate => byRate.get(rate.toLowerCase()) ?? { rate, count: 0, dollars: 0, pct: 0 })
+}
 
 function SummaryKVTable({ title, rows }: { title: string; rows: KVRow[] }) {
   return (
@@ -200,7 +310,7 @@ function buildOverride(LPRecord: ComputedLPRecord, totalUncalledM: number, defau
     parent:            LPRecord.parent ?? '',
     spv:               !!LPRecord.spv,
     investorType:      LPRecord.investorType ?? '',
-    type:              LPRecord.type ?? 'Institutional',
+    instVsHnw:         LPRecord.instVsHnw ?? 'Institutional',
     ig:                !!LPRecord.ig,
     cls:               LPRecord.cls ?? '',
     agentCls:          LPRecord.agentCls ?? '',
@@ -229,7 +339,7 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
     parent: ov.parent,
     spv: ov.spv,
     investorType: ov.investorType || undefined,
-    type: ov.type as LPRecord['type'],
+    instVsHnw: ov.instVsHnw as LPRecord['instVsHnw'],
     ig: ov.ig,
     cls: (ov.cls as LPRecord['cls']) || undefined,
     agentCls: ov.agentCls || undefined,
@@ -268,6 +378,7 @@ export default function ShadowBB() {
   const [calcMeta,        setCalcMeta]        = useState<{ facility: string; ts: Date } | null>(null)
   const [loadError,       setLoadError]       = useState<string | null>(null)
   const [classCfg,        setClassCfg]        = useState<ClassificationConfig | null>(null)
+  const [rerunning,       setRerunning]       = useState(false)
 
   // Raw LP records + snapshot kept in state so local overrides can trigger recomputation.
   const [rawLPs,       setRawLPs]       = useState<LPRecord[]>([])
@@ -411,6 +522,13 @@ export default function ShadowBB() {
   )
 
   const rankByKey = useMemo(() => {
+    const persistedRanks = Object.fromEntries(
+      shadowRows
+        .filter(LPRecord => typeof LPRecord.rank === 'number')
+        .map(LPRecord => [LPRecord._key, LPRecord.rank as number]),
+    )
+    if (Object.keys(persistedRanks).length > 0) return persistedRanks
+
     return competitionRank(
       shadowRows,
       LPRecord => LPRecord._key,
@@ -427,7 +545,7 @@ export default function ShadowBB() {
   const sbOvToLP = (LPRecord: SubmissionLP, ov: Override): LPRecord => ({
     ...(LPRecord as LPRecord),
     name:        ov.name || LPRecord.name || LPRecord._agentName || '',
-    parent:      ov.parent ?? '', spv: ov.spv, type: ov.type as LPRecord['type'], investorType: ov.investorType ?? LPRecord.investorType ?? '',
+    parent:      ov.parent ?? '', spv: ov.spv, instVsHnw: ov.instVsHnw as LPRecord['instVsHnw'], investorType: ov.investorType ?? LPRecord.investorType ?? '',
     ig:          ov.ig,
     cls:         (ov.cls || '') as LPRecord['cls'], clsTag: LPRecord.clsTag ?? '',
     agentCls:    ov.agentCls, region: (ov.region || LPRecord.region || '') as LPRecord['region'],
@@ -450,7 +568,7 @@ export default function ShadowBB() {
 
   const sbLpToOv = (saved: LPRecord, prev: Override): Override => ({
     ...prev,
-    name: saved.name, parent: saved.parent ?? '', spv: saved.spv, investorType: saved.investorType ?? '', type: saved.type, ig: saved.ig,
+    name: saved.name, parent: saved.parent ?? '', spv: saved.spv, investorType: saved.investorType ?? '', instVsHnw: saved.instVsHnw ?? '', ig: saved.ig,
     cls: saved.cls ?? '', agentCls: saved.agentCls ?? '',
     region: saved.region ?? '', fundSleeve: saved.fundSleeve ?? '',
     sp: saved.sp ?? '', mdy: saved.mdy ?? '', fitch: saved.fitch ?? '',
@@ -490,8 +608,7 @@ export default function ShadowBB() {
         parent:            draft.parent || undefined,
         spv:               draft.spv,
         investorType:      draft.investorType || undefined,
-        instVsHnw:         draft.type || undefined,
-        type:              draft.type || undefined,
+        instVsHnw:         draft.instVsHnw || undefined,
         ig:                draft.ig,
         cls:               draft.cls || undefined,
         agentCls:          draft.agentCls || undefined,
@@ -524,9 +641,51 @@ export default function ShadowBB() {
     }
   }
 
+  const handleRerunShadowBB = async () => {
+    if (facilityId == null) return
+    const selectedFacilityId = facilityId
+    const selectedFacilityName = facility
+    setRerunning(true)
+    try {
+      const freshSnapshot = await api.bb.run(selectedFacilityId)
+      const [lps, ext, facilities] = await Promise.all([
+        getLPsForFacility(selectedFacilityId),
+        getFacilitySummaryExt(selectedFacilityId),
+        getFacilities(),
+      ])
+      const options = facilities.map(f => ({ id: f.id, name: f.name }))
+      const selectedFacility =
+        options.find(o => o.id === selectedFacilityId)
+        ?? options.find(o => o.name === selectedFacilityName)
+      setRawLPs(lps as LPRecord[])
+      setSnapshot((freshSnapshot.result.summary as unknown as Record<string, unknown>) ?? {})
+      setSnapshotBreaches(freshSnapshot.result.breaches ?? [])
+      setSummaryExtApi(ext)
+      setFacilityOptions(options)
+      setFacilityRows(facilities)
+      if (selectedFacility) {
+        setFacility(selectedFacility.name)
+        setFacilityId(selectedFacility.id ?? selectedFacilityId)
+        setTargetFacility(selectedFacility.name)
+      }
+      setOverrideMap({})
+      setSelectedKey(null)
+      setCalcMeta({ facility: selectedFacility?.name ?? selectedFacilityName, ts: new Date() })
+      toast(`Shadow BB re-run complete - UBS BB ${fmtMoneyM(freshSnapshot.result.summary.totalUBB, true)}.`)
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : 'Could not re-run Shadow BB - API unavailable.')
+    } finally {
+      setRerunning(false)
+    }
+  }
+
   useEffect(() => () => { Object.values(saveTimers.current).forEach(clearTimeout) }, [])
 
   const filtered = useMemo(() => clsFilter ? shadowRows.filter(r => overrides[r._key]?.cls === clsFilter) : shadowRows, [shadowRows, overrides, clsFilter])
+  const ubsClsSortOrder = useMemo(() => {
+    const classes = classCfg ? busaClassificationOptions(classCfg).filter(Boolean) : []
+    return Object.fromEntries(classes.map((cls, index) => [cls, index]))
+  }, [classCfg])
   const sortColumns = useMemo(() => {
     const getOverride = (LPRecord: SubmissionLP) => overrides[LPRecord._key]
     const getComputed = (LPRecord: SubmissionLP) => {
@@ -539,10 +698,10 @@ export default function ShadowBB() {
       { key: 'fundSleeve',   getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fundSleeve ?? LPRecord.fundSleeve ?? '' },
       { key: 'parent',       getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.parent ?? '' },
       { key: 'spv',          getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.spv },
-      { key: 'region',       getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.region ?? LPRecord.region ?? '' },
+      { key: 'region',       getValue: (LPRecord: SubmissionLP) => formatRegion(getOverride(LPRecord)?.region ?? LPRecord.region ?? '') },
       { key: 'investorType', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.investorType ?? LPRecord.investorType ?? '' },
-      { key: 'cls',          getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.cls ?? '' },
-      { key: 'type',         getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.type ?? '' },
+      { key: 'cls',          getValue: (LPRecord: SubmissionLP) => ubsClsSortOrder[getOverride(LPRecord)?.cls ?? ''] ?? Number.MAX_SAFE_INTEGER },
+      { key: 'instVsHnw',    getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.instVsHnw ?? '' },
       { key: 'ig',           getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.ig },
       { key: 'agentCls',     getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentCls ?? '' },
       { key: 'sp', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.sp ?? '' },
@@ -569,10 +728,10 @@ export default function ShadowBB() {
       { key: 'included', getValue: (LPRecord: SubmissionLP) => !!getComputed(LPRecord)?.included },
       { key: 'notes', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.notes ?? '' },
     ]
-  }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc])
-  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
+  }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc, ubsClsSortOrder])
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'rank', direction: 'asc' })
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
-  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('shadow-bb', SHADOW_BB_INITIAL_WIDTHS)
+  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('shadow-bb', SHADOW_RESULTS_INITIAL_WIDTHS)
 
   useEffect(() => {
     if (selectedKey === null || sortedRows.length === 0) return
@@ -593,10 +752,19 @@ export default function ShadowBB() {
   }, [sortedRows, selectedKey, page, pageSize, setPage])
 
   const { summary } = result
-  const clsOptions = [...new Set((result.lps as ComputedLPRecord[]).map(r => r.cls))].sort()
+  const clsOptions = [...new Set((result.lps as ComputedLPRecord[]).map(r => r.cls))]
+    .sort((a, b) => (ubsClsSortOrder[a] ?? Number.MAX_SAFE_INTEGER) - (ubsClsSortOrder[b] ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b))
 
   const summaryExt = useMemo((): BBSummaryExt => {
-    if (summaryExtApi) return summaryExtApi
+    const busaRatesForSummary = uniqueRatesFromMap(classCfg?.BUSA_RATE_MAP, DEFAULT_BUSA_RATES)
+    const agentRatesForSummary = uniqueRatesFromMap(classCfg?.AGENT_RATE_MAP, DEFAULT_AGENT_RATES)
+    if (summaryExtApi) {
+      return {
+        ...summaryExtApi,
+        busaBreakdown: completeRateBreakdown(summaryExtApi.busaBreakdown, busaRatesForSummary),
+        agentBreakdown: completeRateBreakdown(summaryExtApi.agentBreakdown, agentRatesForSummary),
+      }
+    }
     const lps = result.lps as ComputedLPRecord[]
     const totalUncalledM = lps.reduce((s, r) => s + r.ucM, 0)
     const totalCapCommitM = lps.reduce((s, r) => s + parseM(r.capCommit), 0)
@@ -606,12 +774,16 @@ export default function ShadowBB() {
     const ubsPartM   = facRow ? parseAumM(facRow.ubsParticipation) : 0
     const ubsPartPct = facSizeM > 0 ? ubsPartM / facSizeM : 0
     const sumUcM = (pred: (r: ComputedLPRecord) => boolean) => lps.filter(pred).reduce((s, r) => s + r.ucM, 0)
-    const instUncalledM   = sumUcM(r => r.type === 'Institutional')
-    const hnwUncalledM    = sumUcM(r => r.type === 'HNW')
+    const instUncalledM   = sumUcM(r => r.instVsHnw === 'Institutional')
+    const hnwUncalledM    = sumUcM(r => r.instVsHnw === 'HNW')
     const igUncalledM     = sumUcM(r => r.ig)
     const gt25bnUncalledM = sumUcM(r => parseAumM(r.aum) > 25000)
-    const busaMap: Record<string, BkRow> = { '90%': { rate: '90%', count: 0, dollars: 0, pct: 0 }, '75%': { rate: '75%', count: 0, dollars: 0, pct: 0 }, '65%': { rate: '65%', count: 0, dollars: 0, pct: 0 }, '50%': { rate: '50%', count: 0, dollars: 0, pct: 0 }, '0%': { rate: '0%', count: 0, dollars: 0, pct: 0 } }
-    const agentMap: Record<string, BkRow> = {}
+    const busaMap: Record<string, BkRow> = Object.fromEntries(
+      busaRatesForSummary.map(rate => [rate, { rate, count: 0, dollars: 0, pct: 0 }]),
+    )
+    const agentMap: Record<string, BkRow> = Object.fromEntries(
+      agentRatesForSummary.map(rate => [rate, { rate, count: 0, dollars: 0, pct: 0 }]),
+    )
     const clsMap: Record<string, BkRow & { label: string }> = { 'Rated Investors': { label: 'Rated Investors', count: 0, dollars: 0, pct: 0 }, 'Unrated Investors': { label: 'Unrated Investors', count: 0, dollars: 0, pct: 0 }, 'Eligible Investors': { label: 'Eligible Investors', count: 0, dollars: 0, pct: 0 }, 'Excluded Investors': { label: 'Excluded Investors', count: 0, dollars: 0, pct: 0 } }
     for (const LPRecord of lps) {
       const bkey = LPRecord.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += LPRecord.ucM }
@@ -637,11 +809,17 @@ export default function ShadowBB() {
       availableCommit: Math.min(facSizeM, agentBBM),
       facilityAdvRate: totalUncalledM > 0 ? agentBBM / totalUncalledM : 0,
       agentBBRaw: agentBBM, ubsBBRaw: ubsBBM, ubsAdvRate: totalUncalledM > 0 ? ubsBBM / totalUncalledM : 0,
-      busaBreakdown: Object.values(busaMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
-      agentBreakdown: Object.values(agentMap).sort((a, b) => parseFloat(b.rate ?? '0') - parseFloat(a.rate ?? '0')).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
+      busaBreakdown: completeRateBreakdown(
+        Object.values(busaMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
+        busaRatesForSummary,
+      ),
+      agentBreakdown: completeRateBreakdown(
+        Object.values(agentMap).map(r => ({ rate: r.rate ?? '0%', count: r.count, dollars: r.dollars, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
+        agentRatesForSummary,
+      ),
       clsBreakdown: Object.values(clsMap).map(r => ({ ...r, pct: totalUncalledM > 0 ? r.dollars / totalUncalledM : 0 })),
     }
-  }, [facility, facilityRows, result, summaryExtApi, summary])
+  }, [classCfg, facility, facilityRows, result, summaryExtApi, summary])
 
   const p = (n: number) => `${(n * 100).toFixed(0)}%`
 
@@ -650,7 +828,7 @@ export default function ShadowBB() {
       {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
       <div className="subbar">
         <span className="subbar-label">Facility</span>
-        <select style={{ width: 240 }} value={facility} onChange={e => {
+        <select style={{ width: 360, minWidth: 300, maxWidth: '100%' }} value={facility} onChange={e => {
           const opt = facilityOptions.find(o => o.name === e.target.value)
           setFacility(e.target.value)
           setFacilityId(opt?.id ?? null)
@@ -675,10 +853,10 @@ export default function ShadowBB() {
             <div style={{ display: 'flex', gap: 12, padding: '12px 18px 16px', overflowX: 'auto', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="LP Portfolio" rows={[
-                  { k: 'Total Capital Commitments', v: fmtMoneyM(summaryExt.totalCapCommit, !compact), bold: true },
-                  { k: 'Total Called Capital',       v: fmtMoneyM(summaryExt.totalCalledCap, !compact) },
+                  { k: 'Total Capital Commitments', v: fmtMoneyM(summaryExt.totalCapCommit, true), bold: true },
+                  { k: 'Total Called Capital',       v: fmtMoneyM(summaryExt.totalCalledCap, true) },
                   { k: '% of Called Capital',        v: summaryExt.pctCalled ? p(summaryExt.pctCalled) : '—' },
-                  { k: 'Total Uncalled Capital',     v: fmtMoneyM(summaryExt.totalAllUncalled, !compact), bold: true },
+                  { k: 'Total Uncalled Capital',     v: fmtMoneyM(summaryExt.totalAllUncalled, true), bold: true },
                   { k: '# of Limited Partners',      v: summaryExt.totalLPs.toLocaleString(), bold: true },
                   { k: '% Institutional',            v: p(summaryExt.pctInstitutional) },
                   { k: '% HNW',                      v: p(summaryExt.pctHNW) },
@@ -690,22 +868,22 @@ export default function ShadowBB() {
               </div>
               <div style={{ flex: '1 1 0', minWidth: 190, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
                 <SummaryKVTable title="Borrowing Base" rows={[
-                  { k: 'Total Facility Size',    v: fmtMoneyM(summaryExt.facilitySize, !compact),       bold: true },
-                  { k: 'UBS Participation',      v: fmtMoneyM(summaryExt.ubsParticipation, !compact),  bold: true },
+                  { k: 'Total Facility Size',    v: fmtMoneyM(summaryExt.facilitySize, true),       bold: true },
+                  { k: 'UBS Participation',      v: fmtMoneyM(summaryExt.ubsParticipation, true),  bold: true },
                   { k: 'UBS Participation Rate', v: summaryExt.ubsParticipationPct ? p(summaryExt.ubsParticipationPct) : '—' },
                   { k: 'Facility LTV',           v: summaryExt.facilityLTV ? p(summaryExt.facilityLTV) : '—' },
-                  { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit, !compact),   bold: true },
+                  { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit, true),   bold: true },
                   { k: 'Facility Adv. Rate',     v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
-                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, !compact),         bold: true, hl: true },
-                  { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw, !compact),           bold: true },
+                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, true),         bold: true, hl: true },
+                  { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw, true),           bold: true },
                   { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate) },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} full={!compact}/>
+                <SummaryBreakTable title="BUSA" rows={summaryExt.busaBreakdown} full={true}/>
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={!compact}/>
+                <SummaryBreakTable title="Agent" rows={summaryExt.agentBreakdown} full={true}/>
               </div>
             </div>
           )}
@@ -778,11 +956,11 @@ export default function ShadowBB() {
         <div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LPRecord`}
-              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
+              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || facilityId == null || result.lps.length === 0}>{rerunning ? 'Re-running...' : 'Re-run Shadow BB'}</Button><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
                   <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>
-                    <ShadowBBTableHead sort={sort} onSort={requestSort} widths={bbWidths} onResizeStart={bbResizeStart} />
+                    <ShadowResultsTableHead sort={sort} onSort={requestSort} widths={bbWidths} onResizeStart={bbResizeStart} />
                     <tbody>
                       {pageItems.map(LPRecord => {
                         const key = LPRecord._key
@@ -793,7 +971,7 @@ export default function ShadowBB() {
                         const st = saveStatuses[key]
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)} style={{ cursor: 'pointer' }}>
-                            <td>{rankByKey[key] ?? '—'}</td>
+                            <td className="num">{rankByKey[key] ?? '—'}</td>
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
@@ -805,9 +983,9 @@ export default function ShadowBB() {
                             <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
-                            <td>{ov.region || LPRecord.region || '—'}</td>
+                            <td>{formatRegion(ov.region || LPRecord.region) || '—'}</td>
                             <td title={ov.investorType || LPRecord.investorType || '—'}>{ov.investorType || LPRecord.investorType || '—'}</td>
-                            <td>{ov.type || '—'}</td>
+                            <td>{ov.instVsHnw || '—'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
                             <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
@@ -852,7 +1030,6 @@ export default function ShadowBB() {
                     <LPRecordPanel
                       LPRecord={sbOvToLP(selectedLP, overrides[selectedKey])}
                       open={true}
-                      rank={rankByKey[selectedKey]}
                       running={false}
                       canEdit={loadError == null}
                       onClose={() => setSelectedKey(null)}

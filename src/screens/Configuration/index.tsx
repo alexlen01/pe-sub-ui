@@ -11,6 +11,8 @@ interface EligibilityConfig {
   BUSA_TIERS:        RateTier[]
   AGENT_TIERS:       RateTier[]
   AGENT_RATE_PARAMS: AgentRateParam[]
+  /** Optional — absent on DBs without the cls_conc_limit_defaults config key. */
+  CLS_CONC_LIMIT_DEFAULTS?: Record<string, number>
   ELIG_RULES:        EligRule[]
   CONC_LIMITS:       ConcLimit[]
   GLOBAL_SETTINGS:   GlobalSetting[]
@@ -102,6 +104,7 @@ export default function Configuration() {
   const [agentParams,    setAgentParams]    = useState<AgentRateParam[]>([])
   const [eligRules,      setEligRules]      = useState<EligRule[]>([])
   const [concLimits,     setConcLimits]     = useState<ConcLimit[]>([])
+  const [clsConcDefaults, setClsConcDefaults] = useState<Record<string, number>>({})
   const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>([])
   const [loading,        setLoading]        = useState(true)
   const [saving,         setSaving]         = useState<string | null>(null)
@@ -120,6 +123,7 @@ export default function Configuration() {
         setAgentParams(config.AGENT_RATE_PARAMS)
         setEligRules(config.ELIG_RULES)
         setConcLimits(config.CONC_LIMITS)
+        setClsConcDefaults(config.CLS_CONC_LIMIT_DEFAULTS ?? {})
         setGlobalSettings(config.GLOBAL_SETTINGS)
       })
       .catch(e => setLoadError(String(e)))
@@ -145,6 +149,8 @@ export default function Configuration() {
   }, [loadError, toast])
 
   const busy = saving !== null || loading || loadError != null
+  const clsConcRows = busa.map(({ cls }) => ({ cls, pct: clsConcDefaults[cls] ?? 7.5 }))
+  const clsConcPayload = Object.fromEntries(clsConcRows.map(({ cls, pct }) => [cls, pct]))
 
   if (loading) {
     return <div style={{ padding: '40px 24px', color: 'var(--muted)', fontSize: 13 }}>Loading configuration…</div>
@@ -199,7 +205,54 @@ export default function Configuration() {
                 ))}
               </tbody>
             </table>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LPRecord.</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LP.</div>
+          </div>
+        </Card>
+
+        {/* 1b — Per-LP Concentration Limit Defaults */}
+        <Card
+          title="Per-LP Concentration Limit Defaults"
+          subtitle="Default per-LP limit (% of total uncalled capital) by LP classification"
+          action={
+            <Button size="sm" disabled={busy || busa.length === 0}
+              onClick={() => handleSave('cls_conc_limit_defaults', [['cls_conc_limit_defaults', clsConcPayload]])}>
+              {saving === 'cls_conc_limit_defaults' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
+          <div style={{ padding: '0 18px 16px' }}>
+            {busa.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
+                Not configured — the cls_conc_limit_defaults config key is missing. LPs without an explicit limit fall back to the facility-level default.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--tbl)' }}>
+                    <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
+                    <th style={{ ...TH, textAlign: 'right', width: 90 }}>Limit (%)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clsConcRows.map(({ cls, pct }) => (
+                    <tr key={cls}>
+                      <td style={{ ...TD, fontWeight: 600 }}>{cls}</td>
+                      <td style={{ ...TD, textAlign: 'right' }}>
+                        <input
+                          type="number" min={0} max={100} step={0.5}
+                          value={pct}
+                          onChange={e => setClsConcDefaults(prev => ({ ...prev, [cls]: Number(e.target.value) }))}
+                          style={numIn(60)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+              Classifications mirror the BUSA Advance Rate Schedule. Applied when an LP has no explicit per-LP limit; the facility-level default is the final fallback.
+            </div>
           </div>
         </Card>
 
@@ -270,6 +323,7 @@ export default function Configuration() {
 
         {/* 3 — Eligibility Rules */}
         <Card
+          style={{ order: 5 }}
           title="Eligibility Rules"
           subtitle="LP-level inclusion and exclusion criteria"
           action={
@@ -325,6 +379,7 @@ export default function Configuration() {
 
         {/* 4 — Concentration Limits */}
         <Card
+          style={{ order: 4 }}
           title="Concentration Limits"
           subtitle="Portfolio-level collateral concentration thresholds"
           action={
@@ -372,18 +427,7 @@ export default function Configuration() {
 
       </div>
 
-      {/* 5 — BB Template Registry */}
-      <Card
-        title="BB Template Registry"
-        subtitle="Agent BB workbook format definitions — tabs, header positions, LP category group sections"
-        action={<Button size="sm" onClick={() => navigate('bb-templates')}>Manage Templates</Button>}
-      >
-        <div style={{ padding: '10px 18px 14px', fontSize: 12, color: 'var(--muted)' }}>
-          Register and maintain the structural definitions that the extraction engine uses to parse each Agent BB workbook format. One entry per template name / template class variant.
-        </div>
-      </Card>
-
-      {/* 6 — Global Settings */}
+      {/* 5 — Global Settings */}
       <Card
         title="Global Settings"
         subtitle="Platform-wide defaults applied to all facilities"

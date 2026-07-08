@@ -1,14 +1,11 @@
 // Match Analysis panel data logic, decoupled from the MatchQueue UI so it can be unit-tested.
 //
-// In LIVE mode the backend returns a real `matchDetails` payload (Solution Design §6.5) — the
-// normalised agent name, the winning confidence band, and the ranked top-5 LP Master candidates
-// with their Jaro-Winkler / Levenshtein / combined scores. The panel renders that verbatim.
-//
-// In PROTOTYPE mode there is no backend, so `buildCandidates` reconstructs a plausible candidate
-// list client-side (the matched name plus two deterministic decoys) for demonstration only.
+// The backend returns a real `matchDetails` payload (Solution Design §6.5) — the normalised agent
+// name, the winning confidence band, and the ranked top-5 LP Master candidates with their
+// Jaro-Winkler / Levenshtein / combined scores. The panel renders that verbatim. When the backend
+// sends no candidates the panel shows none — the presentation layer never fabricates matches.
 
-import type { MatchAnalysis, MatchBand, MatchingConfig, MatchingThresholds } from '../../services/api'
-import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
+import type { MatchAnalysis, MatchBand, MatchingConfig } from '../../services/api'
 
 export interface CandidateRow {
   name:     string
@@ -32,51 +29,11 @@ export const BAND_VERDICT: Record<MatchBand, string> = {
   NO_MATCH:    'No match',
 }
 
-// Prototype-only verdict derived from the 2-threshold score bands.
-export function verdictFor(score: number, thresholds: MatchingThresholds): string {
-  return score >= thresholds.autoAccept ? 'Auto-accept'
-       : score >= thresholds.reviewQueue ? 'Review queue'
-       : 'Below threshold'
-}
-
-const strHash = (s: string) => {
-  let h = 0x811c9dc5
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
-  return (h >>> 0) / 0x100000000
-}
-const DECOY_SUFFIXES = ['Capital Partners', 'Capital Management', 'Asset Management', 'Investment Group', 'Capital Advisors', 'Investment Partners', 'Capital Fund', 'Investment Trust']
-function makeDecoyName(seed: string, words: string[], salt: string) {
-  const r = strHash(seed + salt)
-  const sfx = DECOY_SUFFIXES[Math.floor(r * DECOY_SUFFIXES.length)]
-  const meaningful = words.filter(w => w.length > 3)
-  const base = meaningful.length >= 2
-    ? `${meaningful[0]} ${meaningful[Math.floor(strHash(seed + salt + '2') * (meaningful.length - 1)) + 1]}`
-    : meaningful[0] || words[0]
-  return `${base} ${sfx}`
-}
-
-/** Prototype reconstruction: the matched name plus two deterministic decoys (no backend data). */
-export function buildCandidates(r: AnalysisRowInput, config: MatchingConfig): CandidateRow[] {
-  const normAgent = normaliseName(r.agentName, config)
-  if (!r.masterName) return []
-  const normMaster = normaliseName(r.masterName, config)
-  const jw1 = jwSim(normAgent, normMaster), lv1 = levSim(normAgent, normMaster), co1 = combineScores(jw1, lv1, config.thresholds)
-  const mWords = r.masterName.split(/\s+/)
-  const d1 = makeDecoyName(r.masterName, mWords, 'α'), d2 = makeDecoyName(r.masterName, mWords, 'β')
-  const jw2 = jwSim(normAgent, normaliseName(d1, config)), lv2 = levSim(normAgent, normaliseName(d1, config)), co2 = combineScores(jw2, lv2, config.thresholds)
-  const jw3 = jwSim(normAgent, normaliseName(d2, config)), lv3 = levSim(normAgent, normaliseName(d2, config)), co3 = combineScores(jw3, lv3, config.thresholds)
-  return [
-    { name: r.masterName, jw: jw1, lev: lv1, combined: co1, verdict: verdictFor(co1, config.thresholds) },
-    { name: d1, jw: jw2, lev: lv2, combined: co2, verdict: 'Discarded' },
-    { name: d2, jw: jw3, lev: lv3, combined: co3, verdict: 'Discarded' },
-  ]
-}
-
 /**
- * Candidate rows for the Match Analysis panel. Prefers the real backend `matchDetails` (live mode);
- * falls back to the client-side reconstruction when absent (prototype mode).
+ * Candidate rows for the Match Analysis panel — the backend `matchDetails` mapped to display rows.
+ * Returns [] when the backend supplied no candidates; the panel renders an empty state.
  */
-export function analysisCandidates(row: AnalysisRowInput, config: MatchingConfig): CandidateRow[] {
+export function analysisCandidates(row: AnalysisRowInput, _config: MatchingConfig): CandidateRow[] {
   const real = row.matchDetails?.candidates
   if (real && real.length > 0) {
     return real.map(c => ({
@@ -87,10 +44,10 @@ export function analysisCandidates(row: AnalysisRowInput, config: MatchingConfig
       verdict:  BAND_VERDICT[c.band] ?? 'No match',
     }))
   }
-  return buildCandidates(row, config)
+  return []
 }
 
-/** The normalised agent name shown in the panel — backend value in live mode, else the reconstruction. */
+/** The normalised agent name shown in the panel — backend value when present, else the caller's trace. */
 export function normalisedAgentName(row: AnalysisRowInput, reconstructed: string): string {
   return row.matchDetails?.normalized ?? reconstructed
 }

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useColumnResize } from '../../hooks/useColumnResize'
+import { formatRegion } from '../../config/regionReference'
 import { useApp }  from '../../context/AppContext'
 import Button      from '../../components/ui/Button'
 import Card        from '../../components/ui/Card'
@@ -16,7 +17,6 @@ import { api, type LpClassificationRequest } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
-import { competitionRank } from '../../utils/rank'
 
 function formatMoneyText(value: unknown): string {
   const s = String(value ?? '').trim()
@@ -54,9 +54,9 @@ function lpClassificationRow(LPRecord: LPRecord, originalName?: string): LpClass
     originalName,
     parent:            LPRecord.parent ?? '',
     spv:               LPRecord.spv,
+    fundSleeve:        LPRecord.fundSleeve ?? '',
     investorType:      LPRecord.investorType ?? '',
-    instVsHnw:         LPRecord.type,
-    type:              LPRecord.type,
+    instVsHnw:         LPRecord.instVsHnw,
     region:            LPRecord.region ?? '',
     ig:                LPRecord.ig,
     cls:               LPRecord.cls,
@@ -146,16 +146,54 @@ const moneyForFacilityEdit = (display: string) => {
   return n == null ? cleaned : formatUsdNoDecimals(n)
 }
 
-type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; maturityDate: string; collateralDate: string }
-type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation'
+type FacilityForm = { name: string; agentBank: string; accountNumber: string; loanAmount: string; ubsParticipation: string; ubsParticipationRate: string; maturityDate: string; collateralDate: string }
+type TextKey = 'name' | 'agentBank' | 'accountNumber' | 'loanAmount' | 'ubsParticipation' | 'ubsParticipationRate'
+type DraftFieldKey = 'ubsParticipation' | 'ubsParticipationRate'
 
-export function rankLPsByUncalledCapital(rows: LPRecord[]): Record<string, number> {
-  return competitionRank(
-    rows,
-    (LPRecord, index) => LPRecord.name ?? `LPRecord-${index}`,
-    LPRecord => parseMoneyToNumber(LPRecord.uc) ?? Number.NEGATIVE_INFINITY,
-    (a, b) => (a.name ?? '').localeCompare(b.name ?? ''),
-  )
+function parseRateInput(raw: unknown): number | null {
+  const n = parseFloat(String(raw ?? '').replace('%', '').trim())
+  if (!Number.isFinite(n)) return null
+  return n > 1 ? n / 100 : n
+}
+
+function rateInputDisplay(value: number | null): string {
+  return value == null ? '' : pctDisplay(value)
+}
+
+function participationRateFor(participation: number | null, facilitySize: number | null): string {
+  return participation != null && facilitySize != null && facilitySize > 0
+    ? rateInputDisplay(participation / facilitySize)
+    : ''
+}
+
+function defaultParticipationFor(facilitySize: number | null): { amount: string; rate: string } | null {
+  return facilitySize != null && facilitySize > 0
+    ? { amount: formatUsdNoDecimals(facilitySize), rate: rateInputDisplay(1) }
+    : null
+}
+
+function participationSupport(form: FacilityForm, facility: FacilityRow) {
+  const facilitySize = parseMoneyToNumber(form.loanAmount) ?? parseMoneyToNumber(facility.facilitySize)
+  const enteredRate = parseRateInput(form.ubsParticipationRate)
+  const enteredParticipation = parseMoneyToNumber(form.ubsParticipation)
+  const ubsParticipation = enteredParticipation ?? (facilitySize && enteredRate != null ? facilitySize * enteredRate : null)
+  const supportedBb = parseMoneyToNumber(facility.ubsBB)
+  const caps = [
+    { label: 'Total facility size', value: facilitySize },
+    { label: 'Latest UBS Shadow BB support', value: supportedBb },
+  ].filter((c): c is { label: string; value: number } => c.value != null && c.value > 0)
+  const suggested = caps.length > 0 ? Math.min(...caps.map(c => c.value)) : null
+  return {
+    facilitySize,
+    ubsParticipation,
+    participationRate: facilitySize && ubsParticipation ? ubsParticipation / facilitySize : enteredRate,
+    suggested,
+    limitingFactor: suggested == null ? null : caps.find(c => c.value === suggested)?.label ?? null,
+  }
+}
+
+function pctDisplay(value: number | null): string {
+  return value == null ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
 function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
@@ -167,21 +205,34 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
   onDelete: (f: FacilityRow) => void
 }) {
   const [form, setForm] = useState<FacilityForm>({
-    name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', maturityDate: '', collateralDate: '',
+    name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', ubsParticipationRate: '', maturityDate: '', collateralDate: '',
   })
+  const [draftFields, setDraftFields] = useState<Record<DraftFieldKey, boolean>>({ ubsParticipation: false, ubsParticipationRate: false })
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!facility) return
     const clean = (v?: string | null) => (!v || v === '—' ? '' : v)
+    const loanAmount = moneyForFacilityEdit(facility.loanAmount)
+    const ubsParticipation = moneyForFacilityEdit(facility.ubsParticipation)
+    const facilitySize = parseMoneyToNumber(loanAmount) ?? parseMoneyToNumber(facility.facilitySize)
+    const participation = parseMoneyToNumber(ubsParticipation)
+    const savedRate = clean(facility.ubsParticipationRate)
+    const shouldDraftParticipation = !ubsParticipation && !savedRate
+    const defaultParticipation = shouldDraftParticipation ? defaultParticipationFor(facilitySize) : null
     setForm({
       name:             clean(facility.name),
       agentBank:        clean(facility.agentBank),
       accountNumber:    clean(facility.accountNumber),
-      loanAmount:       moneyForFacilityEdit(facility.loanAmount),
-      ubsParticipation: moneyForFacilityEdit(facility.ubsParticipation),
+      loanAmount,
+      ubsParticipation: defaultParticipation?.amount ?? ubsParticipation,
+      ubsParticipationRate: savedRate || participationRateFor(participation, facilitySize) || defaultParticipation?.rate || '',
       maturityDate:     toISODate(clean(facility.maturityDate)),
       collateralDate:   toISODate(clean(facility.collateralDate)),
+    })
+    setDraftFields({
+      ubsParticipation: defaultParticipation != null,
+      ubsParticipationRate: defaultParticipation != null,
     })
     setConfirmDelete(false)
   }, [facility?.id])
@@ -192,13 +243,72 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
   const hasLPs    = (facility.lps ?? 0) > 0
   const isInactive = facility.status === 'Inactive'
   const nameValid  = form.name.trim().length > 0 && form.agentBank.trim().length > 0
+  const support = participationSupport(form, facility)
+  const applySuggestedParticipation = () => {
+    if (support.suggested == null) return
+    setDraftFields({ ubsParticipation: false, ubsParticipationRate: false })
+    setForm(p => ({
+      ...p,
+      ubsParticipation: formatUsdNoDecimals(support.suggested),
+      ubsParticipationRate: participationRateFor(support.suggested, support.facilitySize),
+    }))
+  }
 
-  const set = (k: TextKey) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(p => ({ ...p, [k]: e.target.value }))
+  const set = (k: TextKey) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    if (k === 'ubsParticipation' || k === 'ubsParticipationRate') {
+      setDraftFields({ ubsParticipation: false, ubsParticipationRate: false })
+    }
+    setForm(p => {
+      const next: FacilityForm = { ...p, [k]: value }
+      const facilitySize = parseMoneyToNumber(k === 'loanAmount' ? value : next.loanAmount) ?? parseMoneyToNumber(facility.facilitySize)
+
+      if (k === 'ubsParticipation') {
+        next.ubsParticipationRate = participationRateFor(parseMoneyToNumber(value), facilitySize)
+      } else if (k === 'ubsParticipationRate') {
+        const rate = parseRateInput(value)
+        if (rate != null && facilitySize != null && facilitySize > 0) {
+          next.ubsParticipation = formatUsdNoDecimals(rate * facilitySize)
+        }
+      } else if (k === 'loanAmount') {
+        const participation = parseMoneyToNumber(next.ubsParticipation)
+        const rate = parseRateInput(next.ubsParticipationRate)
+        if (draftFields.ubsParticipation && draftFields.ubsParticipationRate && facilitySize != null && facilitySize > 0) {
+          next.ubsParticipation = formatUsdNoDecimals(facilitySize)
+          next.ubsParticipationRate = rateInputDisplay(1)
+        } else if (participation != null) {
+          next.ubsParticipationRate = participationRateFor(participation, facilitySize)
+        } else if (rate != null && facilitySize != null && facilitySize > 0) {
+          next.ubsParticipation = formatUsdNoDecimals(rate * facilitySize)
+        }
+      }
+
+      return next
+    })
+  }
+  const stepParticipationRate = (deltaPct: number) => {
+    setDraftFields({ ubsParticipation: false, ubsParticipationRate: false })
+    setForm(p => {
+      const facilitySize = parseMoneyToNumber(p.loanAmount) ?? parseMoneyToNumber(facility.facilitySize)
+      const current = parseRateInput(p.ubsParticipationRate) ?? support.participationRate ?? 0
+      const nextRate = Math.max(0, Math.min(1, current + deltaPct / 100))
+      return {
+        ...p,
+        ubsParticipationRate: rateInputDisplay(nextRate),
+        ubsParticipation: facilitySize != null && facilitySize > 0
+          ? formatUsdNoDecimals(nextRate * facilitySize)
+          : p.ubsParticipation,
+      }
+    })
+  }
   const handleSave = () => onSave({ ...facility, ...form })
 
   const labelSt: React.CSSProperties = { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', marginBottom: 4, display: 'block' }
   const viewSt:  React.CSSProperties = { fontSize: 13, color: 'var(--navy)', minHeight: 26, display: 'flex', alignItems: 'center' }
+  const draftInputSt: React.CSSProperties = { background: '#fff8e1', boxShadow: 'inset 0 0 0 1px rgba(198, 92, 0, .28)' }
+  const draftBadge = (key: DraftFieldKey) => draftFields[key] ? (
+    <span title="Draft estimated value" aria-label="Draft estimated value" style={{ marginLeft: 6, color: 'var(--amber)', fontSize: 11, fontWeight: 700 }}>●</span>
+  ) : null
 
   // Read-only field cell (functions, not components, to avoid input focus loss)
   const ro = (label: string, value: React.ReactNode, span?: boolean) => (
@@ -209,8 +319,30 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
   )
   const ed = (label: string, key: TextKey, span?: boolean) => (
     <div key={label} className="form-group" style={span ? { marginBottom: 0, gridColumn: '1 / -1' } : { marginBottom: 0 }}>
-      <label style={labelSt}>{label}</label>
-      <input type="text" style={{ width: '100%' }} value={form[key]} onChange={set(key)} aria-label={label} />
+      <label style={labelSt}>{label}{key === 'ubsParticipation' ? draftBadge(key) : null}</label>
+      <input type="text" style={{ width: '100%', ...(key === 'ubsParticipation' && draftFields.ubsParticipation ? draftInputSt : {}) }} value={form[key]} onChange={set(key)} aria-label={label} />
+    </div>
+  )
+  const participationRateEd = () => (
+    <div key="UBS Participation Rate" className="form-group" style={{ marginBottom: 0 }}>
+      <label style={labelSt}>UBS Participation Rate{draftBadge('ubsParticipationRate')}</label>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 24px', alignItems: 'stretch', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', background: draftFields.ubsParticipationRate ? '#fff8e1' : 'var(--card)', ...(draftFields.ubsParticipationRate ? { boxShadow: 'inset 0 0 0 1px rgba(198, 92, 0, .28)' } : {}) }}>
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+          <input
+            type="text"
+            inputMode="decimal"
+            style={{ width: '100%', border: 0, borderRadius: 0, paddingRight: 4, background: 'transparent' }}
+            value={form.ubsParticipationRate.replace('%', '')}
+            onChange={set('ubsParticipationRate')}
+            aria-label="UBS Participation Rate"
+          />
+          <span style={{ padding: '0 8px 0 2px', color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>%</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', borderLeft: '1px solid var(--border)' }}>
+          <button type="button" onClick={() => stepParticipationRate(1)} aria-label="Increase UBS Participation Rate" style={{ border: 0, borderBottom: '1px solid var(--border)', background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: 'pointer', padding: 0 }}>▲</button>
+          <button type="button" onClick={() => stepParticipationRate(-1)} aria-label="Decrease UBS Participation Rate" style={{ border: 0, background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: 'pointer', padding: 0 }}>▼</button>
+        </div>
+      </div>
     </div>
   )
   const sec = (t: string) => (
@@ -260,6 +392,21 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
         {ed('Account Number', 'accountNumber')}
         {ed('Loan Amount', 'loanAmount')}
         {ed('UBS Participation', 'ubsParticipation')}
+        {participationRateEd()}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label style={labelSt}>Suggested UBS Participation</label>
+          <div style={{ ...viewSt, justifyContent: 'space-between', gap: 8 }}>
+            <span>
+              {support.suggested == null ? '—' : formatUsdNoDecimals(support.suggested)}
+              {support.limitingFactor && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
+                  limited by {support.limitingFactor}
+                </span>
+              )}
+            </span>
+            <Button size="sm" variant="secondary" disabled={support.suggested == null} onClick={applySuggestedParticipation}>Apply</Button>
+          </div>
+        </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label style={labelSt}>Maturity Date</label>
           <input type="date" style={{ width: '100%' }} value={form.maturityDate} onChange={e => setForm(p => ({ ...p, maturityDate: e.target.value }))} aria-label="Maturity Date" />
@@ -278,7 +425,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
-  const { toast, lpData, setLpData, currentUser, setActiveFacilityId } = useApp()
+  const { toast, lpData, setLpData, currentUser, setActiveFacilityId, setTargetFacility } = useApp()
   const canEdit = currentUser?.role === 'Analyst' || currentUser?.role === 'Account/Transaction Manager'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
@@ -300,6 +447,7 @@ export default function LPMaster() {
   const [incFilter,  setIncFilter]  = useState('')
   const [selected,   setSelected]   = useState<LPRecord | null>(null)
   const [editingFacility, setEditingFacility] = useState<FacilityRow | null>(null)
+  const [rerunning, setRerunning] = useState(false)
 
   // Live: pull the facility's LP records fresh on open so newly-committed LPs always show,
   // independent of whatever facility the shared context last loaded.
@@ -353,19 +501,16 @@ export default function LPMaster() {
       desc: classCfg.CLS_CRITERIA[cls] ?? '',
     }))
   }, [classCfg])
-  const rankByName = useMemo(() => rankLPsByUncalledCapital(lpData), [lpData])
-
   const sortColumns = useMemo(() => [
-    { key: 'rank',         getValue: (LPRecord: LPRecord) => rankByName[LPRecord.name ?? ''] ?? '' },
     { key: 'name',         getValue: (LPRecord: LPRecord) => LPRecord.name },
     { key: 'fundSleeve',   getValue: (LPRecord: LPRecord) => LPRecord.fundSleeve ?? '' },
     { key: 'parent',       getValue: (LPRecord: LPRecord) => LPRecord.parent ?? '' },
     { key: 'spv',          getValue: (LPRecord: LPRecord) => LPRecord.spv ? 'Yes' : 'No' },
-    { key: 'region',       getValue: (LPRecord: LPRecord) => LPRecord.region ?? '' },
+    { key: 'region',       getValue: (LPRecord: LPRecord) => formatRegion(LPRecord.region) },
     { key: 'investorType', getValue: (LPRecord: LPRecord) => LPRecord.investorType ?? '' },
-    { key: 'instHnw',      getValue: (LPRecord: LPRecord) => LPRecord.type === 'HNW' ? 'HNW' : 'Institutional' },
+    { key: 'instHnw',      getValue: (LPRecord: LPRecord) => LPRecord.instVsHnw === 'HNW' ? 'HNW' : 'Institutional' },
     { key: 'agentCls',     getValue: (LPRecord: LPRecord) => LPRecord.agentCls ?? '' },
-    { key: 'cls',          getValue: (LPRecord: LPRecord) => LPRecord.cls ?? '' },
+    { key: 'cls',          getValue: (LPRecord: LPRecord) => `${LPRecord.cls ?? ''}\u0000${LPRecord.name ?? ''}` },
     { key: 'inc',          getValue: (LPRecord: LPRecord) => LPRecord.inc ? 'Yes' : 'No' },
     { key: 'ig',           getValue: (LPRecord: LPRecord) => LPRecord.ig ? 'Yes' : 'No' },
     { key: 'sp',           getValue: (LPRecord: LPRecord) => LPRecord.sp ?? '' },
@@ -388,11 +533,11 @@ export default function LPMaster() {
     { key: 'abb',          getValue: (LPRecord: LPRecord) => LPRecord.abb ?? '' },
     { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubb ?? '' },
     { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
-  ], [rankByName])
-  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'name', direction: 'asc' })
+  ], [])
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'cls', direction: 'asc' })
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
-    rank: 52, name: 220, fundSleeve: 140, parent: 160, spv: 54,
+    name: 220, fundSleeve: 140, parent: 160, spv: 54,
     region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
     inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
     lpSize: 94, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
@@ -400,8 +545,6 @@ export default function LPMaster() {
     agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
   })
-  const selectedRank = selected ? rankByName[selected.name ?? ''] : undefined
-
   const handleSave = async (updated: LPRecord) => {
     const originalName = selected?.name
     setLpData(lpData.map(LPRecord => LPRecord.name === originalName ? updated : LPRecord))
@@ -425,7 +568,11 @@ export default function LPMaster() {
   // the saved values locally. Rows are reconciled by id (the name is itself editable now).
   const handleFacilitySave = async (updated: FacilityRow) => {
     const loanAmount = parseMoneyToNumber(updated.loanAmount)
-    const ubsParticipation = parseMoneyToNumber(updated.ubsParticipation)
+    const enteredRate = parseRateInput(updated.ubsParticipationRate)
+    const ubsParticipation = parseMoneyToNumber(updated.ubsParticipation) ?? (loanAmount && enteredRate != null ? loanAmount * enteredRate : null)
+    const ubsParticipationRate = loanAmount && ubsParticipation
+      ? rateInputDisplay(ubsParticipation / loanAmount)
+      : '—'
     if (updated.id != null) {
       try {
         await api.facilities.update(updated.id, {
@@ -447,6 +594,7 @@ export default function LPMaster() {
       ...updated,
       loanAmount: formatUsdNoDecimals(loanAmount),
       ubsParticipation: formatUsdNoDecimals(ubsParticipation),
+      ubsParticipationRate,
     } : f)))
     setEditingFacility(null)
     toast(`Facility updated — ${updated.name}.`)
@@ -480,6 +628,29 @@ export default function LPMaster() {
     setFacilities(prev => prev.filter(f => f.id !== target.id))
     setEditingFacility(null)
     toast(`Facility deleted — ${target.name}.`)
+  }
+
+  const handleRerunShadowBB = async () => {
+    if (!facFilter?.id) return
+    setRerunning(true)
+    try {
+      const snapshot = await api.bb.run(facFilter.id)
+      const refreshedLPs = await getLPsForFacility(facFilter.id)
+      setLpData(refreshedLPs)
+      if (selected) {
+        const refreshedSelected = refreshedLPs.find(lp => lp.name === selected.name) ?? null
+        setSelected(refreshedSelected)
+      }
+      const refreshedFacilities = await getFacilities()
+      setFacilities(refreshedFacilities)
+      setTargetFacility(facFilter.name)
+      const summary = snapshot.result.summary
+      toast(`Shadow BB re-run complete — UBS BB ${formatUsdNoDecimals(summary.totalUBB * 1_000_000)}.`)
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : 'Could not re-run Shadow BB — API unavailable.')
+    } finally {
+      setRerunning(false)
+    }
   }
 
   // ── Facility grid view ────────────────────────────────────────────────────
@@ -569,6 +740,11 @@ export default function LPMaster() {
             <option value="Y">Included (Y)</option>
             <option value="N">Excluded from BB</option>
           </select>
+          {facFilter && (
+            <Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || lpData.length === 0}>
+              {rerunning ? 'Re-running...' : 'Re-run Shadow BB'}
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={() => toast('LPRecord master exported to Excel.')}>&#x2193; Export</Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
             {filtered.length} of {lpData.length} LPs
@@ -581,7 +757,6 @@ export default function LPMaster() {
         <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: tableWidth, width: tableWidth }}>
           <thead>
             <tr>
-              <SortableHeader sortKey="rank"           sort={sort} onSort={requestSort} style={{ width: widths.rank }}                          onResizeStart={onResizeStart}>Rank</SortableHeader>
               <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
               <SortableHeader sortKey="fundSleeve"     sort={sort} onSort={requestSort} style={{ width: widths.fundSleeve }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
               <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
@@ -619,10 +794,9 @@ export default function LPMaster() {
             {pageItems.map((LPRecord, i) => {
               const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '—'
               const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pension || '—'
-              const instHnw     = (LPRecord.type === 'HNW' ? 'HNW' : LPRecord.type ? 'Institutional' : '—')
+              const instHnw     = (LPRecord.instVsHnw === 'HNW' ? 'HNW' : LPRecord.instVsHnw ? 'Institutional' : '—')
               return (
               <tr key={LPRecord.name ?? `LPRecord-${i}`} className={selected?.name === LPRecord.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
-                <td>{rankByName[LPRecord.name ?? ''] ?? '—'}</td>
                 <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.name}</strong>
                   {LPRecord.rcl && <span className="rcl-badge">R</span>}
@@ -631,7 +805,7 @@ export default function LPMaster() {
                 <td title={LPRecord.fundSleeve || '—'}>{LPRecord.fundSleeve || '—'}</td>
                 <td title={LPRecord.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{LPRecord.parent || '—'}</td>
                 <td>{LPRecord.spv ? 'Yes' : 'No'}</td>
-                <td>{LPRecord.region || '—'}</td>
+                <td>{formatRegion(LPRecord.region) || '—'}</td>
                 <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LPRecord.investorType || '—'}</td>
                 <td>{instHnw}</td>
                 <td title={LPRecord.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{LPRecord.agentCls || '—'}</td>
@@ -697,7 +871,6 @@ export default function LPMaster() {
             onSave={handleSave}
             canEdit={canEdit}
             enableReclassify
-            rank={selectedRank && selectedRank > 0 ? selectedRank : undefined}
           />
         </DraggablePanel>
       )}

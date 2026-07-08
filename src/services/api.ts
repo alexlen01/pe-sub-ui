@@ -13,16 +13,20 @@ export interface MatchAnalysis {
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 type ApiLP = LPRecord & {
+  type?: LPRecord['instVsHnw']
+  fund_sleeve?: string
   investor_type?: string
   inst_vs_hnw?: string
   region_location?: string
 }
 
 function normalizeLP(row: ApiLP): LPRecord {
+  const instVsHnw = (row.instVsHnw ?? row.inst_vs_hnw ?? row.type ?? '') as LPRecord['instVsHnw']
   return {
     ...row,
+    fundSleeve: row.fundSleeve ?? row.fund_sleeve ?? '',
     investorType: row.investorType ?? row.investor_type ?? '',
-    type: (row.type ?? row.instVsHnw ?? row.inst_vs_hnw ?? '') as LPRecord['type'],
+    instVsHnw,
     region: row.region ?? row.regionLocation ?? row.region_location ?? '',
   }
 }
@@ -165,8 +169,9 @@ export interface RecordReportRequest {
 /** Mirrors CommitBbRequest.CommitLpRow on the Java side. All fields from BB_PROCESS_FLOW Step 4. */
 export interface CommitLpRow {
   name: string; parent: string | null; spv: boolean; hq: boolean
+  fundSleeve?: string | null
   investorType?: string | null
-  type: string; region: string; ig: boolean; cls: string
+  instVsHnw: string; type?: string; region: string; ig: boolean; cls: string
   agentCls?: string | null
   agentClsSource?: string | null
   sp: string; mdy: string; fitch: string
@@ -176,7 +181,7 @@ export interface CommitLpRow {
   agentConc: string | null; ubsConc: string | null
   agentRate: string | null; abb: string | null; ubb?: string | null
   agentExcessConc?: string | null; ubsExcessConc?: string | null
-  inc: boolean; rcl: boolean; notes: string | null
+  inc: boolean; rcl: boolean; tf?: boolean; rank?: number | null; notes: string | null
 }
 
 export interface Submission {
@@ -227,6 +232,7 @@ export interface LpClassificationRequest {
     // Identity & classification (manual)
     parent?: string
     spv?: boolean
+    fundSleeve?: string       // Fund Sleeve
     investorType?: string     // Investor Type
     instVsHnw?: string        // Institutional vs HNW
     type?: string             // Back-compat alias for Institutional vs HNW
@@ -251,6 +257,7 @@ export interface LpClassificationRequest {
     agentConcLimitPct?: number// Agent Concentration Limit, percent e.g. 12
     // Status (manual)
     inc?: boolean
+    tf?: boolean
     notes?: string
   }>
 }
@@ -361,6 +368,13 @@ export interface EligibilityConfig {
   AGENT_RATE_PARAMS: Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }>
   ELIG_RULES: EligRule[]
   CONC_LIMITS: ConcLimit[]
+  /** Per-LP default concentration limit (% of total uncalled) by LP classification.
+   *  Optional: absent on DBs without the cls_conc_limit_defaults config key. */
+  CLS_CONC_LIMIT_DEFAULTS?: Record<string, number>
+  /** Accepted min/max concentration-limit range (%) per LP classification, used to warn
+   *  when an analyst enters a limit outside the norm. Optional: absent on DBs without the
+   *  cls_conc_limit_bounds config key. */
+  CLS_CONC_LIMIT_BOUNDS?: Record<string, { min: number; max: number }>
   GLOBAL_SETTINGS: GlobalSetting[]
 }
 export interface ClassificationConfig {
@@ -444,6 +458,7 @@ export const api = {
     list: () => get<ApiLP[]>('/api/lp-master').then(rows => rows.map(normalizeLP)),
     get: (id: number) => get<ApiLP>(`/api/lp-master/${id}`).then(normalizeLP),
     count: () => get<{ count: number }>('/api/lp-master/count'),
+    investorTypes: () => get<string[]>('/api/lp-master/investor-types'),
   },
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { api, type BBSummaryExt } from './api'
 export type { BBSummaryExt }
+import { regionOf } from '../config/regionReference'
 import type { LPRecord } from './lpService'
 import type { BBBreach } from '../types/bb'
 
@@ -135,7 +136,10 @@ export function computePortfolioBB(
     const RATED_CLASSES = ['Rated', 'Rated Investor']
     const unratedPct = included.filter(r => !RATED_CLASSES.includes(r.cls)).reduce((s,r) => s+r.ubbM, 0) / totalUBB
     if (unratedPct > 0.50) breaches.push({ rule: 'Unrated Aggregate Concentration', entity: 'Unrated LPs', value: fmtPct(unratedPct), limit: '50%', severity: 'breach' })
-    const nonUSPct = included.filter(r => r.region !== 'North America').reduce((s,r) => s+r.ubbM, 0) / totalUBB
+    // Non-US = any region other than North America. Derived from the structured region token
+    // (regionOf tolerates legacy free-text like "North America") so a display-label change can
+    // never silently flip this 30% concentration test.
+    const nonUSPct = included.filter(r => regionOf(r.region) !== 'NAM').reduce((s,r) => s+r.ubbM, 0) / totalUBB
     if (nonUSPct > 0.30) breaches.push({ rule: 'Non-US LPRecord Concentration', entity: 'Non-US LPs', value: fmtPct(nonUSPct), limit: '30%', severity: 'breach' })
   }
   return { lps: computed, summary: { totalUBB, totalABB, bbDelta, ear, agentEar, earDelta: ear - agentEar, totalUEC, totalUC, totalConcExcess: computed.reduce((s,r) => s+r.concExcessM, 0), includedCount: included.length, excludedCount: computed.filter(r => r.cls === 'Excluded').length, reclassCount: computed.filter(r => r.rcl).length, calculatedAt: new Date(), params }, breaches }

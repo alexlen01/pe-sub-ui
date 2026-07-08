@@ -63,19 +63,13 @@ describe('analysisCandidates — live mode (backend match_details)', () => {
   })
 })
 
-// ── Prototype mode: client-side reconstruction (no backend) ───────────────────
+// ── No backend match_details: presentation layer fabricates nothing ───────────
 
-describe('analysisCandidates — prototype mode (no match_details)', () => {
-  it('reconstructs the matched name plus two decoys when masterName is set', () => {
-    const rows = analysisCandidates({ agentName: 'Blue Owl GP Stakes V', masterName: 'Blue Owl GP Stakes V' }, matchingConfig)
-    expect(rows).toHaveLength(3)
-    expect(rows[0].name).toBe('Blue Owl GP Stakes V')
-    expect(rows[0].verdict).toBe('Auto-accept') // exact reconstruction scores 100
-  })
-
-  it('returns no candidates when there is no master match', () => {
-    const rows = analysisCandidates({ agentName: 'Brand New Investor XYZ', masterName: null }, matchingConfig)
-    expect(rows).toEqual([])
+describe('analysisCandidates — no backend match_details', () => {
+  it('returns no candidates (the panel never reconstructs matches client-side)', () => {
+    expect(analysisCandidates({ agentName: 'Brand New Investor XYZ', masterName: null }, matchingConfig)).toEqual([])
+    // Even with a proposed master name, absent backend candidates yield an empty list.
+    expect(analysisCandidates({ agentName: 'Blue Owl GP Stakes V', masterName: 'Blue Owl GP Stakes V' }, matchingConfig)).toEqual([])
   })
 })
 

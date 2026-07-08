@@ -15,7 +15,7 @@ import { initTemplateService, getTemplateProfiles, findDetectedTemplate, type Te
 import type { SubmissionRow } from '../../services/facilityService'
 
 const SUB_COLS = [
-  { key: 'facility', label: 'Facility', style: { minWidth: 160 }, render: (r: SubmissionRow) => (
+  { key: 'facility', label: 'Facility', style: { minWidth: 210 }, render: (r: SubmissionRow) => (
     <span>
       {r.facility}
       {r.notes && (
@@ -23,7 +23,7 @@ const SUB_COLS = [
       )}
     </span>
   )},
-  { key: 'date',     label: 'Date' },
+  { key: 'date',     label: 'Date', style: { width: 70 } },
   { key: 'status',   label: 'Status', render: (r: SubmissionRow) => <Tag>{r.status}</Tag> },
   { key: 'action',   label: 'Action', render: (r: SubmissionRow) => (
     <span style={{ color: r.action === 'Resolve' ? 'var(--danger)' : r.action === 'Pending' ? 'var(--muted)' : 'var(--red)', fontWeight: 600, fontSize: 12 }}>

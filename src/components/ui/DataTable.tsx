@@ -25,9 +25,10 @@ interface DataTableProps<T> {
   selectedRow?: T | null
   resizableStorageKey?: string
   initialWidths?: ColWidths
+  keyboardNavigation?: boolean
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
@@ -41,6 +42,27 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
 
   useEffect(() => { setPage(1) }, [sortedRows])
   useEffect(() => { setPage(1) }, [pageSize])
+
+  useEffect(() => {
+    if (!keyboardNavigation || !onRowClick) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      const target = e.target as HTMLElement | null
+      if (target && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName))) return
+      if (sortedRows.length === 0) return
+
+      e.preventDefault()
+      const current = selectedRow ? sortedRows.indexOf(selectedRow) : -1
+      const next =
+        e.key === 'ArrowDown'
+          ? Math.min(sortedRows.length - 1, current < 0 ? 0 : current + 1)
+          : Math.max(0, current < 0 ? sortedRows.length - 1 : current - 1)
+      onRowClick(sortedRows[next])
+      setPage(Math.floor(next / pageSize) + 1)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [keyboardNavigation, onRowClick, pageSize, selectedRow, sortedRows])
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
   const p     = Math.min(page, totalPages)

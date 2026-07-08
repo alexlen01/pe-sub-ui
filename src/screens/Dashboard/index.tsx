@@ -13,7 +13,7 @@ import { api } from '../../services/api'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
-import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
+import { useConfigCache } from '../../store/configStore'
 
 const FACILITY_STATUS_ITEMS = [
   { label: 'Active',       desc: 'Shadow BB completed and accepted for this cycle.' },
@@ -66,22 +66,18 @@ const DASHBOARD_INITIAL_WIDTHS = {
   status: 224,
 }
 
-const CLS_COLORS: Record<string, string> = {
-  // UBS LP Category (UBS_CLS_OPTS)
-  'Rated Investor':             '#4F4F4F',
-  'FoF & Other > $10Bn AUM':   '#E60000',
-  'Unrated NAV > $1Bn':        '#767676',
-  'Corp Pension > $5Bn Assets': '#767676',
-  'Other Institutional':        '#007A38',
-  'Included (PWM)':             '#007A38',
-  'Excluded':                   '#C8C8C8',
-  // Legacy LP classification (CLS_OPTS) — still present in LP Master records
-  // that haven't been run through the Shadow BB workflow
-  'Rated':          '#4F4F4F',
-  'Unrated >2bn':   '#E60000',
-  'Unrated 1–2bn':  '#767676',
-  'Eligible':       '#007A38',
-}
+const LP_CATEGORY_COLORS = [
+  '#4F4F4F',
+  '#E60000',
+  '#767676',
+  '#007A38',
+  '#2E75B6',
+  '#C65C00',
+  '#7A3E9D',
+  '#008C95',
+  '#B45309',
+  '#C8C8C8',
+]
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility, screen } = useApp()
@@ -93,7 +89,7 @@ export default function Dashboard() {
   const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
   const [execSummary,      setExecSummary]      = useState<BBSummary | null>(null)
   const [error,            setError]            = useState<string | null>(null)
-  const [classCfg, setClassCfg] = useState<ClassificationConfig | null>(null)
+  const classCfg = useConfigCache().classification
 
   const selectedFacilityId = selectedFacility?.id ?? null
 
@@ -103,10 +99,6 @@ export default function Dashboard() {
       .then(lps => setFacilityLPs(lps as { cls?: string }[]))
       .catch(e => setError(String(e)))
   }, [selectedFacilityId])
-
-  useEffect(() => {
-    getClassificationConfig().then(setClassCfg).catch(e => setError(String(e)))
-  }, [])
 
   // Executive Summary figures come from the latest persisted Shadow BB snapshot (bb_snapshots),
   // not from the facility row. null → no run yet → the card shows its empty state.
@@ -140,19 +132,28 @@ export default function Dashboard() {
   const donut = useMemo(() => {
     if (facilityLPs.length === 0) return null
     const total = facilityLPs.length
+    const configuredOrder = (classCfg?.UBS_CLS_OPTS ?? []).filter(Boolean)
+    const orderByCls = new Map(configuredOrder.map((cls, index) => [cls, index]))
     const counts = new Map<string, number>()
     for (const LPRecord of facilityLPs) {
       const key = LPRecord.cls || ''
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     const segments = Array.from(counts.entries())
-      .map(([cls, n]) => {
+      .sort(([a], [b]) => {
+        const ai = orderByCls.get(a) ?? Number.MAX_SAFE_INTEGER
+        const bi = orderByCls.get(b) ?? Number.MAX_SAFE_INTEGER
+        return ai === bi
+          ? a.localeCompare(b, undefined, { sensitivity: 'base' })
+          : ai - bi
+      })
+      .map(([cls, n], index) => {
         const rate = classCfg?.UBS_CLS_DEFAULT_RATE[cls]
         return {
           label: rate ? `${cls} (${rate})` : cls,
           n,
           pct: `${((n / total) * 100).toFixed(1)}%`,
-          color: CLS_COLORS[cls] ?? '#999999',
+          color: LP_CATEGORY_COLORS[index % LP_CATEGORY_COLORS.length],
         }
       })
       .filter(s => s.n > 0)
@@ -162,6 +163,17 @@ export default function Dashboard() {
   const needsReviewCount    = facilities.filter(f => f.status === 'Needs Review').length
   const inProgressCount     = facilities.filter(f => f.status === 'In Progress').length
   const notStartedCount     = facilities.filter(f => f.status === 'Not Started').length
+  const pendingReviewFacilities = facilities.filter(f => f.status === 'Needs Review' || f.status === 'Review')
+  const pendingLpReviews = pendingReviewFacilities.reduce((sum, f) => sum + (f.lps ?? 0), 0)
+  const latestBbRun = useMemo(() => {
+    return facilities.reduce<FacilityRow | null>((latest, facility) => {
+      if (!facility.lastRunAt) return latest
+      if (!latest?.lastRunAt) return facility
+      return new Date(facility.lastRunAt).getTime() > new Date(latest.lastRunAt).getTime()
+        ? facility
+        : latest
+    }, null)
+  }, [facilities])
 
   const kpis = [
     {
@@ -176,9 +188,9 @@ export default function Dashboard() {
       </>,
       color: 'black',
     },
-    { label: 'Total LPRecord Records',   value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
-    { label: 'Pending LPRecord Reviews', value: '—', sub: selectedFacility?.name ?? '', color: 'amber' },
-    { label: 'Last BB Run',        value: selectedFacility ? formatLastRun(selectedFacility.lastRunAt) : '—', sub: selectedFacility?.name ?? '',          color: 'green' },
+    { label: 'Total LP Records',         value: facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString(),              sub: 'across all facilities',                                  color: 'blue'  },
+    { label: 'Pending LP Reviews', value: pendingLpReviews.toLocaleString(), sub: `across ${pendingReviewFacilities.length} facilities pending review`, color: 'amber' },
+    { label: 'Last BB Run',        value: formatLastRun(latestBbRun?.lastRunAt), sub: latestBbRun?.name ?? 'No Shadow BB runs',          color: 'green' },
   ]
 
   return (
@@ -221,6 +233,7 @@ export default function Dashboard() {
               rows={filteredFacilities}
               onRowClick={setSelectedFacility}
               selectedRow={selectedFacility}
+              keyboardNavigation
               resizableStorageKey="dashboard-facilities-fixed-v5"
               initialWidths={DASHBOARD_INITIAL_WIDTHS}
             />
@@ -232,7 +245,7 @@ export default function Dashboard() {
             title="LP Category"
             subtitle={
               !selectedFacility
-                ? 'Select a facility to view LPRecord breakdown'
+                ? 'Select a facility to view LP breakdown'
                 : donut
                   ? `${selectedFacility.name} · ${donut.total.toLocaleString()} LPs`
                   : `${selectedFacility.name} · No LP data`
@@ -240,7 +253,7 @@ export default function Dashboard() {
           >
             {donut
               ? <DonutChart segments={donut.segments} total={donut.total} />
-              : <div style={{ minHeight: 168, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>Select a facility to view LPRecord breakdown</div>
+              : <div style={{ minHeight: 168, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>Select a facility to view LP breakdown</div>
             }
           </Card>
 

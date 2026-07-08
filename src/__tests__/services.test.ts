@@ -2,8 +2,10 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { getFacilityBBSnapshot } from '../services/bbCalculationService'
 import { api } from '../services/api'
 import type { CommitLpRow } from '../services/api'
+import { getClassificationConfig } from '../services/configService'
 import { getFacilities, getSubmissions, formatLastRun, formatUsdNoDecimals, parseMoneyToNumber } from '../services/facilityService'
 import { getLPs, getLPByName, lookupLPsByName } from '../services/lpService'
+import { getExtractedLPs } from '../services/extractionService'
 
 // Stub global fetch with a path→body map. The first registered key contained in the request
 // URL wins, so register only the routes a given test needs.
@@ -32,6 +34,29 @@ describe('formatLastRun', () => {
 })
 
 // ── getFacilities (live, mocked API) ──────────────────────────────────────────
+
+describe('getClassificationConfig', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('merges distinct LP Master investor types into dropdown options', async () => {
+    stubFetch({
+      '/api/lp-master/investor-types': ['Investment Consultant', 'Pension Fund', 'Hedge Fund'],
+      '/api/config/classification': {
+        INVESTOR_TYPE_OPTS: ['', 'Pension Fund', 'Endowment'],
+      },
+    })
+
+    const cfg = await getClassificationConfig()
+
+    expect(cfg.INVESTOR_TYPE_OPTS).toEqual([
+      '',
+      'Endowment',
+      'Hedge Fund',
+      'Investment Consultant',
+      'Pension Fund',
+    ])
+  })
+})
 
 describe('getFacilities — live', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -361,12 +386,12 @@ describe('api.bb.run — LP commit', () => {
 
   const LPRecord: CommitLpRow = {
     name: 'CalPERS', parent: null, spv: false, hq: true,
-    type: 'Institutional', region: 'North America', ig: true, cls: 'Rated',
+    instVsHnw: 'Institutional', region: 'North America', ig: true, cls: 'Rated',
     sp: 'AAA', mdy: 'Aaa', fitch: '',
     aum: '$500.0B', nav: null, pension: null, pensionFunded: null,
     capCommit: '$20.0M', pctCapCommit: null, calledCap: '$14.0M',
     uc: '$20.0M', pctUncalled: null, pctCalled: null,
-    agentConc: '7.5%', ubsConc: '$25.0M', agentRate: '95.0%', abb: '$19.0M',
+    agentConc: '7.5%', ubsConc: '7.5%', agentRate: '95.0%', abb: '$19.0M',
     inc: true, rcl: false, notes: null,
   }
 
@@ -385,7 +410,7 @@ describe('api.bb.run — LP commit', () => {
     const body = JSON.parse(call[1].body as string) as { lps: CommitLpRow[] }
     expect(body.lps).toHaveLength(1)
     expect(body.lps[0].name).toBe('CalPERS')
-    expect(body.lps[0].ubsConc).toBe('$25.0M')
+    expect(body.lps[0].ubsConc).toBe('7.5%')
   })
 
   it('returns the config-driven breaches from the run response', async () => {
@@ -439,7 +464,19 @@ describe('api.lpRecords.saveClassification', () => {
       facilityId: 3,
       effectiveDate: '2026-06',
       rows: [
-        { name: 'CalPERS', cls: 'Rated', sp: 'AAA', inc: true, uc: '$20.0M', ubsAdvRatePct: 90, ubsConcLimitPct: 7.5 },
+        {
+          name: 'CalPERS',
+          fundSleeve: 'Main Fund',
+          region: 'North America',
+          investorType: 'Public Pension',
+          instVsHnw: 'Institutional',
+          cls: 'Rated',
+          sp: 'AAA',
+          inc: true,
+          uc: '$20.0M',
+          ubsAdvRatePct: 90,
+          ubsConcLimitPct: 7.5,
+        },
         { name: 'Tiny Fund LLC', cls: 'Excluded', inc: false },
       ],
     })
@@ -452,10 +489,63 @@ describe('api.lpRecords.saveClassification', () => {
     expect(body.facilityId).toBe(3)
     expect(body.rows).toHaveLength(2)
     expect(body.rows[0].name).toBe('CalPERS')
+    expect(body.rows[0]).toMatchObject({
+      fundSleeve: 'Main Fund',
+      region: 'North America',
+      investorType: 'Public Pension',
+      instVsHnw: 'Institutional',
+    })
   })
 
   it('throws on API error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 400 })))
     await expect(api.lpRecords.saveClassification({ facilityId: 1, rows: [] })).rejects.toThrow('400')
+  })
+})
+
+// ── getExtractedLPs — Agent BB % derivation ───────────────────────────────────
+
+describe('getExtractedLPs — Agent BB % derivation', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  // The API serializes unmapped columns as empty strings (e.g. "pctBBFmt":""), not null —
+  // these fixtures mirror that contract exactly.
+  it('calculates "% of Borrowing Base" and flags it when the file maps Borrowing Base but no BB-% column', async () => {
+    stubFetch({
+      '/extracted-lps': [
+        { id: 1, name: 'CalPERS', agentBBFmt: '$60,000,000', pctBBFmt: '' },
+        { id: 2, name: 'CalSTRS', agentBBFmt: '$40,000,000', pctBBFmt: '' },
+      ],
+    })
+    const rows = await getExtractedLPs(1)
+    // Each LP's share = its Borrowing Base ÷ total Borrowing Base ($100M)
+    expect(rows[0].pctBBFmt).toBe('60.00%')
+    expect(rows[1].pctBBFmt).toBe('40.00%')
+    expect(rows[0].pctBBCalculated).toBe(true)
+    expect(rows[1].pctBBCalculated).toBe(true)
+  })
+
+  it('leaves a file-provided "% of Borrowing Base" untouched and does not flag it as calculated', async () => {
+    stubFetch({
+      '/extracted-lps': [
+        { id: 1, name: 'CalPERS', agentBBFmt: '$60,000,000', pctBBFmt: '55.00%' },
+      ],
+    })
+    const rows = await getExtractedLPs(1)
+    // Provided value passes through — not recomputed to the 100% single-row share
+    expect(rows[0].pctBBFmt).toBe('55.00%')
+    expect(rows[0].pctBBCalculated).toBe(false)
+  })
+
+  it('does not flag BB % as calculated when no Borrowing Base column was mapped', async () => {
+    // BB $ here is itself derived (uncalled × rate) and its column is blank ("");
+    // with no mapped Borrowing Base column the BB-% is not surfaced as calculated.
+    stubFetch({
+      '/extracted-lps': [
+        { id: 1, name: 'CalPERS', agentBBFmt: '', pctBBFmt: '', uncalled: '$100,000,000', agentRate: '90%' },
+      ],
+    })
+    const rows = await getExtractedLPs(1)
+    expect(rows[0].pctBBCalculated).toBe(false)
   })
 })

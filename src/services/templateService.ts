@@ -108,6 +108,17 @@ const EMPTY_PROFILE: TemplateProfile = {
   groupHeaders: [], columns: [], legend: null, notes: [],
 }
 
+function detectKeysForTemplate(dto: BbTemplateApi): string[] {
+  const keys = [...dto.detectKeys]
+  const name = normalize(`${dto.templateName} ${dto.templateSlug ?? ''}`)
+  if (name.includes('audax')) {
+    for (const key of ['audax', 'audax fund vii', 'agent bb audax']) {
+      if (!keys.some(k => normalize(k) === key)) keys.push(key)
+    }
+  }
+  return keys
+}
+
 function adaptTemplate(dto: BbTemplateApi): TemplateProfile {
   const mainTab = dto.tabs.find(t => t.tabSort === 1) ?? dto.tabs[0]
   const isMulti = dto.autoDiscoverTabs || dto.trancheCount > 1 || dto.tabs.length > 1
@@ -126,14 +137,14 @@ function adaptTemplate(dto: BbTemplateApi): TemplateProfile {
     id: String(dto.id),
     fund: dto.templateName,
     workbook: { tabs: isMulti ? 'multiple' : 'single', tabLabel },
-    title: { row: dto.titleRow ?? 1, text: dto.titleText ?? dto.templateName },
+    title: { row: dto.titleRow ?? 1, text: normalize(dto.templateName).includes('audax') ? 'Deal Name:' : (dto.titleText ?? dto.templateName) },
     summaryRows,
     headerRow,
     groupHeaders,
     columns: mainTab?.columns ?? [],
     legend,
     notes: dto.notes,
-    detectKeys: dto.detectKeys,
+    detectKeys: detectKeysForTemplate(dto),
   }
 }
 

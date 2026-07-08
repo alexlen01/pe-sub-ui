@@ -25,7 +25,6 @@ interface ExtractedRow {
   parent?: string
   transferee?: boolean
   agentClass?: string
-  agentClsSource?: string
   commit?: string
   calledCap?: string
   uncalled?: string
@@ -49,11 +48,12 @@ interface ExtractedRow {
   eligibleCommitmentFmt?: string
   agentBBFmt?: string
   pctBBFmt?: string
+  pctBBCalculated?: boolean
   fundSleeve?: string
   investorType?: string
   notes?: string
 }
-type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: boolean }
+type UnrecogRow = UnrecognizedColumn & { suggestedCanonical: string; dismissed: boolean; undone?: boolean }
 
 type ExtractedGridColumn = {
   key: string
@@ -122,7 +122,7 @@ const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   'Fund Sleeve':               { key: 'fundSleeve', width: 140 },
   'Investor Type':             { key: 'investorType', width: 140 },
   'Parent':                    { key: 'parent', width: 165 },
-  'Classification':            { key: 'agentClass', width: 158 },
+  'Classification':            { key: 'agentClass', label: 'LP Classification', width: 170 },
   'S&P':                       { key: 'sp', width: 78, align: 'left' as const, rating: true },
   "Moody's":                   { key: 'moodys', width: 90, align: 'left' as const, rating: true },
   'Fitch':                     { key: 'fitch', width: 82, rating: true },
@@ -212,6 +212,10 @@ function canonicalName(label: string): string {
   return label.split(/\s(?:-|—|›)\s/).pop() ?? label
 }
 
+function isExactFieldMatch(mapping: FieldMapRow): boolean {
+  return /\bexact match\b/i.test(mapping.note ?? '')
+}
+
 function detailFieldsFromMapping(fieldMap: FieldMapRow[]): LPField[] {
   const seen = new Set<string>()
   return fieldMap.flatMap(m => {
@@ -233,10 +237,11 @@ const FALLBACK_DETAIL_FIELDS: LPField[] = [
 
 // Transferee marker — shown next to the investor name (no dedicated column/field).
 const TransfereeMark = () => (
-  <sup
+  <span
+    className="tf-badge"
     title="Transferee — commitment received via transfer"
-    style={{ marginLeft: 3, fontSize: 9, fontWeight: 700, color: 'var(--amber)', cursor: 'help' }}
-  >t</sup>
+    style={{ cursor: 'help' }}
+  >T</span>
 )
 
 const CHIP: Record<string, React.CSSProperties> = {
@@ -246,22 +251,6 @@ const CHIP: Record<string, React.CSSProperties> = {
 }
 
 const HDR: React.CSSProperties = { whiteSpace: 'nowrap', verticalAlign: 'middle', overflow: 'hidden', textOverflow: 'ellipsis' }
-
-function agentClsSourceText(source: string | undefined, hasAgentClass: boolean): string {
-  const value = String(source ?? '').toUpperCase()
-  if (value === 'EXTRACTED') return 'Agent LP Category came directly from the Agent BB file.'
-  if (value === 'DERIVED') return 'Agent LP Category was auto-assigned from Investor Type and available investor profile data.'
-  if (!hasAgentClass) return 'Agent LP Category was not available. Analyst input is required.'
-  return 'Agent LP Category source is not recorded.'
-}
-
-function agentClsSourceTone(source: string | undefined): React.CSSProperties {
-  const value = String(source ?? '').toUpperCase()
-  if (value === 'EXTRACTED') return { background: 'var(--tbl)', color: 'var(--navy)', borderColor: 'var(--border)' }
-  if (value === 'DERIVED') return { background: 'var(--amber-lt)', color: 'var(--amber)', borderColor: 'rgba(180,83,9,.35)' }
-  return { background: 'var(--danger-lt)', color: 'var(--danger)', borderColor: 'rgba(185,28,28,.25)' }
-}
-
 
 function LPDetailPanel({
   row, onClose, onDiscard, fieldMap, overlay = false, compact = false,
@@ -275,8 +264,6 @@ function LPDetailPanel({
 }) {
   const lpFields = detailFieldsFromMapping(fieldMap)
   const detailFields = lpFields.length ? lpFields : FALLBACK_DETAIL_FIELDS
-  const sourceNote = agentClsSourceText(row.agentClsSource, Boolean(row.agentClass))
-  const sourceTone = agentClsSourceTone(row.agentClsSource)
   return (
     <div
       style={overlay
@@ -299,9 +286,6 @@ function LPDetailPanel({
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#fff', lineHeight: 1, padding: 0, opacity: 0.7, flexShrink: 0 }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
-        <div style={{ fontSize: 11, lineHeight: 1.45, padding: '8px 10px', marginBottom: 10, border: `1px solid ${sourceTone.borderColor}`, borderRadius: 4, background: sourceTone.background, color: sourceTone.color }}>
-          {sourceNote}
-        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {detailFields.map(({ key, extracted, label, canonical, money }, i) => {
             const mapping = fieldMap.find(m => m.extracted === extracted)
@@ -477,6 +461,20 @@ function gridValue(row: ExtractedRow, col: ExtractedGridColumn, compact: boolean
   return formatDisplayValue(raw == null ? undefined : String(raw), Boolean(col.money), compact)
 }
 
+function isAutoMappedGridCell(row: ExtractedRow, col: ExtractedGridColumn): boolean {
+  void row
+  void col
+  return false
+}
+
+// Agent BB % that the engine calculated (BB ÷ total BB) because the file mapped a
+// Borrowing Base column but no "% of Borrowing Base" column — highlighted in the grid.
+function isCalculatedBBPctCell(row: ExtractedRow, col: ExtractedGridColumn): boolean {
+  return col.canonical === '% of Borrowing Base'
+    && Boolean(row.pctBBCalculated)
+    && hasGridValue(row, col)
+}
+
 function gridCellStyle(row: ExtractedRow, col: ExtractedGridColumn): React.CSSProperties {
   const hasValue = hasGridValue(row, col)
   return {
@@ -573,18 +571,10 @@ export default function ExtractionPreview() {
     return () => ro.disconnect()
   }, [])
 
-  const agentClassStats = useMemo(() => {
-    let extractedCount = 0
-    let derivedCount = 0
-    let missingCount = 0
-    for (const row of extracted) {
-      const source = String(row.agentClsSource ?? '').toUpperCase()
-      if (source === 'EXTRACTED') extractedCount += 1
-      else if (source === 'DERIVED') derivedCount += 1
-      else if (!String(row.agentClass ?? '').trim()) missingCount += 1
-    }
-    return { extractedCount, derivedCount, missingCount, total: extracted.length }
-  }, [extracted])
+  const calculatedBBPctCount = useMemo(
+    () => extracted.filter(r => r.pctBBCalculated).length,
+    [extracted],
+  )
 
   const gridColumns = useMemo(() => columnsFromCanonicals(canonicals), [canonicals])
   const mappedCanonicals = useMemo(
@@ -594,7 +584,10 @@ export default function ExtractionPreview() {
   const visibleGridColumns = useMemo(() => gridColumns.filter(col => {
     if (col.canonical === 'Fund Sleeve') return extracted.some(r => r.fundSleeve)
     if (col.canonical === 'Parent') return extracted.some(r => r.parent)
-    if (col.canonical === 'Investor Type') return mappedCanonicals.has('Investor Type')
+    // Investor Type can be auto-derived (agent class / group headers) even when the
+    // file mapped no such column — show it whenever mapped OR any row carries content,
+    // matching the Fund Sleeve / Parent content-based convention above.
+    if (col.canonical === 'Investor Type') return mappedCanonicals.has('Investor Type') || extracted.some(r => r.investorType)
     if (col.canonical === 'Pension Assets') return mappedCanonicals.has('Pension Assets')
     if (col.canonical === 'Pension Funded (%)') return mappedCanonicals.has('Pension Assets')
     if (col.canonical === 'Fitch') return mappedCanonicals.has('Fitch Rating') || mappedCanonicals.has('Fitch')
@@ -661,10 +654,52 @@ export default function ExtractionPreview() {
     return () => document.removeEventListener('keydown', handler)
   }, [sortedRows, selectedLPId, page, pageSize, setPage])
 
+  const canonicalOptionInfo = (value: string) => {
+    const option = canonicals.find(f => f.value === value)
+    const [group] = (option?.label ?? '').split(/\s(?:>|â€º)\s/)
+    return { group: group || 'User Mapped', label: option?.label ?? value }
+  }
+
+  const undoFieldMapping = (mapping: FieldMapRow) => {
+    if (isExactFieldMatch(mapping)) return
+    setFieldMap(prev => prev.filter(m => m.extracted !== mapping.extracted))
+    setUnrecog(prev => {
+      const exists = prev.some(c => c.extracted === mapping.extracted)
+      if (exists) {
+        return prev.map(c => c.extracted === mapping.extracted
+          ? { ...c, reason: 'Mapping undone - select a canonical field or discard.', suggestedCanonical: '', dismissed: false, undone: true }
+          : c)
+      }
+      return [
+        ...prev,
+        {
+          extracted: mapping.extracted,
+          reason: 'Mapping undone - select a canonical field or discard.',
+          suggestedCanonical: '',
+          dismissed: false,
+          undone: true,
+        },
+      ]
+    })
+    setMapCollapsed(false)
+    toast(`Mapping undone for "${mapping.extracted}".`)
+  }
+
   const suggestMapping = async (extractedKey: string) => {
     const col = unrecog.find(c => c.extracted === extractedKey)
     if (!col?.suggestedCanonical) return
+    const { group } = canonicalOptionInfo(col.suggestedCanonical)
     if (activeSubmissionId == null) {
+      setFieldMap(prev => [
+        ...prev.filter(m => m.extracted !== extractedKey),
+        {
+          extracted: extractedKey,
+          canonical: col.suggestedCanonical,
+          group,
+          note: 'User-selected mapping',
+          tier: 'User',
+        },
+      ])
       setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
       toast(`"${extractedKey}" mapped to ${col.suggestedCanonical}.`)
       return
@@ -684,9 +719,10 @@ export default function ExtractionPreview() {
   }
 
   const dismissUnrecog = async (extractedKey: string) => {
+    const undone = unrecog.find(c => c.extracted === extractedKey)?.undone
     setUnrecog(prev => prev.map(c => c.extracted === extractedKey ? { ...c, dismissed: true } : c))
     toast('Column discarded.')
-    if (activeSubmissionId != null) {
+    if (activeSubmissionId != null && !undone) {
       try {
         await api.extraction.reextract(activeSubmissionId)
         await loadData(activeSubmissionId)
@@ -836,19 +872,25 @@ export default function ExtractionPreview() {
             <div style={{ padding: '0 18px 14px' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', paddingTop: 5, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>✓ Matched</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead><tr style={{ background: 'var(--tbl)' }}>{['Extracted Column','Canonical LPRecord Field','Group','Match'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: 'var(--tbl)' }}>{['Extracted Column','Canonical LPRecord Field','Group','Match',''].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontSize: 11 }}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {fieldMap.map((m, i) => (
-                    <tr key={i}>
-                      <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{m.extracted}</td>
-                      <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
-                        {m.canonical}
-                        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, marginLeft: 5, ...(CHIP[m.tier ?? 'Core'] ?? CHIP.Core) }}>{m.tier ?? 'Core'}</span>
-                      </td>
-                      <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}><Tag>{m.group}</Tag></td>
-                      <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11 }}>{m.note}</td>
-                    </tr>
-                  ))}
+                  {fieldMap.map((m, i) => {
+                    const exact = isExactFieldMatch(m)
+                    return (
+                      <tr key={i}>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>{m.extracted}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
+                          {m.canonical}
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, marginLeft: 5, ...(CHIP[m.tier ?? 'Core'] ?? CHIP.Core) }}>{m.tier ?? 'Core'}</span>
+                        </td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}><Tag>{m.group}</Tag></td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: exact ? 'var(--green)' : 'var(--amber)', fontSize: 11, fontWeight: exact ? 600 : 700 }}>{m.note}</td>
+                        <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
+                          {!exact && <Button size="sm" variant="secondary" onClick={() => undoFieldMapping(m)}>Undo</Button>}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -906,16 +948,13 @@ export default function ExtractionPreview() {
           </div>
         )}
 
-        {extracted.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: agentClassStats.derivedCount > 0 ? 'var(--amber-lt)' : 'var(--tbl)', border: `1px solid ${agentClassStats.derivedCount > 0 ? 'rgba(180,83,9,.35)' : 'var(--border)'}`, borderRadius: 6, fontSize: 12, color: agentClassStats.derivedCount > 0 ? 'var(--amber)' : 'var(--muted)' }}>
-            <span style={{ fontWeight: 700, color: 'var(--navy)', flexShrink: 0 }}>Agent LP Category</span>
+        {calculatedBBPctCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: 'color-mix(in srgb, var(--sky) 12%, #fff)', border: '1px solid rgba(74,144,217,.35)', borderRadius: 6, fontSize: 12, color: 'var(--text)' }}>
+            <span style={{ fontWeight: 700, color: 'var(--sky)', flexShrink: 0, fontStyle: 'italic' }}>ƒ Agent BB %</span>
             <span>
-              {agentClassStats.derivedCount > 0
-                ? `${agentClassStats.derivedCount} LP Classification${agentClassStats.derivedCount === 1 ? '' : 's'} applied automatically from Investor Type/profile data.`
-                : 'No LP Classifications were auto-assigned from Investor Type/profile data.'}
-              {' '}
-              {agentClassStats.extractedCount} came directly from the Agent BB file.
-              {agentClassStats.missingCount > 0 ? ` ${agentClassStats.missingCount} remain blank and require analyst input.` : ''}
+              {calculatedBBPctCount} <strong>% of Borrowing Base</strong> value{calculatedBBPctCount === 1 ? ' was' : 's were'} calculated
+              because the Agent BB file mapped a Borrowing Base column but no “% of Borrowing Base” column.
+              Each LP’s share = its Borrowing Base ÷ total Borrowing Base; calculated cells are highlighted in the grid below.
             </span>
           </div>
         )}
@@ -923,7 +962,7 @@ export default function ExtractionPreview() {
         {/* LP data table + Field Detail overlay */}
         <div>
           <Card
-            title={`Extracted LPRecord Data — ${extracted.length} Records`}
+            title={`Extrated LP Data — ${extracted.length} Records`}
             subtitle={
               selectedLP
                 ? `Row #${selectedLP.id} selected`
@@ -961,17 +1000,40 @@ export default function ExtractionPreview() {
                       onClick={() => setSelectedLPId(prev => prev === r.id ? null : r.id)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {visibleGridColumns.map(col => (
-                        <td key={col.key} style={gridCellStyle(r, col)}>
+                      {visibleGridColumns.map(col => {
+                        const autoMapped = isAutoMappedGridCell(r, col)
+                        const calcBBPct = isCalculatedBBPctCell(r, col)
+                        return (
+                        <td
+                          key={col.key}
+                          className={autoMapped ? 'auto-mapped-cell' : calcBBPct ? 'calc-cell' : undefined}
+                          style={gridCellStyle(r, col)}
+                          title={
+                            autoMapped ? 'LP Classification applied automatically from Investor Type/profile data'
+                            : calcBBPct ? 'Agent BB % calculated as Borrowing Base ÷ total Borrowing Base — not provided in the Agent BB file'
+                            : undefined
+                          }
+                        >
                           {col.canonical === 'Investor Name' ? (
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.transferee ? `${r.name} (transferee)` : r.name}>
                               {r.name}{r.transferee ? <TransfereeMark /> : null}
                             </div>
                           ) : col.canonical === 'Parent' ? (
                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.parent ?? ''}>{r.parent ?? '—'}</div>
+                          ) : autoMapped ? (
+                            <span className="auto-mapped-value">
+                              <span className="auto-mapped-text">{gridValue(r, col, compact)}</span>
+                              <span className="auto-mapped-badge">Auto</span>
+                            </span>
+                          ) : calcBBPct ? (
+                            <span className="calc-value">
+                              <span className="calc-text">{gridValue(r, col, compact)}</span>
+                              <span className="calc-badge">Calc</span>
+                            </span>
                           ) : gridValue(r, col, compact)}
                         </td>
-                      ))}
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>
