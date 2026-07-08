@@ -502,6 +502,7 @@ export default function LPMaster() {
     }))
   }, [classCfg])
   const sortColumns = useMemo(() => [
+    { key: 'rank',         getValue: (LPRecord: LPRecord) => LPRecord.rank ?? null },
     { key: 'name',         getValue: (LPRecord: LPRecord) => LPRecord.name },
     { key: 'fundSleeve',   getValue: (LPRecord: LPRecord) => LPRecord.fundSleeve ?? '' },
     { key: 'parent',       getValue: (LPRecord: LPRecord) => LPRecord.parent ?? '' },
@@ -537,10 +538,15 @@ export default function LPMaster() {
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'cls', direction: 'asc' })
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
+    rank: 64,
     name: 220, fundSleeve: 140, parent: 160, spv: 54,
     region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
     inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
+<<<<<<< HEAD
     lpSize: 144, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
+=======
+    lpSize: 134, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
+>>>>>>> 50989977941412bbf1a0f4685766eb6939182845
     calledCap: 116, uc: 126, pctUncalled: 128, pctCalled: 104,
     agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
@@ -757,6 +763,7 @@ export default function LPMaster() {
         <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: tableWidth, width: tableWidth }}>
           <thead>
             <tr>
+              <SortableHeader sortKey="rank"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rank }} onResizeStart={onResizeStart}>Rank</SortableHeader>
               <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
               <SortableHeader sortKey="fundSleeve"     sort={sort} onSort={requestSort} style={{ width: widths.fundSleeve }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
               <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
@@ -797,6 +804,7 @@ export default function LPMaster() {
               const instHnw     = (LPRecord.instVsHnw === 'HNW' ? 'HNW' : LPRecord.instVsHnw ? 'Institutional' : '—')
               return (
               <tr key={LPRecord.name ?? `LPRecord-${i}`} className={selected?.name === LPRecord.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
+                <td className="num">{LPRecord.rank ?? '—'}</td>
                 <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.name}</strong>
                   {LPRecord.rcl && <span className="rcl-badge">R</span>}

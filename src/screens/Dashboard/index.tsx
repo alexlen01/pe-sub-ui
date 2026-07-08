@@ -30,8 +30,9 @@ const FACILITY_COLS = [
     key: 'agentBank',
     label: 'Agent',
     style: { width: 'var(--dash-agent-col)' },
+    // Wrapper fills the fixed 150px column and ellipsis-truncates any longer agent name.
     render: (r: FacilityRow) => (
-      <div title={r.agentBank} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div title={r.agentBank} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {r.agentBank}
       </div>
     ),
@@ -40,8 +41,11 @@ const FACILITY_COLS = [
     key: 'name',
     label: 'Borrower',
     style: { width: 'var(--dash-borrower-col)' },
+    // Borrower is the greedy (width:100%) column; the nth-child(2) max-width:0 rule in
+    // index.css lets auto-layout shrink it so the wrapper ellipsis-truncates long names
+    // instead of forcing a scrollbar.
     render: (r: FacilityRow) => (
-      <div title={r.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div title={r.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {r.name}
       </div>
     ),
@@ -55,17 +59,6 @@ const FACILITY_COLS = [
 ]
 
 // Colors for each LP category — covers both UBS taxonomy (Shadow BB) and legacy values
-const DASHBOARD_INITIAL_WIDTHS = {
-  agentBank: 137,
-  name: 204,
-  lps: 74,
-  accountNumber: 84,
-  loanAmount: 102,
-  maturityDate: 116,
-  collateralDate: 100,
-  status: 224,
-}
-
 const LP_CATEGORY_COLORS = [
   '#4F4F4F',
   '#E60000',
@@ -234,8 +227,7 @@ export default function Dashboard() {
               onRowClick={setSelectedFacility}
               selectedRow={selectedFacility}
               keyboardNavigation
-              resizableStorageKey="dashboard-facilities-fixed-v5"
-              initialWidths={DASHBOARD_INITIAL_WIDTHS}
+              tableLayout="auto"
             />
           </div>
         </Card>

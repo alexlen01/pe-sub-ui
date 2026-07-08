@@ -154,38 +154,50 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 .sortable-th-active .sortable-th-indicator { color: var(--red); opacity: 1; }
 .data-table th.num .sortable-th-label { justify-content: flex-end; width: 100%; }
 
-/* Dashboard summary: fixed columns to fit the center grid beside the summary rail. */
+/* Dashboard summary column sizing (see rules below the variables):
+   table-layout: auto sizes the six data columns to their own text length + side
+   padding (the "width: 1%" columns hug their content). Agent is hard-pinned at 150px.
+   Borrower is the one greedy column (width: 100%): it soaks up the leftover space
+   — ~250px at a typical width, growing toward 350px on larger screens — and
+   ellipsis-truncates long names instead of ever forcing a horizontal scrollbar. */
 .dashboard-screen {
-  --dash-agent-col: 137px;
-  --dash-borrower-col: 204px;
-  --dash-lps-col: 74px;
-  --dash-account-col: 84px;
-  --dash-loan-col: 102px;
-  --dash-maturity-col: 116px;
-  --dash-collateral-col: 100px;
-  --dash-status-col: 224px;
+  --dash-agent-col: 150px;
+  --dash-borrower-col: 100%;
+  --dash-lps-col: 1%;
+  --dash-account-col: 1%;
+  --dash-loan-col: 1%;
+  --dash-maturity-col: 1%;
+  --dash-collateral-col: 1%;
+  --dash-status-col: 1%;
 }
 .dashboard-screen .data-table-wrap { overflow-x: auto; }
-.dashboard-screen .data-table { table-layout: fixed; min-width: 0; }
+.dashboard-screen .data-table {
+  table-layout: auto;
+  width: 100%;
+}
 .dashboard-screen .data-table th,
 .dashboard-screen .data-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-left: 10px;
-  padding-right: 10px;
+  white-space: nowrap;
+  /* extra side padding so adjacent columns never touch */
+  padding-left: 12px;
+  padding-right: 12px;
+}
+/* Agent (1st column) is hard-pinned at 150px — min/max-width stop auto-layout from
+   squeezing it when space is tight (border-box, so padding is included in the 150). */
+.dashboard-screen .data-table th:nth-child(1),
+.dashboard-screen .data-table td:nth-child(1) {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+}
+/* Borrower (2nd column) is the greedy, shrinkable column: max-width:0 lets auto-layout
+   collapse it to the leftover space so it ellipsis-truncates instead of scrolling. */
+.dashboard-screen .data-table th:nth-child(2),
+.dashboard-screen .data-table td:nth-child(2) {
+  max-width: 0;
 }
 .dashboard-screen .sortable-th-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-}
-@media (min-width: 1500px) {
-  .dashboard-screen .data-table th,
-  .dashboard-screen .data-table td {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
 }
 /* Column resize handle — absolutely positioned at the right edge of each <th> */
 .col-resize-handle {

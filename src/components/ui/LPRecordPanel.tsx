@@ -313,7 +313,8 @@ export default function LPRecordPanel({
     return (
       <div style={COLS}>
         {sec('Identification & Classification')}
-        {f('Investor Name', LPRecord.name, 'name', { cols: 6 })}
+        {calc('Rank', LPRecord.rank ?? '—', { cols: 1 })}
+        {f('Investor Name', LPRecord.name, 'name', { cols: 5 })}
         {f('SPV?', LPRecord.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
         {f('Parent', LPRecord.parent, 'parent', { cols: 5 })}
         {f('Fund Sleeve', LPRecord.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
