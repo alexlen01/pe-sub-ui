@@ -226,7 +226,7 @@ export default function MatchQueue() {
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth: mqTableWidth } = useColumnResize('match-queue', {
-    checkbox: 36, agentName: 260, masterName: 320, score: 90, quality: 96, status: 82, action: 160,
+    checkbox: 36, agentName: 250, masterName: 250, score: 160, quality: 96, status: 82, action: 160,
   })
 
   useEffect(() => {
