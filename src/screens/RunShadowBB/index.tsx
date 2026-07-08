@@ -34,11 +34,7 @@ export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
   name: 220, fundSleeve: 140, parent: 160, spv: 54,
   region: 140, investorType: 140, instVsHnw: 152, agentCls: 196, cls: 204,
   included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-<<<<<<< HEAD
   lpSizeBil: 134, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
-=======
-  lpSizeBil: 154, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
->>>>>>> 50989977941412bbf1a0f4685766eb6939182845
   calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
   agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
   concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
