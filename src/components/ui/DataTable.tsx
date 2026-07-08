@@ -26,9 +26,10 @@ interface DataTableProps<T> {
   resizableStorageKey?: string
   initialWidths?: ColWidths
   keyboardNavigation?: boolean
+  tableLayout?: 'fixed' | 'auto'
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed' }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
@@ -73,7 +74,7 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
 
   return (
     <div className="data-table-wrap">
-      <table className="data-table" style={{ tableLayout: 'fixed', ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}) }}>
+      <table className="data-table" style={{ tableLayout, ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}) }}>
         <thead>
           <tr>
             {columns.map(col => (
