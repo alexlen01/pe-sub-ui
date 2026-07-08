@@ -184,6 +184,12 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
   padding-left: 12px;
   padding-right: 12px;
 }
+/* Borrower (2nd column) is the greedy, shrinkable column: max-width:0 lets auto-layout
+   collapse it to the leftover space so it ellipsis-truncates instead of scrolling. */
+.dashboard-screen .data-table th:nth-child(2),
+.dashboard-screen .data-table td:nth-child(2) {
+  max-width: 0;
+}
 .dashboard-screen .sortable-th-label {
   white-space: nowrap;
 }
