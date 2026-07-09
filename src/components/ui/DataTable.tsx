@@ -74,9 +74,10 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
 
   const getColumnStyle = (col: Column<T>) => {
     const width = resizable ? (widths[col.key] ?? resizeInitial[col.key]) : undefined
+    const widthValue = typeof width === 'number' ? `${width}%` : width
     return {
       ...col.style,
-      ...(width != null ? { width, minWidth: width, maxWidth: width, boxSizing: 'border-box' as const } : {}),
+      ...(widthValue != null ? { width: widthValue, minWidth: widthValue, maxWidth: widthValue, boxSizing: 'border-box' as const } : {}),
     }
   }
 
