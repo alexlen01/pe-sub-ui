@@ -178,23 +178,10 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 .dashboard-screen .data-table th,
 .dashboard-screen .data-table td {
   white-space: nowrap;
+  box-sizing: border-box;
   /* extra side padding so adjacent columns never touch */
   padding-left: 12px;
   padding-right: 12px;
-}
-/* Agent (1st column) is hard-pinned at 150px — min/max-width stop auto-layout from
-   squeezing it when space is tight (border-box, so padding is included in the 150). */
-.dashboard-screen .data-table th:nth-child(1),
-.dashboard-screen .data-table td:nth-child(1) {
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
-}
-/* Borrower (2nd column) is the greedy, shrinkable column: max-width:0 lets auto-layout
-   collapse it to the leftover space so it ellipsis-truncates instead of scrolling. */
-.dashboard-screen .data-table th:nth-child(2),
-.dashboard-screen .data-table td:nth-child(2) {
-  max-width: 0;
 }
 .dashboard-screen .sortable-th-label {
   white-space: nowrap;

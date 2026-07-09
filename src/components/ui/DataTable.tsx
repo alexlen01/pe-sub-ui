@@ -72,6 +72,14 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
   const from = sortedRows.length === 0 ? 0 : start + 1
   const to   = Math.min(start + pageSize, sortedRows.length)
 
+  const getColumnStyle = (col: Column<T>) => {
+    const width = resizable ? (widths[col.key] ?? resizeInitial[col.key]) : undefined
+    return {
+      ...col.style,
+      ...(width != null ? { width, minWidth: width, maxWidth: width, boxSizing: 'border-box' as const } : {}),
+    }
+  }
+
   return (
     <div className="data-table-wrap">
       <table className="data-table" style={{ tableLayout, ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}) }}>
@@ -84,7 +92,7 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
                 sort={sort}
                 onSort={requestSort}
                 className={col.align === 'right' ? 'num' : ''}
-                style={{ ...col.style, ...(resizable ? { width: widths[col.key] ?? resizeInitial[col.key] } : {}) }}
+                style={getColumnStyle(col)}
                 onResizeStart={resizable ? onResizeStart : undefined}
               >
                 {col.label}

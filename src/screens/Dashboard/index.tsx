@@ -25,6 +25,17 @@ const FACILITY_STATUS_ITEMS = [
 // Agent Bank Summary layout (mirrors the prototype's Agent Bank Summary report) with "# LPs"
 // added after Borrower. Account Number / Loan Amount / Maturity Date / Collateral Date are facility-edit inputs;
 // Facility Status reflects the internal workflow status.
+const DASHBOARD_INITIAL_WIDTHS = {
+  agentBank: "17%",
+  name: "20%",
+  lps: "8%",
+  accountNumber: "10%",
+  loanAmount: "12%",
+  maturityDate: "11%",
+  collateralDate: "11%",
+  status: "12%",
+}
+
 const FACILITY_COLS = [
   {
     key: 'agentBank',
@@ -228,6 +239,8 @@ export default function Dashboard() {
               selectedRow={selectedFacility}
               keyboardNavigation
               tableLayout="auto"
+              resizableStorageKey="dashboard-facilities"
+              initialWidths={DASHBOARD_INITIAL_WIDTHS}
             />
           </div>
         </Card>
