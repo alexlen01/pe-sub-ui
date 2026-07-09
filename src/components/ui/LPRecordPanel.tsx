@@ -69,6 +69,32 @@ function applyLpSizeToRecord(LPRecord: LPRecord, form: Record<string, unknown>):
   return next
 }
 
+export function buildLpRecordFromForm(
+  LPRecord: LPRecord,
+  form: Record<string, unknown>,
+  classCfg: { UBS_CLS_DEFAULT_RATE?: Record<string, string>; BUSA_RATE_MAP?: Record<string, string>; CLS_TAG_MAP?: Record<string, string> },
+  busaRates: Record<string, number>,
+): LPRecord {
+  const eff = applyLpSizeToRecord(LPRecord, form)
+  const c = computeLPRecord(eff, undefined, busaRates)
+  const capCommitM = parseM(eff.capCommit)
+  const calledCapM = capCommitM - parseM(eff.uc)
+  const agentRateDec = parseRatePct(eff.agentRate)
+  return {
+    ...eff,
+    fundSleeve: form.fundSleeve as string | undefined,
+    rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE?.[String(form.cls)] || classCfg.BUSA_RATE_MAP?.[String(form.cls)] || LPRecord.rate,
+    clsTag: classCfg.CLS_TAG_MAP?.[String(form.cls)] ?? LPRecord.clsTag,
+    hq: c.busaRate === 0.90,
+    calledCap: fmtM(calledCapM),
+    pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
+    abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
+    ubb: c.ubb,
+    uec: c.uec,
+    ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
+  } as LPRecord
+}
+
 function parseRatePct(s: string | undefined | null): number {
   const m = String(s ?? '').match(/([\d.]+)\s*%?/)
   return m && m[1] ? parseFloat(m[1]) / 100 : NaN
@@ -187,24 +213,7 @@ export default function LPRecordPanel({
     })
 
   const handleSave = () => {
-    const eff = applyLpSizeToRecord(LPRecord, form)
-    const c = computeLPRecord(eff, undefined, busaRates)
-    const capCommitM = parseM(eff.capCommit)
-    const calledCapM = capCommitM - parseM(eff.uc)
-    const agentRateDec = parseRatePct(eff.agentRate)
-    onSave({
-      ...eff,
-      fundSleeve: form.fundSleeve as string | undefined,
-      rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE[form.cls as string] || classCfg.BUSA_RATE_MAP[form.cls as string] || LPRecord.rate,
-      clsTag: classCfg.CLS_TAG_MAP[form.cls as string] ?? LPRecord.clsTag,
-      hq: c.busaRate === 0.90,
-      calledCap: fmtM(calledCapM),
-      pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
-      abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
-      ubb: c.ubb,
-      uec: c.uec,
-      ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
-    } as LPRecord)
+    onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates))
     onClose()
   }
 

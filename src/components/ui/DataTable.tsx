@@ -27,13 +27,14 @@ interface DataTableProps<T> {
   initialWidths?: ColWidths
   keyboardNavigation?: boolean
   tableLayout?: 'fixed' | 'auto'
+  widthUnit?: 'px' | '%'
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed' }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed', widthUnit = 'px' }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
-  const { widths, onResizeStart, tableWidth } = useColumnResize(resizableStorageKey ?? 'data-table', resizeInitial)
+  const { widths, onResizeStart, tableWidth } = useColumnResize(resizableStorageKey ?? 'data-table', resizeInitial, widthUnit)
   const resizable = Boolean(resizableStorageKey && initialWidths)
   const sortColumns = useMemo(() => columns.map(col => ({
     key: col.key,

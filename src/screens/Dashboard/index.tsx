@@ -241,6 +241,7 @@ export default function Dashboard() {
               tableLayout="auto"
               resizableStorageKey="dashboard-facilities"
               initialWidths={DASHBOARD_INITIAL_WIDTHS}
+              widthUnit="%"
             />
           </div>
         </Card>

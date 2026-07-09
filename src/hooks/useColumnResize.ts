@@ -3,9 +3,10 @@ import type { MouseEvent } from 'react'
 
 export type ColWidths = Record<string, number>
 
-const MIN_COL_WIDTH = 40
+const MIN_COL_WIDTH_PX = 40
+const MIN_COL_WIDTH_PCT = 6
 
-export function useColumnResize(storageKey: string, initial: ColWidths) {
+export function useColumnResize(storageKey: string, initial: ColWidths, widthUnit: 'px' | '%' = 'px') {
   const [widths, setWidths] = useState<ColWidths>(() => {
     try {
       const stored = localStorage.getItem(`col-resize:${storageKey}`)
@@ -23,9 +24,14 @@ export function useColumnResize(storageKey: string, initial: ColWidths) {
     e.stopPropagation()
     const startX = e.clientX
     const startW = widthsRef.current[col] ?? 100
+    const containerWidth = (e.currentTarget as HTMLElement | null)?.closest('.data-table-wrap')?.getBoundingClientRect().width ?? window.innerWidth
 
     const onMouseMove = (ev: globalThis.MouseEvent) => {
-      setWidths(prev => ({ ...prev, [col]: Math.max(MIN_COL_WIDTH, startW + ev.clientX - startX) }))
+      const delta = widthUnit === '%'
+        ? ((ev.clientX - startX) / containerWidth) * 100
+        : ev.clientX - startX
+      const minWidth = widthUnit === '%' ? MIN_COL_WIDTH_PCT : MIN_COL_WIDTH_PX
+      setWidths(prev => ({ ...prev, [col]: Math.max(minWidth, startW + delta) }))
     }
 
     const onMouseUp = () => {
@@ -45,7 +51,9 @@ export function useColumnResize(storageKey: string, initial: ColWidths) {
     try { localStorage.setItem(`col-resize:${storageKey}`, JSON.stringify(widths)) } catch { /* ignore */ }
   }, [storageKey, widths])
 
-  const tableWidth = Object.values(widths).reduce((s, w) => s + w, 0)
+  const tableWidth = widthUnit === '%'
+    ? '100%'
+    : Object.values(widths).reduce((s, w) => s + w, 0)
 
   return { widths, onResizeStart, tableWidth }
 }
