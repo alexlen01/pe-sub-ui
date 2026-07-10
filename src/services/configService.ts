@@ -1,6 +1,9 @@
 import { api } from './api'
 import type {
   AuditConfig,
+  BbCriteriaClass,
+  BbCriteriaMatrix,
+  BbCriteriaRatedBand,
   ClassificationConfig,
   EligibilityConfig,
   MatchingConfig,
@@ -19,6 +22,9 @@ export type {
   EligRule,
   ConcLimit,
   GlobalSetting,
+  BbCriteriaMatrix,
+  BbCriteriaRatedBand,
+  BbCriteriaClass,
 } from './api'
 
 export const getAuditConfig = (): Promise<AuditConfig> => api.config.audit()
@@ -108,6 +114,71 @@ export function clsConcLimitBoundsForCls(
     return { min, max }
   }
   return null
+}
+
+// ── Borrowing Base Criteria resolver (mirrors the API's BbCriteriaResolver) ─────
+
+export interface ResolvedBbCriteria { advanceRatePct: number; concLimitPct: number }
+
+const RATED_BAND_ORDER = ['AAA', 'AA', 'A', 'BBB']
+
+/** Resolves the Borrowing Base Criteria (advance rate % + concentration limit %) for an LP from
+ *  the bb_criteria_matrix: advance rate splits on the LP's funded fraction at fundedThresholdPct;
+ *  Rated Investors resolve a band via the tri-party middle-rating waterfall over S&P/Moody's/Fitch.
+ *  Returns null when the matrix is absent or the classification is not in it (caller falls back to
+ *  the legacy flat maps). Kept in lockstep with the API's BbCriteriaResolver. */
+export function resolveBbCriteria(
+  matrix: BbCriteriaMatrix | null | undefined,
+  cls: string | undefined,
+  ratings: { sp?: string; mdy?: string; fitch?: string },
+  pctFunded: number,
+): ResolvedBbCriteria | null {
+  if (!matrix || !cls) return null
+  const norm = normalizeDashes(cls).trim()
+  const threshold = (matrix.fundedThresholdPct ?? 40) / 100
+  const funded: 'lt40' | 'gte40' = pctFunded >= threshold ? 'gte40' : 'lt40'
+
+  const rowCriteria = (row: BbCriteriaRatedBand | BbCriteriaClass): ResolvedBbCriteria => ({
+    advanceRatePct: row.advanceRatePct?.[funded] ?? 0,
+    concLimitPct: row.concLimitPct ?? 0,
+  })
+
+  if (norm === 'Rated Investor' || norm === 'Rated') {
+    const band = resolveRatedBand(matrix, ratings)
+    const row = matrix.rated?.find(r => r.band === band)
+    return row ? rowCriteria(row) : null
+  }
+  const row = matrix.classes?.find(c => normalizeDashes(c.cls).trim() === norm)
+  return row ? rowCriteria(row) : null
+}
+
+/** Tri-party "eligible rating" waterfall → band string: three ratings → middle (median), two → the
+ *  lower (conservative), one → that rating. A present rating matching no band clamps to the sub-IG
+ *  floor (BBB). No rating at all → the sub-IG floor. */
+function resolveRatedBand(matrix: BbCriteriaMatrix, ratings: { sp?: string; mdy?: string; fitch?: string }): string {
+  const bands = matrix.ratingBands ?? {}
+  const subIG = matrix.subInvestmentGradeBand ?? 'BBB'
+  const subIGIndex = RATED_BAND_ORDER.indexOf(subIG) >= 0 ? RATED_BAND_ORDER.indexOf(subIG) : RATED_BAND_ORDER.length - 1
+
+  const ordinalOf = (agency: 'sp' | 'moodys' | 'fitch', value?: string): number => {
+    const v = (value ?? '').trim()
+    if (!v || v.toUpperCase() === 'NR' || v === 'N/A') return -1
+    for (let i = 0; i < RATED_BAND_ORDER.length; i++) {
+      if ((bands[RATED_BAND_ORDER[i]]?.[agency] ?? []).includes(v)) return i
+    }
+    return subIGIndex   // present but unmatched → sub-investment-grade floor
+  }
+
+  const ords = [ordinalOf('sp', ratings.sp), ordinalOf('moodys', ratings.mdy), ordinalOf('fitch', ratings.fitch)]
+    .filter(o => o >= 0)
+    .sort((a, b) => a - b)   // ascending = best → worst
+  if (ords.length === 0) return subIG
+  const chosen = ords.length >= 3
+    ? ords[Math.floor((ords.length - 1) / 2)]   // median (3 → index 1)
+    : ords.length === 2
+      ? ords[ords.length - 1]                   // lower rating = higher ordinal
+      : ords[0]
+  return RATED_BAND_ORDER[Math.min(chosen, RATED_BAND_ORDER.length - 1)]
 }
 
 function mergeOptions(...groups: string[][]): string[] {

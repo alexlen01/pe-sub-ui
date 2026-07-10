@@ -403,7 +403,7 @@ describe('api.bb.run — LP commit', () => {
     aum: '$500.0B', nav: null, pension: null, pensionFunded: null,
     capCommit: '$20.0M', pctCapCommit: null, calledCap: '$14.0M',
     uc: '$20.0M', pctUncalled: null, pctCalled: null,
-    agentConc: '7.5%', ubsConc: '7.5%', agentRate: '95.0%', abb: '$19.0M',
+    agentConc: '7.5%', ubsConc: '7.5%', ubsRate: '90%', agentRate: '95.0%', abb: '$19.0M',
     inc: true, rcl: false, notes: null,
   }
 
@@ -423,6 +423,8 @@ describe('api.bb.run — LP commit', () => {
     expect(body.lps).toHaveLength(1)
     expect(body.lps[0].name).toBe('CalPERS')
     expect(body.lps[0].ubsConc).toBe('7.5%')
+    // The resolved UBS advance rate must round-trip so it reaches LP Master (writeBack reads it).
+    expect(body.lps[0].ubsRate).toBe('90%')
   })
 
   it('returns the config-driven breaches from the run response', async () => {

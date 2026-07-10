@@ -57,6 +57,7 @@ export const REGION_ENTRIES: readonly RegionEntry[] = [
   { region: 'EMEA',  country: 'BM', label: 'Bermuda',                   aliases: ['bmu', 'hamilton', 'exempted'],      pinned: true },
 
   // ── North America ──────────────────────────────────────────────────────────────────────────
+  { region: 'NAM',   country: 'US', sub: 'DOM', label: 'Domestic',    aliases: ['domestic us', 'domestic usa'] },
   { region: 'NAM',   country: 'US', label: 'United States',             aliases: ['usa', 'america', 'us'] },
   { region: 'NAM',   country: 'US', sub: 'NY', label: 'New York, US',   aliases: ['new york'] },
   { region: 'NAM',   country: 'US', sub: 'CA', label: 'California, US', aliases: ['california'] },

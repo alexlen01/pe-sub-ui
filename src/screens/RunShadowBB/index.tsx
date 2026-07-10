@@ -14,8 +14,8 @@ import { formatRegion } from '../../config/regionReference'
 import {
   buildBusaRateFractions,
   busaClassificationOptions,
-  busaRatePctForCls,
   clsConcLimitPctForCls,
+  resolveBbCriteria,
   ubsClassFromAgentCls,
   ubsClassFromAgentRate,
 } from '../../services/configService'
@@ -28,10 +28,10 @@ import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificati
 import type { BBBreach } from '../../types/bb'
 
 const DEFAULT_CL_PCT = 7.5
-export const SHADOW_BB_TABLE_WIDTH = 4133
+export const SHADOW_BB_TABLE_WIDTH = 3993
 
 export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
-  name: 220, fundSleeve: 140, parent: 160, spv: 54,
+  name: 220, parent: 160, spv: 54,
   region: 140, investorType: 140, instVsHnw: 152, agentCls: 196, cls: 204,
   included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
   lpSizeBil: 134, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
@@ -54,7 +54,6 @@ export function ShadowBBTableHead({ sort, onSort, widths, onResizeStart }: Shado
     <thead>
       <tr>
         <SortableHeader sortKey="name"              sort={sort} onSort={onSort} style={{ width: w('name') }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
-        <SortableHeader sortKey="fundSleeve"        sort={sort} onSort={onSort} style={{ width: w('fundSleeve') }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
         <SortableHeader sortKey="parent"            sort={sort} onSort={onSort} style={{ width: w('parent') }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
         <SortableHeader sortKey="spv"               sort={sort} onSort={onSort} style={{ width: w('spv') }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
         <SortableHeader sortKey="region"            sort={sort} onSort={onSort} style={{ width: w('region') }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
@@ -446,8 +445,18 @@ export default function RunShadowBB() {
     // Rated, and a qualifying AUM to Unrated >2bn / Unrated 1–2bn — but only when
     // that strictly improves the BUSA rate. Excluded LPs are never upgraded.
     const cls = baseCls
-    const clsDefaultRatePct = cls ? busaRatePctForCls(classCfg, cls) : ''
-    const clsDefaultConcPct = clsConcLimitPctForCls(eligCfg, cls)
+    // Borrowing Base Criteria matrix is the sole source of the suggested UBS advance rate /
+    // concentration limit — funded-split and rating-band aware (mirrors the API's BbCriteriaResolver).
+    // No legacy flat-map fallback: a class the matrix does not carry keeps the LP's stored value.
+    // Funded fraction = called ÷ commitment, with called = commitment − uncalled.
+    const commitFundedM = parseMoneyM(ext?.commit || LPRecord.capCommit)
+    const uncalledFundedM = parseMoneyM(ext?.uncalled || LPRecord.uc)
+    const pctFunded = commitFundedM > 0 ? Math.max(0, commitFundedM - uncalledFundedM) / commitFundedM : 0
+    const criteria = cls
+      ? resolveBbCriteria(eligCfg?.BB_CRITERIA_MATRIX, cls, { sp: spText, mdy: mdyText, fitch: fitchText }, pctFunded)
+      : null
+    const clsDefaultRatePct = criteria ? criteria.advanceRatePct : ''
+    const clsDefaultConcPct = criteria ? criteria.concLimitPct : ''
     return {
       name:              LPRecord.name ?? LPRecord._agentName ?? '',
       parent:            LPRecord.parent ?? '',
@@ -848,6 +857,9 @@ export default function RunShadowBB() {
             pctCalled:       LPRecord.pctCalled || null,
             agentConc:       LPRecord.agentConc || null,
             ubsConc:         LPRecord.ubsConc || null,
+            // Resolved UBS advance rate (matrix default or manual override) so it round-trips to
+            // LP Master; `rate` is `${ov.ubsAdvRatePct}%` built above from the same criteria.
+            ubsRate:         LPRecord.rate || null,
             agentRate:       LPRecord.agentRate || null,
             abb:             LPRecord.abb || null,
             ubb:             LPRecord.ubb || null,
@@ -964,13 +976,13 @@ export default function RunShadowBB() {
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {LPRecord._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}
                                 {saveState[key] === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>Error</span>}
                               </div>
                             </td>
-                            <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
                             <td>{formatRegion(ov.region || LPRecord.region) || '—'}</td>
@@ -1160,9 +1172,19 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
       const nextValue = field === 'notes' && typeof value === 'string' ? value.slice(0, notesMax) : value
       const next = { ...prev, [field]: nextValue } as Override
       if (field === 'cls') {
-        next.ubsAdvRatePct = busaRatePctForCls(classCfg, value as string)
-        const clsConcDefault = clsConcLimitPctForCls(eligCfg, value as string)
-        if (clsConcDefault !== '') next.concLimitPct = clsConcDefault
+        // Reseed the UBS rate/limit from the criteria matrix (funded-split + rating band), matching
+        // the initial buildOverride seeding; fall back to the flat schedules off the matrix.
+        const commitM = parseMoneyM(next.capCommit)
+        const ucM = parseMoneyM(next.ucM)
+        const pctFunded = commitM > 0 ? Math.max(0, commitM - ucM) / commitM : 0
+        const criteria = resolveBbCriteria(
+          eligCfg?.BB_CRITERIA_MATRIX, value as string,
+          { sp: next.sp, mdy: next.mdy, fitch: next.fitch }, pctFunded)
+        if (criteria) {
+          next.ubsAdvRatePct = criteria.advanceRatePct
+          next.concLimitPct = criteria.concLimitPct
+        }
+        // No legacy flat-map fallback: a class outside the matrix leaves the stored rate/limit as-is.
       }
       if (field === 'agentCls') {
         next.agentClsSource = 'USER_EDITED'
@@ -1227,6 +1249,7 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
         <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .92 }}>
           {draft.cls && <Tag>{draft.cls}</Tag>}
           <span style={{ fontSize: 11, opacity: .8 }}>{pctStr(draft.ubsAdvRatePct)} UBS · {pctStr(draft.agentRatePct)} Agent</span>
+          {LPRecord.tf && <span className="tf-badge">Transferee</span>}
           {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving...</span>}
           {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>Saved</span>}
           {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>Failed</span>}

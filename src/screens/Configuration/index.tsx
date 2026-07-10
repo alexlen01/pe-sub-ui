@@ -3,27 +3,20 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
 import { api } from '../../services/api'
-import type { RateTier, EligRule, ConcLimit, GlobalSetting } from '../../services/configService'
-
-type AgentRateParam = { label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }
+import type { RateTier, ConcLimit, GlobalSetting, BbCriteriaMatrix } from '../../services/configService'
 
 interface EligibilityConfig {
-  BUSA_TIERS:        RateTier[]
   AGENT_TIERS:       RateTier[]
-  AGENT_RATE_PARAMS: AgentRateParam[]
-  /** Optional — absent on DBs without the cls_conc_limit_defaults config key. */
-  CLS_CONC_LIMIT_DEFAULTS?: Record<string, number>
-  ELIG_RULES:        EligRule[]
+  /** Advance rate (funded-split) and concentration limit by class / rating band.
+   *  Optional — absent on DBs seeded before the bb_criteria_matrix config was added. */
+  BB_CRITERIA_MATRIX?: BbCriteriaMatrix
   CONC_LIMITS:       ConcLimit[]
   GLOBAL_SETTINGS:   GlobalSetting[]
 }
 
 function missingConfigSections(config: Partial<EligibilityConfig>): string[] {
   return [
-    ['BUSA_TIERS', config.BUSA_TIERS],
     ['AGENT_TIERS', config.AGENT_TIERS],
-    ['AGENT_RATE_PARAMS', config.AGENT_RATE_PARAMS],
-    ['ELIG_RULES', config.ELIG_RULES],
     ['CONC_LIMITS', config.CONC_LIMITS],
     ['GLOBAL_SETTINGS', config.GLOBAL_SETTINGS],
   ].filter(([, value]) => !Array.isArray(value)).map(([key]) => key as string)
@@ -53,37 +46,6 @@ const WATERMARK_OPTIONS = [
   'FINAL',
 ]
 
-// S&P / Fitch scale — IG boundary is BBB- and above
-const SP_RATING_OPTS_IG    = ['BBB-', 'BBB', 'BBB+', 'A-', 'A', 'A+', 'AA-', 'AA', 'AA+', 'AAA']
-const SP_RATING_OPTS_SUBIG = ['BB+', 'BB', 'BB-', 'B+', 'B', 'B-']
-
-// Moody's scale — IG boundary is Baa3 and above
-const MDY_RATING_OPTS_IG    = ['Baa3', 'Baa2', 'Baa1', 'A3', 'A2', 'A1', 'Aa3', 'Aa2', 'Aa1', 'Aaa']
-const MDY_RATING_OPTS_SUBIG = ['Ba1', 'Ba2', 'Ba3', 'B1', 'B2', 'B3']
-
-function RatingSelect({ value, agency, onChange }: {
-  value: string
-  agency: 'sp' | 'mdy' | 'fitch'
-  onChange: (v: string) => void
-}) {
-  const igOpts    = agency === 'mdy' ? MDY_RATING_OPTS_IG    : SP_RATING_OPTS_IG
-  const subigOpts = agency === 'mdy' ? MDY_RATING_OPTS_SUBIG : SP_RATING_OPTS_SUBIG
-  return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 12, cursor: 'pointer', width: 110 }}
-    >
-      <optgroup label="Investment Grade">
-        {igOpts.map(r => <option key={r} value={r}>{r}</option>)}
-      </optgroup>
-      <optgroup label="Below Investment Grade">
-        {subigOpts.map(r => <option key={r} value={r}>{r}</option>)}
-      </optgroup>
-    </select>
-  )
-}
-
 const TH: React.CSSProperties = { padding: '6px 10px', color: 'var(--navy)', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }
 const TD: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid var(--border)', fontSize: 12 }
 const numIn = (w: number): React.CSSProperties => ({
@@ -99,12 +61,9 @@ const unit = (s: string) => (
 export default function Configuration() {
   const { toast, navigate } = useApp()
 
-  const [busa,           setBusa]           = useState<RateTier[]>([])
   const [agentTiers,     setAgentTiers]     = useState<RateTier[]>([])
-  const [agentParams,    setAgentParams]    = useState<AgentRateParam[]>([])
-  const [eligRules,      setEligRules]      = useState<EligRule[]>([])
   const [concLimits,     setConcLimits]     = useState<ConcLimit[]>([])
-  const [clsConcDefaults, setClsConcDefaults] = useState<Record<string, number>>({})
+  const [criteria,       setCriteria]       = useState<BbCriteriaMatrix | null>(null)
   const [globalSettings, setGlobalSettings] = useState<GlobalSetting[]>([])
   const [loading,        setLoading]        = useState(true)
   const [saving,         setSaving]         = useState<string | null>(null)
@@ -118,12 +77,9 @@ export default function Configuration() {
         const missing = missingConfigSections(config)
         if (missing.length > 0) throw new Error(`Missing config sections: ${missing.join(', ')}`)
         if (!isCompleteConfig(config)) throw new Error('Eligibility configuration is incomplete')
-        setBusa(config.BUSA_TIERS)
         setAgentTiers(config.AGENT_TIERS)
-        setAgentParams(config.AGENT_RATE_PARAMS)
-        setEligRules(config.ELIG_RULES)
         setConcLimits(config.CONC_LIMITS)
-        setClsConcDefaults(config.CLS_CONC_LIMIT_DEFAULTS ?? {})
+        setCriteria(config.BB_CRITERIA_MATRIX ?? null)
         setGlobalSettings(config.GLOBAL_SETTINGS)
       })
       .catch(e => setLoadError(String(e)))
@@ -149,8 +105,16 @@ export default function Configuration() {
   }, [loadError, toast])
 
   const busy = saving !== null || loading || loadError != null
-  const clsConcRows = busa.map(({ cls }) => ({ cls, pct: clsConcDefaults[cls] ?? 7.5 }))
-  const clsConcPayload = Object.fromEntries(clsConcRows.map(({ cls, pct }) => [cls, pct]))
+
+  // ── Borrowing Base Criteria Matrix editors (immutable nested updates) ──
+  const updRatedConc = (i: number, v: number) =>
+    setCriteria(c => c ? { ...c, rated: c.rated.map((r, j) => j === i ? { ...r, concLimitPct: v } : r) } : c)
+  const updRatedAR = (i: number, k: 'lt40' | 'gte40', v: number) =>
+    setCriteria(c => c ? { ...c, rated: c.rated.map((r, j) => j === i ? { ...r, advanceRatePct: { ...r.advanceRatePct, [k]: v } } : r) } : c)
+  const updClassConc = (i: number, v: number) =>
+    setCriteria(c => c ? { ...c, classes: c.classes.map((r, j) => j === i ? { ...r, concLimitPct: v } : r) } : c)
+  const updClassAR = (i: number, k: 'lt40' | 'gte40', v: number) =>
+    setCriteria(c => c ? { ...c, classes: c.classes.map((r, j) => j === i ? { ...r, advanceRatePct: { ...r.advanceRatePct, [k]: v } } : r) } : c)
 
   if (loading) {
     return <div style={{ padding: '40px 24px', color: 'var(--muted)', fontSize: 13 }}>Loading configuration…</div>
@@ -171,98 +135,13 @@ export default function Configuration() {
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
-        {/* 1 — BUSA Advance Rate Schedule */}
-        <Card
-          title="BUSA Advance Rate Schedule"
-          subtitle="UBS (BUSA) tiered advance rates by LP classification"
-          action={
-            <Button size="sm" disabled={busy} onClick={() => handleSave('busa_tiers', [['busa_tiers', busa]])}>
-              {saving === 'busa_tiers' ? 'Saving…' : 'Save'}
-            </Button>
-          }
-        >
-          <div style={{ padding: '0 18px 16px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--tbl)' }}>
-                  <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
-                  <th style={{ ...TH, textAlign: 'right', width: 80 }}>Rate (%)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {busa.map((r, i) => (
-                  <tr key={r.cls}>
-                    <td style={{ ...TD, fontWeight: 600 }}>{r.cls}</td>
-                    <td style={{ ...TD, textAlign: 'right' }}>
-                      <input
-                        type="number" min={0} max={100} step={1}
-                        value={r.rate}
-                        onChange={e => setBusa(prev => prev.map((row, j) => j === i ? { ...row, rate: Number(e.target.value) } : row))}
-                        style={numIn(60)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Applied to UBS Eligible Uncalled Capital per LP.</div>
-          </div>
-        </Card>
-
-        {/* 1b — Per-LP Concentration Limit Defaults */}
-        <Card
-          title="Per-LP Concentration Limit Defaults"
-          subtitle="Default per-LP limit (% of total uncalled capital) by LP classification"
-          action={
-            <Button size="sm" disabled={busy || busa.length === 0}
-              onClick={() => handleSave('cls_conc_limit_defaults', [['cls_conc_limit_defaults', clsConcPayload]])}>
-              {saving === 'cls_conc_limit_defaults' ? 'Saving…' : 'Save'}
-            </Button>
-          }
-        >
-          <div style={{ padding: '0 18px 16px' }}>
-            {busa.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
-                Not configured — the cls_conc_limit_defaults config key is missing. LPs without an explicit limit fall back to the facility-level default.
-              </div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'var(--tbl)' }}>
-                    <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
-                    <th style={{ ...TH, textAlign: 'right', width: 90 }}>Limit (%)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clsConcRows.map(({ cls, pct }) => (
-                    <tr key={cls}>
-                      <td style={{ ...TD, fontWeight: 600 }}>{cls}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>
-                        <input
-                          type="number" min={0} max={100} step={0.5}
-                          value={pct}
-                          onChange={e => setClsConcDefaults(prev => ({ ...prev, [cls]: Number(e.target.value) }))}
-                          style={numIn(60)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-              Classifications mirror the BUSA Advance Rate Schedule. Applied when an LP has no explicit per-LP limit; the facility-level default is the final fallback.
-            </div>
-          </div>
-        </Card>
-
         {/* 2 — Agent Advance Rate Schedule */}
         <Card
           title="Agent Advance Rate Schedule"
           subtitle="Agent bank reference rates used for BB delta calculation"
           action={
-            <Button size="sm" disabled={busy} onClick={() => handleSave('agent', [['agent_tiers', agentTiers], ['agent_rate_params', agentParams]])}>
-              {saving === 'agent' ? 'Saving…' : 'Save'}
+            <Button size="sm" disabled={busy} onClick={() => handleSave('agent_tiers', [['agent_tiers', agentTiers]])}>
+              {saving === 'agent_tiers' ? 'Saving…' : 'Save'}
             </Button>
           }
         >
@@ -290,90 +169,7 @@ export default function Configuration() {
                 ))}
               </tbody>
             </table>
-            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {agentParams.map(({ label, value, agency }, i) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ color: 'var(--navy)', fontWeight: 600 }}>{label}</span>
-                  {typeof value === 'number' ? (
-                    <input
-                      type="number" min={0} step={1}
-                      value={value}
-                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: Number(e.target.value) } : p))}
-                      style={numIn(130)}
-                    />
-                  ) : agency ? (
-                    <RatingSelect
-                      value={String(value)}
-                      agency={agency}
-                      onChange={v => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: v } : p))}
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={String(value)}
-                      onChange={e => setAgentParams(prev => prev.map((p, j) => j === i ? { ...p, value: e.target.value } : p))}
-                      style={txtIn(150)}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        {/* 3 — Eligibility Rules */}
-        <Card
-          style={{ order: 5 }}
-          title="Eligibility Rules"
-          subtitle="LP-level inclusion and exclusion criteria"
-          action={
-            <Button size="sm" disabled={busy} onClick={() => handleSave('elig_rules', [['elig_rules', eligRules]])}>
-              {saving === 'elig_rules' ? 'Saving…' : 'Save'}
-            </Button>
-          }
-        >
-          <div style={{ padding: '0 18px 16px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--tbl)' }}>
-                  <th style={{ ...TH, textAlign: 'left' }}>Rule</th>
-                  <th style={{ ...TH, textAlign: 'right', width: 110 }}>Value</th>
-                  <th style={{ ...TH, textAlign: 'center', width: 56 }}>Active</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eligRules.map((r, i) => (
-                  <tr key={r.id}>
-                    <td style={{ ...TD, fontWeight: 600 }}>{r.rule}</td>
-                    <td style={{ ...TD, textAlign: 'right' }}>
-                      {typeof r.value === 'number' ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-                          {r.unit === '$' && unit('$')}
-                          <input
-                            type="number" min={0} step={r.unit === '$' ? 1000 : 1}
-                            value={r.value}
-                            onChange={e => setEligRules(prev => prev.map((row, j) => j === i ? { ...row, value: Number(e.target.value) } : row))}
-                            style={numIn(r.unit === '$' ? 90 : 50)}
-                          />
-                          {r.unit === '%' && unit('%')}
-                        </span>
-                      ) : (
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--muted)', padding: '2px 6px' }}>
-                          {String(r.value)}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...TD, textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={r.active}
-                        onChange={() => setEligRules(prev => prev.map((row, j) => j === i ? { ...row, active: !row.active } : row))}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Agent bank advance rate per classification — drives the Agent BB vs UBS BB delta.</div>
           </div>
         </Card>
 
@@ -426,6 +222,111 @@ export default function Configuration() {
         </Card>
 
       </div>
+
+      {/* Borrowing Base Criteria Matrix (Concentration_Limits.xlsx tabs 2-3).
+          order:-1 floats it above the grid — it is the primary editor, replacing the
+          former BUSA Advance Rate Schedule and Per-LP Concentration Limit Defaults cards. */}
+      {criteria && (
+        <Card
+          style={{ order: -1 }}
+          title="Borrowing Base Criteria Matrix"
+          subtitle="Advance rate by LP funded % (< / ≥ threshold) and concentration limit by class / rating band — source of the Run Shadow BB defaults"
+          action={
+            <Button size="sm" disabled={busy} onClick={() => handleSave('bb_criteria_matrix', [['bb_criteria_matrix', criteria]])}>
+              {saving === 'bb_criteria_matrix' ? 'Saving…' : 'Save'}
+            </Button>
+          }
+        >
+          <div style={{ padding: '4px 18px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 12 }}>
+              <span style={{ color: 'var(--navy)', fontWeight: 600 }}>Funded threshold</span>
+              <input
+                type="number" min={0} max={100} step={1}
+                value={criteria.fundedThresholdPct}
+                onChange={e => setCriteria(c => c ? { ...c, fundedThresholdPct: Number(e.target.value) } : c)}
+                style={numIn(60)}
+              />
+              {unit('%')}
+              <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                LPs at or above this funded % (called ÷ commitment) take the ≥ column advance rate.
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              {/* Rated Investors — resolved by rating band */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Rated Investors (by band)</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--tbl)' }}>
+                      <th style={{ ...TH, textAlign: 'left' }}>Rating (S&amp;P / Moody's)</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>Conc (%)</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>AR &lt;{criteria.fundedThresholdPct}%</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>AR ≥{criteria.fundedThresholdPct}%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {criteria.rated.map((r, i) => (
+                      <tr key={r.band}>
+                        <td style={{ ...TD, fontWeight: 600 }} title={`Band ${r.band}`}>{r.label ?? r.band}</td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={0.5} value={r.concLimitPct}
+                            onChange={e => updRatedConc(i, Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={1} value={r.advanceRatePct.lt40}
+                            onChange={e => updRatedAR(i, 'lt40', Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={1} value={r.advanceRatePct.gte40}
+                            onChange={e => updRatedAR(i, 'gte40', Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Non-rated classes — resolved by classification label */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>By Classification</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--tbl)' }}>
+                      <th style={{ ...TH, textAlign: 'left' }}>Classification</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>Conc (%)</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>AR &lt;{criteria.fundedThresholdPct}%</th>
+                      <th style={{ ...TH, textAlign: 'right', width: 78 }}>AR ≥{criteria.fundedThresholdPct}%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {criteria.classes.map((r, i) => (
+                      <tr key={r.cls}>
+                        <td style={{ ...TD, fontWeight: 600 }}>{r.cls}</td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={0.5} value={r.concLimitPct}
+                            onChange={e => updClassConc(i, Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={1} value={r.advanceRatePct.lt40}
+                            onChange={e => updClassAR(i, 'lt40', Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                        <td style={{ ...TD, textAlign: 'right' }}>
+                          <input type="number" min={0} max={100} step={1} value={r.advanceRatePct.gte40}
+                            onChange={e => updClassAR(i, 'gte40', Number(e.target.value))} style={numIn(52)} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+              Authoritative source for the Run Shadow BB advance-rate and concentration-limit suggestions. Concentration limit is funded-independent; only advance rate splits on funded %.
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* 5 — Global Settings */}
       <Card

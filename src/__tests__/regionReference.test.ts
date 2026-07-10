@@ -27,6 +27,13 @@ describe('searchRegions (typeahead matching)', () => {
     expect(searchRegions('asia').length).toBeGreaterThan(0)
   })
 
+  it('offers Domestic as a canonical US region selection', () => {
+    const domestic = searchRegions('domestic')[0]
+    expect(domestic.label).toBe('Domestic')
+    expect(tokenForEntry(domestic)).toBe('NAM|US|DOM')
+    expect(formatRegion('NAM|US|DOM')).toBe('Domestic')
+  })
+
   it('ranks an exact label prefix above alias-only matches', () => {
     const results = searchRegions('ire')
     expect(results[0].country).toBe('IE') // "Ireland" prefix wins

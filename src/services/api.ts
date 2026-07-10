@@ -178,7 +178,7 @@ export interface CommitLpRow {
   aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
   capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
   uc: string | null; pctUncalled: string | null; pctCalled: string | null
-  agentConc: string | null; ubsConc: string | null
+  agentConc: string | null; ubsConc: string | null; ubsRate?: string | null
   agentRate: string | null; abb: string | null; ubb?: string | null
   agentExcessConc?: string | null; ubsExcessConc?: string | null
   inc: boolean; rcl: boolean; tf?: boolean; rank?: number | null; notes: string | null
@@ -362,11 +362,40 @@ export interface GlobalSetting {
   label: string
   value: string | number
 }
+/** Advance rate split on the LP's funded % (pctCalled) at the matrix threshold.
+ *  Concentration limit is funded-independent. Sourced from Concentration_Limits.xlsx
+ *  tabs 2-3 (bb_criteria_matrix config key). See pe-sub-docs/BB_CRITERIA_DESIGN.md. */
+export interface BbCriteriaAdvanceRate { lt40: number; gte40: number }
+export interface BbCriteriaRatedBand {
+  band: string
+  /** Human-readable agency rating range from the workbook, e.g. "AA+ / Aa1 to AA- / Aa3". */
+  label?: string
+  concLimitPct: number
+  advanceRatePct: BbCriteriaAdvanceRate
+}
+export interface BbCriteriaClass {
+  cls: string
+  category?: string
+  concLimitPct: number
+  advanceRatePct: BbCriteriaAdvanceRate
+}
+export interface BbCriteriaMatrix {
+  source?: string
+  fundedThresholdPct: number
+  /** Agency ratings that resolve to each band, for Rated Investor CL/AR lookup. */
+  ratingBands?: Record<string, { sp?: string[]; moodys?: string[]; fitch?: string[] }>
+  /** Tri-party eligible-rating rule: 'middle' (median of three), else see tie-break. */
+  ratingBandSelection?: string
+  /** Split-rating waterfall: three→middle (median), two→lower, one→as-is. */
+  ratingBandTieBreak?: { three?: string; two?: string; one?: string }
+  /** Band a rated LP clamps to when its rating matches no configured band (sub-IG). */
+  subInvestmentGradeBand?: string
+  rated: BbCriteriaRatedBand[]
+  classes: BbCriteriaClass[]
+}
 export interface EligibilityConfig {
   BUSA_TIERS: RateTier[]
   AGENT_TIERS: RateTier[]
-  AGENT_RATE_PARAMS: Array<{ label: string; value: string | number; agency?: 'sp' | 'mdy' | 'fitch' }>
-  ELIG_RULES: EligRule[]
   CONC_LIMITS: ConcLimit[]
   /** Per-LP default concentration limit (% of total uncalled) by LP classification.
    *  Optional: absent on DBs without the cls_conc_limit_defaults config key. */
@@ -375,6 +404,9 @@ export interface EligibilityConfig {
    *  when an analyst enters a limit outside the norm. Optional: absent on DBs without the
    *  cls_conc_limit_bounds config key. */
   CLS_CONC_LIMIT_BOUNDS?: Record<string, { min: number; max: number }>
+  /** Borrowing Base Criteria matrix (advance rate × funded split, per-class /
+   *  per-rating-band concentration limit). Optional: absent on DBs before V1_4. */
+  BB_CRITERIA_MATRIX?: BbCriteriaMatrix
   GLOBAL_SETTINGS: GlobalSetting[]
 }
 export interface ClassificationConfig {

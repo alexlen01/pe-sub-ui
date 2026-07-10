@@ -82,7 +82,7 @@ const COL_HD: React.CSSProperties  = { padding: '7px 10px', color: 'var(--muted)
 const CELL: React.CSSProperties    = { padding: '3px 10px', color: 'var(--text)', fontSize: 11 }
 
 const SHADOW_RESULTS_INITIAL_WIDTHS: ColWidths = {
-  rank: 64, name: 220, fundSleeve: 140, parent: 160, spv: 54,
+  rank: 64, name: 220, parent: 160, spv: 54,
   region: 140, investorType: 140, instVsHnw: 152, agentCls: 166, cls: 174,
   included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
   lpSizeCriteria: 107, lpSizeBil: 84, capCommit: 138, cmtPct: 157,
@@ -104,7 +104,6 @@ function ShadowResultsTableHead({ sort, onSort, widths, onResizeStart }: {
       <tr>
         <SortableHeader sortKey="rank"              sort={sort} onSort={onSort} className="num" style={{ width: w('rank') }}                  onResizeStart={onResizeStart}>Rank</SortableHeader>
         <SortableHeader sortKey="name"              sort={sort} onSort={onSort} style={{ width: w('name') }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
-        <SortableHeader sortKey="fundSleeve"        sort={sort} onSort={onSort} style={{ width: w('fundSleeve') }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
         <SortableHeader sortKey="parent"            sort={sort} onSort={onSort} style={{ width: w('parent') }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
         <SortableHeader sortKey="spv"               sort={sort} onSort={onSort} style={{ width: w('spv') }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
         <SortableHeader sortKey="region"            sort={sort} onSort={onSort} style={{ width: w('region') }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
@@ -141,7 +140,8 @@ function ShadowResultsTableHead({ sort, onSort, widths, onResizeStart }: {
   )
 }
 
-interface KVRow { k: string; v: string; bold?: boolean; hl?: boolean }
+type KVHighlight = 'agent' | 'ubs-rate'
+interface KVRow { k: string; v: string; bold?: boolean; hl?: KVHighlight }
 interface BkRow { rate?: string; label?: string; count: number; dollars: number; pct: number }
 
 const DEFAULT_BUSA_RATES = ['90%', '75%', '65%', '50%', '0%']
@@ -194,16 +194,24 @@ function completeRateBreakdown(rows: BkRow[] | undefined, rates: string[]): Arra
 }
 
 function SummaryKVTable({ title, rows }: { title: string; rows: KVRow[] }) {
+  const highlightStyle = (hl?: KVHighlight) => {
+    if (hl === 'agent') return { rowBg: '#fffbe6', valueColor: '#7c6200' }
+    if (hl === 'ubs-rate') return { rowBg: '#eaf4ff', valueColor: '#0b4f8a' }
+    return { rowBg: undefined, valueColor: undefined }
+  }
+
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead><tr><th colSpan={2} style={BLUE_HD}>{title}</th></tr></thead>
       <tbody>
-        {rows.map(({ k, v, bold, hl }) => (
-          <tr key={k} style={{ borderBottom: '1px solid var(--border)', background: hl ? '#fffbe6' : undefined }}>
+        {rows.map(({ k, v, bold, hl }) => {
+          const style = highlightStyle(hl)
+          return (
+          <tr key={k} style={{ borderBottom: '1px solid var(--border)', background: style.rowBg }}>
             <td style={{ ...CELL, color: bold ? 'var(--text)' : 'var(--muted)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{k}</td>
-            <td style={{ ...CELL, textAlign: 'right', fontWeight: bold ? 700 : 400, color: hl ? '#7c6200' : bold ? 'var(--text)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{v}</td>
+            <td style={{ ...CELL, textAlign: 'right', fontWeight: bold ? 700 : 400, color: style.valueColor ?? (bold ? 'var(--text)' : 'var(--muted)'), whiteSpace: 'nowrap' }}>{v}</td>
           </tr>
-        ))}
+        )})}
       </tbody>
     </table>
   )
@@ -874,9 +882,9 @@ export default function ShadowBB() {
                   { k: 'Facility LTV',           v: summaryExt.facilityLTV ? p(summaryExt.facilityLTV) : '—' },
                   { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit, true),   bold: true },
                   { k: 'Facility Adv. Rate',     v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
-                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, true),         bold: true, hl: true },
+                  { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, true),         bold: true, hl: 'agent' },
                   { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw, true),           bold: true },
-                  { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate) },
+                  { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate),                        hl: 'ubs-rate' },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -975,12 +983,12 @@ export default function ShadowBB() {
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}
                                 {st === 'error'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--danger)', flexShrink: 0 }}>Error</span>}
                               </div>
                             </td>
-                            <td title={ov.fundSleeve || '—'}>{ov.fundSleeve || '—'}</td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
                             <td>{formatRegion(ov.region || LPRecord.region) || '—'}</td>

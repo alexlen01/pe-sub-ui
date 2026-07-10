@@ -539,7 +539,7 @@ export default function LPMaster() {
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
     rank: 64,
-    name: 220, fundSleeve: 140, parent: 160, spv: 54,
+    name: 220, parent: 160, spv: 54,
     region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
     inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
     lpSize: 144, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
@@ -761,7 +761,6 @@ export default function LPMaster() {
             <tr>
               <SortableHeader sortKey="rank"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rank }} onResizeStart={onResizeStart}>Rank</SortableHeader>
               <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
-              <SortableHeader sortKey="fundSleeve"     sort={sort} onSort={requestSort} style={{ width: widths.fundSleeve }}                    onResizeStart={onResizeStart}>Fund Sleeve</SortableHeader>
               <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
               <SortableHeader sortKey="spv"            sort={sort} onSort={requestSort} style={{ width: widths.spv }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
               <SortableHeader sortKey="region"         sort={sort} onSort={requestSort} style={{ width: widths.region }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
@@ -806,7 +805,6 @@ export default function LPMaster() {
                   {LPRecord.rcl && <span className="rcl-badge">R</span>}
                   {LPRecord.tf  && <span className="tf-badge">T</span>}
                 </td>
-                <td title={LPRecord.fundSleeve || '—'}>{LPRecord.fundSleeve || '—'}</td>
                 <td title={LPRecord.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{LPRecord.parent || '—'}</td>
                 <td>{LPRecord.spv ? 'Yes' : 'No'}</td>
                 <td>{formatRegion(LPRecord.region) || '—'}</td>
