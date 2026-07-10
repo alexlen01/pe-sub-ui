@@ -535,7 +535,7 @@ export default function LPMaster() {
     { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubb ?? '' },
     { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
   ], [])
-  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'cls', direction: 'asc' })
+  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'rank', direction: 'asc' })
   const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
     rank: 64,

@@ -43,29 +43,61 @@ export interface RegionEntry {
 }
 
 /**
- * Canonical entries. Not an exhaustive gazetteer — it covers the five macro regions, common LP
- * countries, and the PE fund-structure domiciles. Extend as new LP jurisdictions appear.
+ * Canonical entries. Not an exhaustive gazetteer, but a broad curated set covering the five macro
+ * regions, the most common LP countries, and the PE fund-structure domiciles. Extend as new LP
+ * jurisdictions appear.
  */
 export const REGION_ENTRIES: readonly RegionEntry[] = [
   // ── PE fund-structure domiciles (pinned quick-select) ──────────────────────────────────────
-  { region: 'NAM',   country: 'US', sub: 'DE', label: 'Delaware, US',   aliases: ['delaware', 'usa', 'united states'], pinned: true },
-  { region: 'LATAM', country: 'KY', label: 'Cayman Islands',            aliases: ['cayman', 'cym', 'exempted'],        pinned: true },
   { region: 'EMEA',  country: 'LU', label: 'Luxembourg',                aliases: ['lux', 'lu', 'aifmd', 'sicav'],      pinned: true },
   { region: 'EMEA',  country: 'IE', label: 'Ireland',                   aliases: ['irl', 'dublin', 'aifmd'],           pinned: true },
   { region: 'EMEA',  country: 'GG', label: 'Guernsey',                  aliases: ['channel islands', 'ggy'],           pinned: true },
   { region: 'EMEA',  country: 'JE', label: 'Jersey',                    aliases: ['channel islands', 'jey'],           pinned: true },
+  { region: 'EMEA',  country: 'IM', label: 'Isle of Man',               aliases: ['iom', 'manx'],                      pinned: true },
+  { region: 'EMEA',  country: 'BM', label: 'Bermuda',                   aliases: ['bmu', 'hamilton', 'exempted'],      pinned: true },
 
   // ── North America ──────────────────────────────────────────────────────────────────────────
-  { region: 'NAM',   country: 'US', label: 'United States',             aliases: ['usa', 'america'] },
+  { region: 'NAM',   country: 'US', label: 'United States',             aliases: ['usa', 'america', 'us'] },
   { region: 'NAM',   country: 'US', sub: 'NY', label: 'New York, US',   aliases: ['new york'] },
   { region: 'NAM',   country: 'US', sub: 'CA', label: 'California, US', aliases: ['california'] },
   { region: 'NAM',   country: 'US', sub: 'TX', label: 'Texas, US',      aliases: ['texas'] },
-  { region: 'NAM',   country: 'US', sub: 'MA', label: 'Massachusetts, US', aliases: ['massachusetts', 'boston'] },
+  { region: 'NAM',   country: 'US', sub: 'MA', label: 'Massachusetts, US', aliases: ['massachusetts'] },
+  { region: 'NAM',   country: 'US', sub: 'NYC', label: 'New York City, US', aliases: ['new york city', 'nyc', 'manhattan'] },
+  { region: 'NAM',   country: 'US', sub: 'BOS', label: 'Boston, US',    aliases: ['boston', 'greater boston'] },
+  { region: 'NAM',   country: 'US', sub: 'LAX', label: 'Los Angeles, US', aliases: ['los angeles', 'la', 'l.a.'] },
+  { region: 'NAM',   country: 'US', sub: 'SFO', label: 'San Francisco, US', aliases: ['san francisco', 'sf', 'bay area'] },
+  { region: 'NAM',   country: 'US', sub: 'CHI', label: 'Chicago, US',   aliases: ['chicago', 'chicagoland'] },
+  { region: 'NAM',   country: 'US', sub: 'HOU', label: 'Houston, US',   aliases: ['houston'] },
+  { region: 'NAM',   country: 'US', sub: 'DAL', label: 'Dallas, US',    aliases: ['dallas', 'dfw'] },
+  { region: 'NAM',   country: 'US', sub: 'MIA', label: 'Miami, US',     aliases: ['miami', 'south florida'] },
+  { region: 'NAM',   country: 'US', sub: 'SEA', label: 'Seattle, US',   aliases: ['seattle', 'seattle metro'] },
+  { region: 'NAM',   country: 'US', sub: 'DC', label: 'Washington, DC, US', aliases: ['washington dc', 'dc', 'd.c.', 'district of columbia'] },
+  { region: 'NAM',   country: 'US', sub: 'ATL', label: 'Atlanta, US',   aliases: ['atlanta', 'atl'] },
+  { region: 'NAM',   country: 'US', sub: 'DEN', label: 'Denver, US',    aliases: ['denver'] },
+  { region: 'NAM',   country: 'US', sub: 'SD', label: 'San Diego, US',   aliases: ['san diego'] },
+  { region: 'NAM',   country: 'US', sub: 'DE', label: 'Delaware, US',   aliases: ['delaware', 'usa', 'united states'], pinned: true },
+  { region: 'NAM',   country: 'US', sub: 'FL', label: 'Florida, US',    aliases: ['florida'] },
+  { region: 'NAM',   country: 'US', sub: 'IL', label: 'Illinois, US',   aliases: ['illinois'] },
+  { region: 'NAM',   country: 'US', sub: 'PA', label: 'Pennsylvania, US', aliases: ['pennsylvania', 'philadelphia'] },
+  { region: 'NAM',   country: 'US', sub: 'WA', label: 'Washington, US',  aliases: ['washington'] },
+  { region: 'NAM',   country: 'US', sub: 'CO', label: 'Colorado, US',    aliases: ['colorado'] },
   { region: 'NAM',   country: 'CA', label: 'Canada',                    aliases: ['can'] },
-  { region: 'NAM',   country: 'CA', sub: 'ON', label: 'Ontario, CA',    aliases: ['ontario', 'toronto'] },
+  { region: 'NAM',   country: 'CA', sub: 'ON', label: 'Ontario, CA',    aliases: ['ontario'] },
   { region: 'NAM',   country: 'CA', sub: 'QC', label: 'Quebec, CA',     aliases: ['quebec'] },
+  { region: 'NAM',   country: 'CA', sub: 'BC', label: 'British Columbia, CA', aliases: ['british columbia'] },
+  { region: 'NAM',   country: 'CA', sub: 'AB', label: 'Alberta, CA',     aliases: ['alberta'] },
+  { region: 'NAM',   country: 'CA', sub: 'TOR', label: 'Toronto, CA',   aliases: ['toronto', 'gta', 'greater toronto area'] },
+  { region: 'NAM',   country: 'CA', sub: 'VAN', label: 'Vancouver, CA', aliases: ['vancouver', 'metro vancouver'] },
+  { region: 'NAM',   country: 'CA', sub: 'MTL', label: 'Montreal, CA',   aliases: ['montreal', 'montréal'] },
+  { region: 'NAM',   country: 'CA', sub: 'OTT', label: 'Ottawa, CA',     aliases: ['ottawa'] },
+  { region: 'NAM',   country: 'CA', sub: 'CAL', label: 'Calgary, CA',    aliases: ['calgary'] },
+  { region: 'NAM',   country: 'CA', sub: 'EDM', label: 'Edmonton, CA',   aliases: ['edmonton'] },
+  { region: 'NAM',   country: 'CA', sub: 'WPG', label: 'Winnipeg, CA',   aliases: ['winnipeg'] },
+  { region: 'NAM',   country: 'CA', sub: 'YHZ', label: 'Halifax, CA',    aliases: ['halifax'] },
+  { region: 'NAM',   country: 'CA', sub: 'VIC', label: 'Victoria, CA',   aliases: ['victoria'] },
 
   // ── Europe ─────────────────────────────────────────────────────────────────────────────────
+  { region: 'EMEA',  country: 'EU', label: 'Europe',                   aliases: ['europe', 'eu'] },
   { region: 'EMEA',  country: 'GB', label: 'United Kingdom',            aliases: ['uk', 'gbr', 'britain', 'england', 'london'] },
   { region: 'EMEA',  country: 'DE', label: 'Germany',                   aliases: ['deu', 'deutschland'] },
   { region: 'EMEA',  country: 'FR', label: 'France',                    aliases: ['fra', 'paris'] },
@@ -75,6 +107,19 @@ export const REGION_ENTRIES: readonly RegionEntry[] = [
   { region: 'EMEA',  country: 'NO', label: 'Norway',                    aliases: ['nor', 'oslo'] },
   { region: 'EMEA',  country: 'IT', label: 'Italy',                     aliases: ['ita'] },
   { region: 'EMEA',  country: 'ES', label: 'Spain',                     aliases: ['esp'] },
+  { region: 'EMEA',  country: 'BE', label: 'Belgium',                   aliases: ['bel', 'brussels'] },
+  { region: 'EMEA',  country: 'DK', label: 'Denmark',                   aliases: ['dnk', 'copenhagen'] },
+  { region: 'EMEA',  country: 'FI', label: 'Finland',                   aliases: ['fin', 'helsinki'] },
+  { region: 'EMEA',  country: 'AT', label: 'Austria',                   aliases: ['aut', 'vienna'] },
+  { region: 'EMEA',  country: 'PT', label: 'Portugal',                  aliases: ['prt', 'lisbon'] },
+  { region: 'EMEA',  country: 'PL', label: 'Poland',                    aliases: ['pol', 'warsaw'] },
+  { region: 'EMEA',  country: 'GR', label: 'Greece',                    aliases: ['grc', 'athens'] },
+  { region: 'EMEA',  country: 'CZ', label: 'Czech Republic',            aliases: ['cze', 'prague'] },
+  { region: 'EMEA',  country: 'HU', label: 'Hungary',                   aliases: ['hun', 'budapest'] },
+  { region: 'EMEA',  country: 'RO', label: 'Romania',                   aliases: ['rou', 'bucharest'] },
+  { region: 'EMEA',  country: 'SK', label: 'Slovakia',                  aliases: ['svk', 'bratislava'] },
+  { region: 'EMEA',  country: 'SI', label: 'Slovenia',                  aliases: ['svn', 'ljubljana'] },
+  { region: 'EMEA',  country: 'IE', sub: 'D', label: 'Dublin, IE',      aliases: ['dublin'] },
 
   // ── Asia-Pacific ───────────────────────────────────────────────────────────────────────────
   { region: 'APAC',  country: 'JP', label: 'Japan',                     aliases: ['jpn', 'tokyo'] },
@@ -84,11 +129,24 @@ export const REGION_ENTRIES: readonly RegionEntry[] = [
   { region: 'APAC',  country: 'AU', label: 'Australia',                 aliases: ['aus', 'sydney'] },
   { region: 'APAC',  country: 'KR', label: 'South Korea',               aliases: ['kor', 'korea', 'seoul'] },
   { region: 'APAC',  country: 'IN', label: 'India',                     aliases: ['ind', 'mumbai'] },
+  { region: 'APAC',  country: 'NZ', label: 'New Zealand',               aliases: ['nzl', 'auckland', 'wellington'] },
+  { region: 'APAC',  country: 'TW', label: 'Taiwan',                    aliases: ['twn', 'taipei'] },
+  { region: 'APAC',  country: 'MY', label: 'Malaysia',                  aliases: ['mys', 'kuala lumpur'] },
+  { region: 'APAC',  country: 'TH', label: 'Thailand',                  aliases: ['tha', 'bangkok'] },
+  { region: 'APAC',  country: 'ID', label: 'Indonesia',                 aliases: ['idn', 'jakarta'] },
+  { region: 'APAC',  country: 'PH', label: 'Philippines',               aliases: ['phl', 'manila'] },
 
   // ── Latin America ──────────────────────────────────────────────────────────────────────────
   { region: 'LATAM', country: 'BR', label: 'Brazil',                    aliases: ['bra', 'sao paulo'] },
   { region: 'LATAM', country: 'MX', label: 'Mexico',                    aliases: ['mex'] },
   { region: 'LATAM', country: 'BM', label: 'Bermuda',                   aliases: ['bmu'] },
+  { region: 'LATAM', country: 'KY', label: 'Cayman Islands',            aliases: ['cayman', 'cym', 'exempted'],        pinned: true },
+  { region: 'LATAM', country: 'CL', label: 'Chile',                     aliases: ['chl', 'santiago'] },
+  { region: 'LATAM', country: 'CO', label: 'Colombia',                  aliases: ['col', 'bogota'] },
+  { region: 'LATAM', country: 'PE', label: 'Peru',                      aliases: ['per', 'lima'] },
+  { region: 'LATAM', country: 'AR', label: 'Argentina',                 aliases: ['arg', 'buenos aires'] },
+  { region: 'LATAM', country: 'UY', label: 'Uruguay',                   aliases: ['ury', 'montevideo'] },
+  { region: 'LATAM', country: 'PA', label: 'Panama',                    aliases: ['pan', 'panama city'] },
 
   // ── Middle East & Africa ───────────────────────────────────────────────────────────────────
   { region: 'MEA',   country: 'AE', label: 'United Arab Emirates',      aliases: ['uae', 'are', 'dubai', 'abu dhabi'] },
@@ -96,6 +154,13 @@ export const REGION_ENTRIES: readonly RegionEntry[] = [
   { region: 'MEA',   country: 'QA', label: 'Qatar',                     aliases: ['qat', 'doha'] },
   { region: 'MEA',   country: 'ZA', label: 'South Africa',              aliases: ['zaf', 'johannesburg'] },
   { region: 'MEA',   country: 'IL', label: 'Israel',                    aliases: ['isr', 'tel aviv'] },
+  { region: 'MEA',   country: 'BH', label: 'Bahrain',                   aliases: ['bhr', 'manama'] },
+  { region: 'MEA',   country: 'KW', label: 'Kuwait',                    aliases: ['kwt', 'kuwait city'] },
+  { region: 'MEA',   country: 'OM', label: 'Oman',                      aliases: ['omn', 'muscat'] },
+  { region: 'MEA',   country: 'EG', label: 'Egypt',                     aliases: ['egy', 'cairo'] },
+  { region: 'MEA',   country: 'MA', label: 'Morocco',                   aliases: ['mar', 'casablanca', 'rabat'] },
+  { region: 'MEA',   country: 'KE', label: 'Kenya',                     aliases: ['ken', 'nairobi'] },
+  { region: 'MEA',   country: 'MU', label: 'Mauritius',                 aliases: ['mus', 'port louis'] },
 ]
 
 /** Build the `REGION|COUNTRY|SUB` token for a canonical entry. */
