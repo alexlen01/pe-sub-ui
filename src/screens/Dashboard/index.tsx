@@ -69,19 +69,26 @@ const FACILITY_COLS = [
   { key: 'status',             label: 'Facility Status',                      style: { width: 'var(--dash-status-col)' }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
 ]
 
-// Colors for each LP category — covers both UBS taxonomy (Shadow BB) and legacy values
-const LP_CATEGORY_COLORS = [
-  '#4F4F4F',
-  '#E60000',
-  '#767676',
-  '#007A38',
-  '#2E75B6',
-  '#C65C00',
-  '#7A3E9D',
-  '#008C95',
-  '#B45309',
-  '#C8C8C8',
-]
+// Prototype LP category palette (exact):
+// Rated -> dark gray, FoF/Unrated >2bn -> red, Unrated 1-2bn -> medium gray,
+// Eligible/Other Institutional -> green, Excluded -> light gray.
+const LP_CATEGORY_COLOR_BY_CLASS: Record<string, string> = {
+  'rated': '#4F4F4F',
+  'rated investor': '#4F4F4F',
+  'unrated >2bn': '#E60000',
+  'fof & other > $10bn aum': '#E60000',
+  'unrated 1–2bn': '#767676',
+  'unrated 1-2bn': '#767676',
+  'unrated nav > $1bn': '#767676',
+  'eligible': '#007A38',
+  'other institutional': '#007A38',
+  'excluded': '#C8C8C8',
+}
+
+function lpCategoryColor(label: string): string {
+  const base = label.split('(')[0].trim().toLowerCase()
+  return LP_CATEGORY_COLOR_BY_CLASS[base] ?? '#767676'
+}
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility, screen } = useApp()
@@ -151,13 +158,13 @@ export default function Dashboard() {
           ? a.localeCompare(b, undefined, { sensitivity: 'base' })
           : ai - bi
       })
-      .map(([cls, n], index) => {
+      .map(([cls, n]) => {
         const rate = classCfg?.UBS_CLS_DEFAULT_RATE[cls]
         return {
           label: rate ? `${cls} (${rate})` : cls,
           n,
           pct: `${((n / total) * 100).toFixed(1)}%`,
-          color: LP_CATEGORY_COLORS[index % LP_CATEGORY_COLORS.length],
+          color: lpCategoryColor(cls),
         }
       })
       .filter(s => s.n > 0)

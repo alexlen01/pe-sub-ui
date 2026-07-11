@@ -8,7 +8,7 @@ const ROLE_COLOR: Record<string, string> = {
 
 // The prototype is a separate application (pe-sub-platform) served on its own port. Selecting
 // the Prototype segment navigates the current window to it, re-launching the prototype in place.
-const PROTOTYPE_URL = 'http://localhost:5173'
+const PROTOTYPE_URL = import.meta.env.VITE_PROTOTYPE_URL
 
 type Reachability = 'checking' | 'up' | 'down'
 
@@ -41,7 +41,7 @@ export default function TopBar() {
 
   // Selecting Prototype reloads in the same window onto the prototype app (re-launching :5173),
   // rather than opening a new tab.
-  const switchToPrototype = () => { window.location.href = PROTOTYPE_URL }
+  const switchToPrototype = () => { if (PROTOTYPE_URL) window.location.href = PROTOTYPE_URL }
 
   return (
     <header className="topbar">
@@ -53,10 +53,10 @@ export default function TopBar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* The badge appears only while the app is Live (API reachable). Clicking it switches
               to the prototype, navigating this window to :5173. */}
-          {apiState === 'up' && (
+          {apiState === 'up' && PROTOTYPE_URL && (
             <button
               type="button"
-              title={`Live — pe-sub-api on :3001 is responding. Click to switch to the prototype (reloads this window at ${PROTOTYPE_URL}).`}
+              title={`Live — pe-sub-api is responding. Click to switch to the prototype (reloads this window at ${PROTOTYPE_URL}).`}
               onClick={switchToPrototype}
               style={{
                 fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10,

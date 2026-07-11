@@ -8,13 +8,40 @@ import {
   type RecordReportRequest,
   type ReportHistoryEntry,
 } from './api'
-import { fmtDeltaM, fmtDeltaPct, fmtM, fmtPct } from '../utils/execSummary'
+import { fmtDeltaPct, fmtPct } from '../utils/execSummary'
 import type { BBBreach, BreachType } from '../types/bb'
+
+const USD0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+export const formatUsdMillions = (millions: number): string => {
+  const dollars = millions * 1_000_000
+  return USD0.format(Math.round(dollars) === 0 ? 0 : dollars)
+}
+export function formatUsdAmount(value: string | null | undefined): string {
+  if (value == null) return '—'
+  const cleaned = value.trim().replace(/[$,]/g, '')
+  if (!cleaned) return '—'
+  const match = cleaned.match(/^(-?[\d.]+)\s*([KMB])?$/i)
+  if (!match) return value
+  const scale = ({ K: 1_000, M: 1_000_000, B: 1_000_000_000 } as Record<string, number>)[(match[2] ?? '').toUpperCase()] ?? 1
+  const dollars = Number(match[1]) * scale
+  return USD0.format(Math.round(dollars) === 0 ? 0 : dollars)
+}
 
 // ── API wrappers ──────────────────────────────────────────────────────────────
 
 export const getCollateralReport = (facilityId: number, snapshotId?: number): Promise<CollateralReport> =>
   api.reports.collateral(facilityId, snapshotId)
+
+export async function downloadCollateralPdf(facilityId: number, facilityName: string,
+                                            params: Record<string, string | number | undefined>): Promise<void> {
+  const blob = await api.reports.collateralPdf(facilityId, params)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `bb-certificate-${facilityName.replace(/\s+/g, '-').toLowerCase()}.pdf`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
 
 export const getEarTrend = (facilityId: number): Promise<EARDataPoint[]> =>
   api.reports.ear(facilityId)
@@ -44,12 +71,14 @@ export interface CertRow {
  *  summary. Eligible uncalled capital is the same base for both BB calculations. */
 export function buildCertRows(r: CollateralReport): CertRow[] {
   const s = r.summary
+  const bbDeltaAbs = formatUsdMillions(Math.abs(s.bbDelta))
+  const signedBbDelta = bbDeltaAbs === '$0' ? bbDeltaAbs : `${s.bbDelta >= 0 ? '+' : '-'}${bbDeltaAbs}`
   return [
-    { metric: 'Total Eligible Uncalled Capital', ubs: fmtM(r.totalEligibleUncalledM), agent: fmtM(r.totalEligibleUncalledM), cls: 'total' },
+    { metric: 'Total Eligible Uncalled Capital', ubs: formatUsdMillions(r.totalEligibleUncalledM), agent: formatUsdMillions(r.totalEligibleUncalledM), cls: 'total' },
     { metric: 'Included LP Count',               ubs: String(s.includedCount),        agent: String(s.includedCount),        cls: ''      },
-    { metric: 'Total Borrowing Base',            ubs: fmtM(s.totalUBB),               agent: fmtM(s.totalABB),               cls: 'total' },
+    { metric: 'Total Borrowing Base',            ubs: formatUsdMillions(s.totalUBB),  agent: formatUsdMillions(s.totalABB),  cls: 'total' },
     { metric: 'Effective Advance Rate (EAR)',    ubs: fmtPct(s.ear),                  agent: fmtPct(s.agentEar),             cls: ''      },
-    { metric: 'UBS BB Delta',                    ubs: fmtDeltaM(s.bbDelta),           agent: '',                             cls: 'delta' },
+    { metric: 'UBS BB Delta',                    ubs: signedBbDelta,                  agent: '',                             cls: 'delta' },
     { metric: 'UBS EAR Delta',                   ubs: fmtDeltaPct(s.earDelta),        agent: '',                             cls: 'delta' },
   ]
 }
@@ -66,8 +95,8 @@ export function buildCertClassRows(r: CollateralReport): CertClassRow[] {
   return r.classBreakdown.map(row => ({
     cls:  row.cls,
     n:    row.count,
-    uc:   row.uncalledM > 0 ? fmtM(row.uncalledM) : '-',
-    ubb:  row.ubbM > 0 ? fmtM(row.ubbM) : '-',
+    uc:   row.uncalledM > 0 ? formatUsdMillions(row.uncalledM) : '-',
+    ubb:  row.ubbM > 0 ? formatUsdMillions(row.ubbM) : '-',
     rate: row.rate,
   }))
 }
@@ -103,9 +132,9 @@ export function buildAgentBankRows(rows: AgentBankExposureRow[]): AgentBankDispl
     agentBank:  r.agentBank,
     facilities: r.facilityCount,
     lps:        r.lpCount,
-    ubsBB:      fmtM(r.ubsBBM),
-    agentBB:    fmtM(r.agentBBM),
-    delta:      fmtDeltaM(r.deltaM),
+    ubsBB:      formatUsdMillions(r.ubsBBM),
+    agentBB:    formatUsdMillions(r.agentBBM),
+    delta:      formatUsdMillions(r.deltaM),
   }))
 }
 
@@ -163,7 +192,7 @@ export function buildHistoryRows(entries: ReportHistoryEntry[]): ReportHistoryRo
     report:   e.report,
     facility: e.facilityName ?? 'All Facilities',
     snap:     e.snapshotLabel ?? '—',
-    fmt:      e.format ?? '—',
+    fmt:      (e.format ?? '—').replaceAll('XLSX', 'Excel'),
     user:     e.userName ?? '—',
     when:     formatReportTimestamp(e.createdAt),
   }))
@@ -173,11 +202,85 @@ export function buildHistoryRows(entries: ReportHistoryEntry[]): ReportHistoryRo
 
 export interface XlsxSheet { name: string; rows: Array<Record<string, string | number>> }
 
+const NEGATIVE_FONT = { color: { rgb: 'FFB91C1C' } }
+const POSITIVE_FONT = { color: { rgb: 'FF15803D' } }
+const CERT_DELTA_METRICS = new Set(['UBS BB Delta', 'UBS EAR Delta'])
+
+/** True when a scalar display value represents a negative amount/ratio. */
+export function isNegativeDisplayValue(value: string | number | null | undefined): boolean {
+  if (value == null) return false
+  if (typeof value === 'number') return value < 0
+  const s = value.trim()
+  if (!s) return false
+  return s.startsWith('-') || /^\(.*\)$/.test(s)
+}
+
+/** True when a scalar display value represents a positive amount/ratio. */
+export function isPositiveDisplayValue(value: string | number | null | undefined): boolean {
+  if (value == null) return false
+  if (typeof value === 'number') return value > 0
+  const s = value.trim()
+  if (!s) return false
+  return s.startsWith('+')
+}
+
+function styleNegativeCells(sheet: unknown): void {
+  const ws = sheet as Record<string, unknown> & { '!ref'?: string }
+  if (!ws['!ref']) return
+  const range = utils.decode_range(ws['!ref'])
+  for (let row = range.s.r; row <= range.e.r; row++) {
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      // Skip header row; row 0 comes from json_to_sheet keys.
+      if (row === 0) continue
+      const addr = utils.encode_cell({ r: row, c: col })
+      const cell = ws[addr] as { v?: string | number; s?: Record<string, unknown> } | undefined
+      if (!cell || !isNegativeDisplayValue(cell.v)) continue
+      cell.s = {
+        ...(cell.s ?? {}),
+        font: {
+          ...(((cell.s ?? {}) as { font?: Record<string, unknown> }).font ?? {}),
+          ...NEGATIVE_FONT,
+        },
+      }
+    }
+  }
+}
+
+function stylePositiveCertDeltaCells(
+  sheet: unknown,
+  rows: Array<Record<string, string | number>>,
+): void {
+  const ws = sheet as Record<string, unknown> & { '!ref'?: string }
+  if (!ws['!ref']) return
+
+  // Applies only to certificate summary rows exported with these keys.
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    if (!CERT_DELTA_METRICS.has(String(row['Metric'] ?? ''))) continue
+    const ubs = row['UBS (BUSA)']
+    if (!isPositiveDisplayValue(ubs)) continue
+
+    const addr = utils.encode_cell({ r: i + 1, c: 1 }) // Data row offset + UBS column index.
+    const cell = ws[addr] as { s?: Record<string, unknown> } | undefined
+    if (!cell) continue
+    cell.s = {
+      ...(cell.s ?? {}),
+      font: {
+        ...(((cell.s ?? {}) as { font?: Record<string, unknown> }).font ?? {}),
+        ...POSITIVE_FONT,
+      },
+    }
+  }
+}
+
 /** Builds a workbook from the given sheets and triggers a browser download. */
 export function exportXlsx(filename: string, sheets: XlsxSheet[]): void {
   const wb = utils.book_new()
   for (const sheet of sheets) {
-    utils.book_append_sheet(wb, utils.json_to_sheet(sheet.rows), sheet.name)
+    const ws = utils.json_to_sheet(sheet.rows)
+    styleNegativeCells(ws)
+    stylePositiveCertDeltaCells(ws, sheet.rows)
+    utils.book_append_sheet(wb, ws, sheet.name)
   }
-  writeFile(wb, filename)
+  writeFile(wb, filename, { cellStyles: true })
 }

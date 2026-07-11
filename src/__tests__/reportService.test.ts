@@ -8,6 +8,7 @@ import {
   buildCertClassRows,
   buildCertRows,
   buildEarTrendRows,
+  formatUsdAmount,
   buildHistoryRows,
   getAgentBankExposure,
   getCollateralReport,
@@ -142,22 +143,35 @@ describe('buildCertRows', () => {
       'Total Eligible Uncalled Capital', 'Included LP Count', 'Total Borrowing Base',
       'Effective Advance Rate (EAR)', 'UBS BB Delta', 'UBS EAR Delta',
     ])
-    expect(rows[0].ubs).toBe('$30.0M')
+    expect(rows[0].ubs).toBe('$30,000,000')
     expect(rows[1].ubs).toBe('2')
-    expect(rows[2].ubs).toBe('$26.5M')
+    expect(rows[2].ubs).toBe('$26,500,000')
     expect(rows[2].cls).toBe('total')
     expect(rows[3].ubs).toBe('87.4%')
     expect(rows[3].agent).toBe('89.2%')
-    expect(rows[4].ubs).toBe('-$3.7M')
+    expect(rows[4].ubs).toBe('-$3,678,400')
     expect(rows[4].cls).toBe('delta')
     expect(rows[5].ubs).toBe('-1.8%')
+  })
+
+  it('renders rounded-zero deltas without a sign', () => {
+    const rows = buildCertRows({
+      ...COLLATERAL_FIXTURE,
+      summary: {
+        ...COLLATERAL_FIXTURE.summary,
+        bbDelta: -0.0000001,
+        earDelta: -0.00001,
+      },
+    })
+    expect(rows[4].ubs).toBe('$0')
+    expect(rows[5].ubs).toBe('0.0%')
   })
 })
 
 describe('buildCertClassRows', () => {
   it('formats tiers and renders zero-money tiers as dashes', () => {
     const rows = buildCertClassRows(COLLATERAL_FIXTURE)
-    expect(rows[0]).toEqual({ cls: 'Rated', n: 1, uc: '$20.0M', ubb: '$18.0M', rate: '90%' })
+    expect(rows[0]).toEqual({ cls: 'Rated', n: 1, uc: '$20,000,000', ubb: '$18,000,000', rate: '90%' })
     // Excluded tier carries no BB — must render '-' not '$0.0M'
     expect(rows[2]).toEqual({ cls: 'Excluded', n: 1, uc: '-', ubb: '-', rate: '0%' })
   })
@@ -182,13 +196,13 @@ describe('buildEarTrendRows', () => {
 })
 
 describe('buildAgentBankRows', () => {
-  it('formats money in $millions with signed delta', () => {
+  it('formats amounts in default USD with no decimals', () => {
     const rows = buildAgentBankRows([
       { agentBank: 'Citi', facilityCount: 1, lpCount: 12, ubsBBM: 55.25, agentBBM: 60, deltaM: -4.75 },
     ])
     expect(rows[0]).toEqual({
       agentBank: 'Citi', facilities: 1, lps: 12,
-      ubsBB: '$55.3M', agentBB: '$60.0M', delta: '-$4.8M',
+      ubsBB: '$55,250,000', agentBB: '$60,000,000', delta: '-$4,750,000',
     })
   })
 })
@@ -243,5 +257,11 @@ describe('buildHistoryRows', () => {
     expect(rows[0].facility).toBe('All Facilities')
     expect(rows[0].report).toBe('Agent Bank Exposure')
     expect(rows[0].snap).toBe('—')
+  })
+})
+
+describe('formatUsdAmount', () => {
+  it('normalizes signed zero to plain $0 for tiny negative values', () => {
+    expect(formatUsdAmount('-0.0000001M')).toBe('$0')
   })
 })

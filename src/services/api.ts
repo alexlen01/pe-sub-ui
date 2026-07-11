@@ -41,6 +41,12 @@ async function get<T>(path: string): Promise<T> {
   return JSON.parse(text) as T
 }
 
+async function getBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${BASE}${path}`)
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+  return res.blob()
+}
+
 // For endpoints where the API signals "no data yet" with 204 / an empty body.
 async function getOrNull<T>(path: string): Promise<T | null> {
   const res = await fetch(`${BASE}${path}`)
@@ -509,6 +515,8 @@ export const api = {
   reports: {
     collateral: (facilityId: number, snapshotId?: number) =>
       get<CollateralReport>(`/api/reports/collateral/${facilityId}${qs({ snapshotId })}`),
+    collateralPdf: (facilityId: number, params: Record<string, string | number | undefined>) =>
+      getBlob(`/api/reports/collateral/${facilityId}/pdf${qs(params)}`),
     concentration: (facilityId: number) =>
       get<{ breaches: BBResult['breaches'] }>(`/api/reports/concentration/${facilityId}`),
     ear: (facilityId: number) =>

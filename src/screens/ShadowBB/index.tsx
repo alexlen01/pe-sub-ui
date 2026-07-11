@@ -305,7 +305,7 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
 
   const wb = utils.book_new()
   utils.book_append_sheet(wb, utils.aoa_to_sheet(summaryAoa), 'Summary')
-  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LPRecord Detail')
+  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LP Record')
   writeFile(wb, `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`)
 }
 

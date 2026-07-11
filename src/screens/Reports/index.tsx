@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
@@ -9,13 +9,14 @@ import { getReportConfig, type ReportConfig } from '../../services/configService
 import { getFacilities, type FacilityRow } from '../../services/facilityService'
 import {
   buildAgentBankRows, buildBreachRows, buildCertClassRows, buildCertRows,
-  buildEarTrendRows, buildHistoryRows, exportXlsx, formatReportTimestamp,
+  buildEarTrendRows, buildHistoryRows, downloadCollateralPdf, exportXlsx, formatReportTimestamp,
   getAgentBankExposure, getCollateralReport, getConcentrationBreaches, getEarTrend,
-  getReportHistory, recordReport,
+  getReportHistory, recordReport, formatUsdAmount, formatUsdMillions, isNegativeDisplayValue, isPositiveDisplayValue,
   type ReportHistoryRow, type XlsxSheet,
 } from '../../services/reportService'
-import { fmtM, parseM } from '../../utils/execSummary'
+import { parseM } from '../../utils/execSummary'
 import type { BBSnapshot, ComputedLP } from '../../types/bb'
+import { useConfigCache } from '../../store/configStore'
 
 // ── Preview pane state ────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ type Preview =
   | { kind: 'table'; title: string; subtitle: string; columns: string[]
       rows: Array<Array<string | number>>; exportName: string }
 
-const CLS_FILTER_OPTS = ['All', 'Rated', 'Unrated >2bn', 'Unrated 1–2bn', 'Eligible', 'Excluded']
+const LEGACY_CLS_FILTER_OPTS = ['All', 'Rated', 'Unrated >2bn', 'Unrated 1–2bn', 'Eligible', 'Excluded']
 
 /** A facility row that is guaranteed to carry its API id (always the case in live mode). */
 type FacilityOpt = FacilityRow & { id: number }
@@ -35,7 +36,7 @@ const CERT_SECTIONS = [
   { id: 'catSummary',    label: 'LP Category Summary' },
   { id: 'coverageTrend', label: 'Coverage Ratio Trend' },
   { id: 'concAnalysis',  label: 'Concentration Limit Analysis' },
-  { id: 'reclass',       label: 'Reclassified LPRecord Detail' },
+  { id: 'reclass',       label: 'Reclassified LP Detail' },
   { id: 'quality',       label: 'Collateral Quality Breakdown' },
 ] as const
 type CertSectionId = typeof CERT_SECTIONS[number]['id']
@@ -88,11 +89,12 @@ function TablePreview({ preview, onExport }: {
   preview: Extract<Preview, { kind: 'table' }>
   onExport: () => void
 }) {
+  const ADHOC_INVESTOR_COL_WIDTH_PX = 260 // reduced by 50px to keep Investor Name less dominant
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--navy)' }}>{preview.title}</div>
-        <Button variant="secondary" onClick={onExport}>&#x2193; Download XLSX</Button>
+        <Button variant="secondary" onClick={onExport}>&#x2193; Download Excel</Button>
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>{preview.subtitle}</div>
       {preview.rows.length === 0 ? (
@@ -102,10 +104,24 @@ function TablePreview({ preview, onExport }: {
       ) : (
         <div className="data-table-wrap">
           <table className="data-table">
-            <thead><tr>{preview.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+            <thead><tr>{preview.columns.map((c, i) => {
+              const isAdhocInvestorCol = preview.title === 'Ad Hoc LP-Level Query' && i === 1
+              return <th key={c} style={isAdhocInvestorCol ? { width: `${ADHOC_INVESTOR_COL_WIDTH_PX}px`, maxWidth: `${ADHOC_INVESTOR_COL_WIDTH_PX}px` } : undefined}>{c}</th>
+            })}</tr></thead>
             <tbody>
               {preview.rows.map((r, i) => (
-                <tr key={i}>{r.map((cell, j) => <td key={j}>{cell}</td>)}</tr>
+                <tr key={i}>{r.map((cell, j) => {
+                  const isAdhocFacilityCol = preview.title === 'Ad Hoc LP-Level Query' && j === 0
+                  const isAdhocInvestorCol = preview.title === 'Ad Hoc LP-Level Query' && j === 1
+                  const cellStyle = isNegativeDisplayValue(cell)
+                    ? { color: 'var(--danger)', fontWeight: 700 }
+                    : isAdhocFacilityCol
+                      ? { color: 'var(--muted)' }
+                      : isAdhocInvestorCol
+                        ? { width: `${ADHOC_INVESTOR_COL_WIDTH_PX}px`, maxWidth: `${ADHOC_INVESTOR_COL_WIDTH_PX}px`, overflow: 'hidden', textOverflow: 'ellipsis' }
+                      : undefined
+                  return <td key={j} style={cellStyle}>{cell}</td>
+                })}</tr>
               ))}
             </tbody>
           </table>
@@ -118,7 +134,7 @@ function TablePreview({ preview, onExport }: {
 // ── Certificate preview ───────────────────────────────────────────────────────
 
 function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLps, sections,
-                       history, onExport }: {
+                       history, format, onExportPdf, onExportXlsx }: {
   report: CollateralReport
   snapshot: BBSnapshot | null
   snapshots: BBSnapshot[]
@@ -127,7 +143,9 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
   includeLps: string
   sections: Record<CertSectionId, boolean>
   history: ReportHistoryRow[]
-  onExport: () => void
+  format: string
+  onExportPdf: () => void
+  onExportXlsx: () => void
 }) {
   const certRows  = buildCertRows(report)
   const classRows = buildCertClassRows(report)
@@ -166,7 +184,18 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             {certRows.map((r, i) => (
               <tr key={i} className={r.cls}>
                 <td>{r.metric}</td>
-                <td className="num" style={r.cls === 'delta' ? { color: 'var(--red)', fontWeight: 700 } : {}}>{r.ubs}</td>
+                <td
+                  className="num"
+                  style={
+                    isNegativeDisplayValue(r.ubs)
+                      ? { color: 'var(--danger)', fontWeight: 700 }
+                      : (r.metric === 'UBS BB Delta' || r.metric === 'UBS EAR Delta') && isPositiveDisplayValue(r.ubs)
+                        ? { color: 'var(--success)', fontWeight: 700 }
+                        : undefined
+                  }
+                >
+                  {r.ubs}
+                </td>
                 <td className="num" style={{ color: 'var(--muted)' }}>{r.agent}</td>
               </tr>
             ))}
@@ -175,7 +204,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
 
         {detail !== 'exec' && sections.catSummary && (
           <table className="cert-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th>LP Category</th><th className="num"># LPs</th><th className="num">Uncalled Cap.</th><th className="num">UBS BB</th><th className="num">Rate</th></tr></thead>
+            <thead><tr><th>LP Category</th><th className="num"># LPs</th><th className="num">Uncalled Capital</th><th className="num">UBS BB</th><th className="num">Advance Rate</th></tr></thead>
             <tbody>
               {classRows.map((r, i) => (
                 <tr key={i}>
@@ -195,7 +224,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             <thead><tr><th>Coverage Ratio Trend</th><th className="num">UBS EAR</th><th className="num">Agent EAR</th><th className="num">Delta</th></tr></thead>
             <tbody>
               {trendRows.map((r, i) => (
-                <tr key={i}><td>{r.date}</td><td className="num">{r.ear}</td><td className="num">{r.agentEar}</td><td className="num">{r.delta}</td></tr>
+                <tr key={i}><td>{r.date}</td><td className="num" style={isNegativeDisplayValue(r.ear) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{r.ear}</td><td className="num" style={isNegativeDisplayValue(r.agentEar) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{r.agentEar}</td><td className="num" style={isNegativeDisplayValue(r.delta) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{r.delta}</td></tr>
               ))}
             </tbody>
           </table>
@@ -219,10 +248,10 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
 
         {detail !== 'exec' && sections.reclass && reclassed.length > 0 && (
           <table className="cert-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th>Reclassified LPRecord</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">UBS BB</th></tr></thead>
+            <thead><tr><th>Investor Name</th><th className="num">LP Category</th><th className="num">Uncalled Capital</th><th className="num">Agent BB</th><th className="num">UBS BB</th></tr></thead>
             <tbody>
               {reclassed.map((LPRecord, i) => (
-                <tr key={i}><td>{LPRecord.name}</td><td className="num">{LPRecord.cls}</td><td className="num">{LPRecord.uc}</td><td className="num">{LPRecord.ubb}</td></tr>
+                <tr key={i}><td>{LPRecord.name}</td><td className="num">{LPRecord.cls}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -232,24 +261,25 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
           <table className="cert-table" style={{ marginBottom: 14 }}>
             <thead><tr><th>Collateral Quality</th><th className="num"># LPs</th><th className="num">Uncalled Cap.</th></tr></thead>
             <tbody>
-              <tr><td>High quality (Rated / Unrated tiers)</td><td className="num">{allLps.filter(LPRecord => LPRecord.highQuality).length}</td><td className="num">{fmtM(hqUncalledM)}</td></tr>
-              <tr><td>Other</td><td className="num">{allLps.filter(LPRecord => !LPRecord.highQuality).length}</td><td className="num">{fmtM(otherUncalledM)}</td></tr>
+              <tr><td>High quality (Rated / Unrated tiers)</td><td className="num">{allLps.filter(LPRecord => LPRecord.highQuality).length}</td><td className="num">{formatUsdMillions(hqUncalledM)}</td></tr>
+              <tr><td>Other</td><td className="num">{allLps.filter(LPRecord => !LPRecord.highQuality).length}</td><td className="num" style={isNegativeDisplayValue(formatUsdMillions(otherUncalledM)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdMillions(otherUncalledM)}</td></tr>
             </tbody>
           </table>
         )}
 
         {detail === 'LPRecord' && (
           <table className="cert-table">
-            <thead><tr><th>LPRecord</th><th className="num">Category</th><th className="num">Uncalled</th><th className="num">Rate</th><th className="num">UBS BB</th><th className="num">Delta</th></tr></thead>
+            <thead><tr><th>Investor Name</th><th className="num">LP Category</th><th className="num">Uncalled Capital</th><th className="num">Advance Rate</th><th className="num">Agent BB</th><th className="num">UBS BB</th><th className="num">Delta</th></tr></thead>
             <tbody>
               {lps.map((LPRecord, i) => (
                 <tr key={i}>
                   <td>{LPRecord.name}</td>
                   <td className="num">{LPRecord.cls}</td>
-                  <td className="num">{LPRecord.uc}</td>
-                  <td className="num">{LPRecord.rate}</td>
-                  <td className="num">{LPRecord.ubb}</td>
-                  <td className="num" style={highlightVariance && LPRecord.deltaM !== 0 ? { color: 'var(--red)', fontWeight: 700 } : {}}>{LPRecord.delta}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td>
+                  <td className="num" style={isNegativeDisplayValue(LPRecord.rate) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{LPRecord.rate}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td>
+                  <td className="num" style={(highlightVariance && LPRecord.deltaM !== 0) || isNegativeDisplayValue(formatUsdAmount(LPRecord.delta)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.delta)}</td>
                 </tr>
               ))}
             </tbody>
@@ -258,7 +288,8 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Button onClick={onExport}>&#x2193; Download XLSX</Button>
+        {(format === 'PDF' || format === 'Both') && <Button onClick={onExportPdf}>&#x2193; Download PDF</Button>}
+        {(format === 'Excel' || format === 'Both') && <Button onClick={onExportXlsx}>&#x2193; Download Excel</Button>}
       </div>
 
       <Card title="Report History">
@@ -289,6 +320,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
 
 export default function Reports() {
   const { toast }     = useApp()
+  const classCfg      = useConfigCache().classification
   const [tab, setTab] = useState('collateral')
 
   const [facilities, setFacilities] = useState<FacilityOpt[]>([])
@@ -316,7 +348,12 @@ export default function Reports() {
   const [selectedTests, setSelectedTests]   = useState<string[]>([])
   const [adhocFacilityId, setAdhocFacilityId] = useState('all')
   const [adhocCls, setAdhocCls]             = useState('All')
-  const [adhocSort, setAdhocSort]           = useState('uc')
+  const [adhocSort, setAdhocSort]           = useState('name')
+
+  const adhocClsOptions = useMemo(() => {
+    const configured = (classCfg?.UBS_CLS_OPTS ?? []).filter(Boolean)
+    return configured.length > 0 ? ['All', ...configured] : LEGACY_CLS_FILTER_OPTS
+  }, [classCfg])
 
   const currentMonth = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })
 
@@ -400,7 +437,7 @@ export default function Reports() {
         rows: rows.map(r => [r.date, r.ear, r.agentEar, r.delta]),
         exportName: 'effective-advance-rates.xlsx',
       })
-      logReport('Effective Advance Rates', Number(earFacilityId), currentMonth, 'XLSX')
+      logReport('Effective Advance Rates', Number(earFacilityId), currentMonth, 'Excel')
       toast('Effective Advance Rates report generated.')
     } catch (e) { fail(e) } finally { setBusy(false) }
   }
@@ -418,7 +455,7 @@ export default function Reports() {
         rows: rows.map(r => [r.agentBank, r.facilities, r.lps, r.ubsBB, r.agentBB, r.delta]),
         exportName: 'agent-bank-exposure.xlsx',
       })
-      logReport('Agent Bank Exposure', undefined, currentMonth, 'XLSX')
+      logReport('Agent Bank Exposure', undefined, currentMonth, 'Excel')
       toast('Agent Bank Exposure report generated.')
     } catch (e) { fail(e) } finally { setBusy(false) }
   }
@@ -450,7 +487,7 @@ export default function Reports() {
         exportName: 'concentration-exposures.xlsx',
       })
       logReport('Concentration Exposures',
-        concFacilityId === 'all' ? undefined : Number(concFacilityId), currentMonth, 'XLSX')
+        concFacilityId === 'all' ? undefined : Number(concFacilityId), currentMonth, 'Excel')
       toast('Concentration Exposures report generated.')
     } catch (e) { fail(e) } finally { setBusy(false) }
   }
@@ -466,19 +503,35 @@ export default function Reports() {
         adhocSort === 'name' ? a.name.localeCompare(b.name)
         : adhocSort === 'aum' ? parseM(b.aum) - parseM(a.aum)
         : parseM(b.uc) - parseM(a.uc))
-      const columns = ['LPRecord Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
-      const rows = sorted.map(LPRecord => [LPRecord.name, LPRecord.cls, LPRecord.uc, LPRecord.aum, formatRegion(LPRecord.region), LPRecord.inc ? 'Y' : 'N'] as Array<string | number>)
+      const columns = ['Facility', 'Investor Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
+      const selectedFacilityLabel = facilityName(adhocFacilityId)
+      const rows = sorted.map(LPRecord => [
+        (() => {
+          const row = LPRecord as { facilityName?: string; facilityId?: number }
+          if (row.facilityName && row.facilityName.trim()) return row.facilityName
+          if (typeof row.facilityId === 'number') {
+            const mapped = facilities.find(f => f.id === row.facilityId)?.name
+            if (mapped) return mapped
+          }
+          return adhocFacilityId === 'all' ? '—' : selectedFacilityLabel
+        })(),
+        LPRecord.name,
+        LPRecord.cls,
+        formatUsdAmount(LPRecord.uc),
+        formatUsdAmount(LPRecord.aum),
+        formatRegion(LPRecord.region),
+        LPRecord.inc ? 'Y' : 'N',
+      ] as Array<string | number>)
       setPreview({
         kind: 'table',
-        title: 'Ad Hoc LPRecord Query',
-        subtitle: `${adhocFacilityId === 'all' ? 'All facilities' : facilityName(adhocFacilityId)} · category: ${adhocCls} · ${sorted.length} LPRecord(s)`,
+        title: 'Ad Hoc LP-Level Query',
+        subtitle: `${adhocFacilityId === 'all' ? 'All facilities' : facilityName(adhocFacilityId)} · category: ${adhocCls} · ${sorted.length} LP record(s)`,
         columns, rows,
         exportName: 'adhoc-LPRecord-query.xlsx',
       })
-      exportXlsx('adhoc-LPRecord-query.xlsx', [rowsToSheet('LPs', columns, rows)])
       logReport('Ad Hoc Reporting',
-        adhocFacilityId === 'all' ? undefined : Number(adhocFacilityId), currentMonth, 'XLSX')
-      toast('Ad hoc query exported to Excel.')
+        adhocFacilityId === 'all' ? undefined : Number(adhocFacilityId), currentMonth, 'Preview')
+      toast('Ad hoc report generated.')
     } catch (e) { fail(e) } finally { setBusy(false) }
   }
 
@@ -489,19 +542,30 @@ export default function Reports() {
     const classRows = buildCertClassRows(report)
     const sheets: XlsxSheet[] = [
       { name: 'Summary', rows: certRows.map(r => ({ Metric: r.metric, 'UBS (BUSA)': r.ubs, Agent: r.agent })) },
-      { name: 'LPRecord Categories', rows: classRows.map(r => ({ Category: r.cls, 'LPs': r.n, 'Uncalled Cap.': r.uc, 'UBS BB': r.ubb, Rate: r.rate })) },
+      { name: 'LP Categories', rows: classRows.map(r => ({ 'LP Category': r.cls, 'LPs': r.n, 'Uncalled Capital': r.uc, 'UBS BB': r.ubb, 'Advance Rate': r.rate })) },
     ]
     const lps: ComputedLP[] = snapshot?.result?.lps ?? []
     if (detail === 'LPRecord' && lps.length > 0) {
       sheets.push({
         name: 'LPs',
         rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.inc)).map(LPRecord => ({
-          LPRecord: LPRecord.name, Category: LPRecord.cls, Uncalled: LPRecord.uc, Rate: LPRecord.rate, 'UBS BB': LPRecord.ubb, Delta: LPRecord.delta,
+          'Investor Name': LPRecord.name, 'LP Category': LPRecord.cls, 'Uncalled Capital': formatUsdAmount(LPRecord.uc), 'Advance Rate': LPRecord.rate,
+          'Agent BB': formatUsdAmount(LPRecord.abb), 'UBS BB': formatUsdAmount(LPRecord.ubb), Delta: formatUsdAmount(LPRecord.delta),
         })),
       })
     }
     exportXlsx(`bb-certificate-${report.facilityName.replace(/\s+/g, '-').toLowerCase()}.xlsx`, sheets)
     toast('Excel downloaded.')
+  }
+
+  const exportCertificatePdf = async (report: CollateralReport) => {
+    await downloadCollateralPdf(report.facilityId, report.facilityName, {
+      snapshotId: report.snapshotId, watermark, detail, includeLps,
+      catSummary: String(sections.catSummary), coverageTrend: String(sections.coverageTrend),
+      concAnalysis: String(sections.concAnalysis), reclass: String(sections.reclass),
+      quality: String(sections.quality),
+    })
+    toast('PDF downloaded.')
   }
 
   const exportTable = (p: Extract<Preview, { kind: 'table' }>) => {
@@ -571,7 +635,7 @@ export default function Reports() {
               <div className="form-group">
                 <label className="form-label">Format</label>
                 <div style={{ display: 'flex', gap: 16 }}>
-                  {['PDF', 'XLSX', 'Both'].map(o => (
+                  {['PDF', 'Excel', 'Both'].map(o => (
                     <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
                       <input type="radio" name="fmt" checked={certFormat === o} onChange={() => setCertFormat(o)} /> {o}
                     </label>
@@ -661,17 +725,17 @@ export default function Reports() {
               </div>
               <div className="form-group"><label className="form-label">Filter by LP Category</label>
                 <select style={{ width: '100%' }} value={adhocCls} onChange={e => setAdhocCls(e.target.value)}>
-                  {CLS_FILTER_OPTS.map(o => <option key={o}>{o}</option>)}
+                  {adhocClsOptions.map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div className="form-group"><label className="form-label">Sort By</label>
                 <select style={{ width: '100%' }} value={adhocSort} onChange={e => setAdhocSort(e.target.value)}>
                   <option value="uc">Uncalled Capital (desc)</option>
-                  <option value="name">LPRecord Name</option>
+                  <option value="name">Investor Name</option>
                   <option value="aum">AUM (desc)</option>
                 </select>
               </div>
-              <Button onClick={runAdhoc} disabled={busy}>Run &amp; Export</Button>
+              <Button onClick={runAdhoc} disabled={busy}>Run Report</Button>
             </div>
           )}
 
@@ -705,8 +769,9 @@ export default function Reports() {
           {preview.kind === 'cert' && (
             <CertPreview report={preview.report} snapshot={preview.snapshot} snapshots={snapshots}
                          watermark={watermark} detail={detail} includeLps={includeLps} sections={sections}
-                         history={history}
-                         onExport={() => exportCertificate(preview.report, preview.snapshot)} />
+                         history={history} format={certFormat}
+                         onExportPdf={() => void exportCertificatePdf(preview.report).catch(fail)}
+                         onExportXlsx={() => exportCertificate(preview.report, preview.snapshot)} />
           )}
           {preview.kind === 'table' && (
             <TablePreview preview={preview} onExport={() => exportTable(preview)} />

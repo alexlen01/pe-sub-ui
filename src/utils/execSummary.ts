@@ -17,8 +17,16 @@ export function parseM(s: string | null | undefined): number {
 
 export function fmtM(n: number): string { return `$${n.toFixed(1)}M` }
 export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
-export function fmtDeltaM(n: number): string { return `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(1)}M` }
-export function fmtDeltaPct(n: number): string { return `${n < 0 ? '-' : '+'}${Math.abs(n * 100).toFixed(1)}%` }
+export function fmtDeltaM(n: number): string {
+  const rounded = Number(Math.abs(n).toFixed(1))
+  if (rounded === 0) return `$${rounded.toFixed(1)}M`
+  return `${n < 0 ? '-' : '+'}$${rounded.toFixed(1)}M`
+}
+export function fmtDeltaPct(n: number): string {
+  const rounded = Number(Math.abs(n * 100).toFixed(1))
+  if (rounded === 0) return `${rounded.toFixed(1)}%`
+  return `${n < 0 ? '-' : '+'}${rounded.toFixed(1)}%`
+}
 
 // Builds the 5 Executive Summary rows directly from a persisted Shadow BB snapshot's numeric
 // summary (no string parsing). Returns [] when no snapshot exists yet, so the caller can fall
