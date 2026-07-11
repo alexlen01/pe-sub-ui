@@ -207,7 +207,11 @@ export default function MatchQueue() {
     setQueue(prev => prev.map(r => ids.has(r.id) ? { ...r, status: action } : r))
     setChecked(new Set())
     toast(`${ids.size} match${ids.size > 1 ? 'es' : ''} ${action === 'Accepted' ? 'accepted' : 'rejected'}.`)
-    ids.forEach(id => pendingDecides.current.push(api.matching.decide(id, action).catch(() => {})))
+    // One batched PATCH for the whole selection instead of one request per row — the backend
+    // applies them in a single transaction, and Commit still awaits this via pendingDecides.
+    pendingDecides.current.push(
+      api.matching.decideBatch([...ids].map(id => ({ id, decision: action }))).catch(() => {}),
+    )
   }
   const resolveOne = (id: number, action: string) => {
     setQueue(prev => prev.map(r => r.id === id ? { ...r, status: action } : r))

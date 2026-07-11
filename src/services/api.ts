@@ -600,6 +600,8 @@ export const api = {
       get<MatchQueueItem[]>(`/api/matching/queue${qs({ submissionId })}`),
     decide: (id: number, decision: MatchQueueItem['decision'], masterName?: string) =>
       patch<MatchQueueItem>(`/api/matching/queue/${id}`, { decision, masterName }),
+    decideBatch: (decisions: Array<{ id: number; decision: MatchQueueItem['decision']; masterName?: string }>) =>
+      patch<MatchQueueItem[]>(`/api/matching/queue/decisions`, { decisions }),
     discard: (id: number) =>
       del(`/api/matching/queue/${id}`),
     getThresholds: () =>

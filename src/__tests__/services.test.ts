@@ -391,6 +391,41 @@ describe('getFacilityBBSnapshot — live mode', () => {
   })
 })
 
+// ── api.matching.decideBatch ──────────────────────────────────────────────────
+
+describe('api.matching.decideBatch', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('PATCHes all decisions to /queue/decisions in one request', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(JSON.stringify([
+        { id: 11, decision: 'Accepted' },
+        { id: 12, decision: 'Rejected' },
+      ]), { status: 200 }))
+    }))
+
+    const saved = await api.matching.decideBatch([
+      { id: 11, decision: 'Accepted' },
+      { id: 12, decision: 'Rejected' },
+    ])
+
+    // One round-trip for the whole selection, not one PATCH per row.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toContain('/api/matching/queue/decisions')
+    expect(calls[0].init?.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      decisions: [
+        { id: 11, decision: 'Accepted' },
+        { id: 12, decision: 'Rejected' },
+      ],
+    })
+    expect(saved).toHaveLength(2)
+    expect(saved[1].decision).toBe('Rejected')
+  })
+})
+
 // ── api.bb.run — LP commit payload ────────────────────────────────────────────
 
 describe('api.bb.run — LP commit', () => {
