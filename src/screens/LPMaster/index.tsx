@@ -50,6 +50,7 @@ function pctNumber(value: unknown): number | undefined {
 
 function lpClassificationRow(LPRecord: LPRecord, originalName?: string): LpClassificationRequest['rows'][number] {
   return {
+    id:                LPRecord.id,
     name:              LPRecord.name,
     originalName,
     parent:            LPRecord.parent ?? '',
@@ -548,8 +549,14 @@ export default function LPMaster() {
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
   })
   const handleSave = async (updated: LPRecord) => {
+    const originalId = selected?.id
     const originalName = selected?.name
-    setLpData(lpData.map(LPRecord => LPRecord.name === originalName ? updated : LPRecord))
+    setLpData(lpData.map(LPRecord => {
+      if (originalId != null && LPRecord.id != null) {
+        return LPRecord.id === originalId ? updated : LPRecord
+      }
+      return LPRecord.name === originalName ? updated : LPRecord
+    }))
     setSelected(updated)
     if (facFilter?.id != null) {
       try {
@@ -640,7 +647,9 @@ export default function LPMaster() {
       const refreshedLPs = await getLPsForFacility(facFilter.id)
       setLpData(refreshedLPs)
       if (selected) {
-        const refreshedSelected = refreshedLPs.find(lp => lp.name === selected.name) ?? null
+        const refreshedSelected = selected.id != null
+          ? refreshedLPs.find(lp => lp.id === selected.id) ?? null
+          : refreshedLPs.find(lp => lp.name === selected.name) ?? null
         setSelected(refreshedSelected)
       }
       const refreshedFacilities = await getFacilities()
@@ -797,14 +806,16 @@ export default function LPMaster() {
               const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '—'
               const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pension || '—'
               const instHnw     = (LPRecord.instVsHnw === 'HNW' ? 'HNW' : LPRecord.instVsHnw ? 'Institutional' : '—')
-              const rowKey = [
-                LPRecord.name ?? 'LPRecord',
-                LPRecord.parent ?? '',
-                LPRecord.region ?? '',
-                LPRecord.cls ?? '',
-                LPRecord.fundSleeve ?? '',
-                i,
-              ].join('|')
+              const rowKey = LPRecord.id != null
+                ? `lp-${LPRecord.id}`
+                : [
+                    LPRecord.name ?? 'LPRecord',
+                    LPRecord.parent ?? '',
+                    LPRecord.region ?? '',
+                    LPRecord.cls ?? '',
+                    LPRecord.fundSleeve ?? '',
+                    i,
+                  ].join('|')
               return (
               <tr key={rowKey} className={selected === LPRecord ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
                 <td className="num">{LPRecord.rank ?? '—'}</td>

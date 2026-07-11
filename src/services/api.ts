@@ -233,6 +233,7 @@ export interface LpClassificationRequest {
   effectiveDate?: string   // YYYY-MM; omitted → current month
   audit?: boolean          // true → write one aggregated audit entry; omitted → silent per-row save
   rows: Array<{
+    id?: number
     name: string
     originalName?: string
     // Identity & classification (manual)
