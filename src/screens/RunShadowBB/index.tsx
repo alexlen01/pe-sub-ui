@@ -514,7 +514,7 @@ export default function RunShadowBB() {
     const name = ov.name || LPRecord?.name || LPRecord?._agentName || ''
     if (!name) return null
     return {
-      id:                LPRecord.id,
+      id:                LPRecord?.id,
       name,
       originalName:      LPRecord?.name || LPRecord?._agentName || undefined,
       parent:            ov.parent || undefined,
