@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { utils, writeFile } from 'xlsx'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows, type SortSpec } from '../../hooks/useTableSort'
 import Button from '../../components/ui/Button'
@@ -247,7 +246,12 @@ function SummaryBreakTable({ title, rows, full, labelHeader = 'Rate' }: { title:
   )
 }
 
-function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRecord[]) {
+async function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRecord[]) {
+  const [{ default: ExcelJS }, { saveAs }] = await Promise.all([
+    import('exceljs'),
+    import('file-saver'),
+  ])
+
   const pctStr = (n: number) => `${(n * 100).toFixed(0)}%`
   type Cell = string | number
   const summaryAoa: Cell[][] = [
@@ -303,10 +307,123 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
     ])
   }
 
-  const wb = utils.book_new()
-  utils.book_append_sheet(wb, utils.aoa_to_sheet(summaryAoa), 'Summary')
-  utils.book_append_sheet(wb, utils.aoa_to_sheet(detailAoa), 'LP Record')
-  writeFile(wb, `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`)
+  const wb = new ExcelJS.Workbook()
+  const summaryWs = wb.addWorksheet('Summary')
+  const detailWs = wb.addWorksheet('LP Record')
+
+  const baseFont = { name: 'Calibri', size: 10, color: { argb: 'FF000000' } }
+  const thinBorder = {
+    top: { style: 'thin' as const },
+    right: { style: 'thin' as const },
+    bottom: { style: 'thin' as const },
+    left: { style: 'thin' as const },
+  }
+  const paleBlueFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFDEE6EF' } }
+  const lightGrayFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFEEEEEE' } }
+  const zebraFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFF7F9FC' } }
+  const redTintFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFCE8E6' } }
+
+  for (const row of summaryAoa) summaryWs.addRow(row)
+  summaryWs.columns = [
+    { width: 34 },
+    { width: 20 },
+    { width: 20 },
+    { width: 12 },
+  ]
+
+  // Section headers + breakdown headers with blue/gray fills and borders.
+  for (let r = 1; r <= summaryWs.rowCount; r++) {
+    const row = summaryWs.getRow(r)
+    const c1 = String(row.getCell(1).value ?? '').trim()
+    const c2 = String(row.getCell(2).value ?? '').trim()
+    const c3 = String(row.getCell(3).value ?? '').trim()
+    const c4 = String(row.getCell(4).value ?? '').trim()
+    const isSection = c1 === 'LP Portfolio' || c1 === 'Borrowing Base' || c1 === 'BUSA' || c1 === 'Agent' || c1 === 'LP Category'
+    const isBreakHeader = (c2 === '#' && c3 === '$' && c4 === '%')
+    const isTotal = c1 === 'Total'
+
+    for (let c = 1; c <= 4; c++) {
+      const cell = row.getCell(c)
+      cell.font = isSection || isBreakHeader || isTotal ? { ...baseFont, bold: true } : baseFont
+      cell.alignment = { vertical: 'middle', horizontal: c === 1 ? 'left' : 'right', wrapText: false }
+
+      if (isSection) {
+        cell.fill = paleBlueFill
+        cell.border = thinBorder
+      } else if (isBreakHeader) {
+        cell.fill = lightGrayFill
+        cell.border = thinBorder
+      } else if (c1) {
+        cell.border = thinBorder
+      }
+    }
+
+    // Currency / percent formatting in summary body.
+    if (!isSection && !isBreakHeader && !isTotal) {
+      const v2 = row.getCell(2).value
+      if (typeof v2 === 'number' && Math.abs(v2) >= 1) row.getCell(2).numFmt = '[$$-409]#,##0;[Red]-[$$-409]#,##0'
+      const v3 = row.getCell(3).value
+      if (typeof v3 === 'number' && Math.abs(v3) >= 1) row.getCell(3).numFmt = '[$$-409]#,##0;[Red]-[$$-409]#,##0'
+      const v4 = row.getCell(4).value
+      if (typeof v4 === 'number') row.getCell(4).numFmt = '0%'
+    }
+
+    // Highlight EAR differential row if negative.
+    if (c1 === 'EAR Differential' && String(c2).startsWith('-')) {
+      row.getCell(1).fill = redTintFill
+      row.getCell(2).fill = redTintFill
+      row.getCell(2).font = { ...baseFont, color: { argb: 'FFC00000' }, bold: true }
+    }
+  }
+
+  for (const row of detailAoa) detailWs.addRow(row)
+  detailWs.columns = [
+    { width: 34 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 16 },
+    { width: 10 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 10 },
+  ]
+
+  // Header row styling.
+  const detailHeader = detailWs.getRow(1)
+  for (let c = 1; c <= 10; c++) {
+    const cell = detailHeader.getCell(c)
+    cell.font = { ...baseFont, bold: true }
+    cell.fill = paleBlueFill
+    cell.border = thinBorder
+    cell.alignment = { vertical: 'middle', horizontal: c <= 2 || c === 10 ? 'left' : 'right' }
+  }
+
+  for (let r = 2; r <= detailWs.rowCount; r++) {
+    const row = detailWs.getRow(r)
+    const cls = String(row.getCell(2).value ?? '')
+    const delta = Number(row.getCell(9).value ?? 0)
+    const isExcluded = cls === 'Excluded'
+    const zebra = r % 2 === 0
+
+    for (let c = 1; c <= 10; c++) {
+      const cell = row.getCell(c)
+      cell.font = baseFont
+      cell.border = thinBorder
+      cell.alignment = { vertical: 'middle', horizontal: c <= 2 || c === 10 ? 'left' : 'right' }
+      if (zebra) cell.fill = zebraFill
+      if (isExcluded) cell.fill = lightGrayFill
+    }
+
+    // Money columns.
+    for (const c of [3, 4, 5, 7, 8, 9]) {
+      row.getCell(c).numFmt = '[$$-409]#,##0;[Red]-[$$-409]#,##0'
+    }
+
+    // Delta highlighting.
+    if (delta < 0) {
+      const d = row.getCell(9)
+      d.fill = redTintFill
+      d.font = { ...baseFont, color: { argb: 'FFC00000' }, bold: true }
+    }
+  }
+
+  const file = `Shadow_BB_${(facility || 'facility').replace(/[^\w.-]+/g, '_')}.xlsx`
+  const buf = await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), file)
 }
 
 function pctFromConc(value: string | undefined | null, totalUncalledM: number): number | '' {
@@ -973,7 +1090,7 @@ export default function ShadowBB() {
         <div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LPRecord`}
-              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || facilityId == null || result.lps.length === 0}>{rerunning ? 'Re-running...' : 'Re-run Shadow BB'}</Button><Button variant="secondary" size="sm" onClick={() => { exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]); toast('Shadow BB exported to Excel.') }}>↓ Export</Button></div>}>
+              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || facilityId == null || result.lps.length === 0}>{rerunning ? 'Re-running...' : 'Re-run Shadow BB'}</Button><Button variant="secondary" size="sm" onClick={() => { void exportShadowBB(facility, summaryExt, sortedRows as unknown as ComputedLPRecord[]).then(() => toast('Shadow BB exported to Excel.')).catch(() => toast('Could not export Shadow BB Excel.')) }}>↓ Export</Button></div>}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
                   <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>
