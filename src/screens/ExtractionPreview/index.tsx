@@ -118,7 +118,7 @@ const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   "Moody's Rating":            { key: 'moodys', width: 84, rating: true },
   'Fitch Rating':              { key: 'fitch', width: 78, rating: true },
   // Aliases used by the standard grid layout
-  'LP Size':                   { key: 'lpSize', width: 90, align: 'right' as const, money: true },
+  'LP Size':                   { key: 'lpSize', width: 140, align: 'right' as const, money: true },
   'Fund Sleeve':               { key: 'fundSleeve', width: 140 },
   'Investor Type':             { key: 'investorType', width: 140 },
   'Parent':                    { key: 'parent', width: 165 },
@@ -582,7 +582,7 @@ export default function ExtractionPreview() {
     [fieldMap],
   )
   const visibleGridColumns = useMemo(() => gridColumns.filter(col => {
-    if (col.canonical === 'Fund Sleeve') return extracted.some(r => r.fundSleeve)
+    if (col.canonical === 'Fund Sleeve') return false
     if (col.canonical === 'Parent') return extracted.some(r => r.parent)
     // Investor Type can be auto-derived (agent class / group headers) even when the
     // file mapped no such column — show it whenever mapped OR any row carries content,

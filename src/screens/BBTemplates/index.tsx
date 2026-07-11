@@ -29,7 +29,7 @@ const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 
 
 const SAMPLE_TEMPLATE_LINKS = [
   ['KKR Ascendant', '/samples/bb-templates/BB-Template-Import-kkr-ascendant.xlsx'],
-  ['GS Blue Owl', '/samples/bb-templates/BB-Template-Import-gs-blue-owl.xlsx'],
+  ['WF Blue Owl', '/samples/bb-templates/BB-Template-Import-wf-blue-owl.xlsx'],
   ['Audax VII', '/samples/bb-templates/BB-Template-Import-audax-vii.xlsx'],
   ['CCP VII Lev', '/samples/bb-templates/BB-Template-Import-ccp-vii-lev.xlsx'],
   ['Carlyle CP VII', '/samples/bb-templates/BB-Template-Import-cp-vii.xlsx'],

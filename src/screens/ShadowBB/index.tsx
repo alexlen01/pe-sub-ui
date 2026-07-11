@@ -26,6 +26,7 @@ import {
 } from '../RunShadowBB'
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
+import Tag from '../../components/ui/Tag'
 import { competitionRank } from '../../utils/rank'
 
 // Maps the snapshot's persisted breaches (server verdict against the Concentration Limits
@@ -85,7 +86,7 @@ const SHADOW_RESULTS_INITIAL_WIDTHS: ColWidths = {
   rank: 64, name: 220, parent: 160, spv: 54,
   region: 140, investorType: 140, instVsHnw: 152, agentCls: 166, cls: 174,
   included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-  lpSizeCriteria: 107, lpSizeBil: 84, capCommit: 138, cmtPct: 157,
+  lpSizeCriteria: 107, lpSizeBil: 134, capCommit: 138, cmtPct: 157,
   calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
   agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
   concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
@@ -145,7 +146,7 @@ interface KVRow { k: string; v: string; bold?: boolean; hl?: KVHighlight }
 interface BkRow { rate?: string; label?: string; count: number; dollars: number; pct: number }
 
 const DEFAULT_BUSA_RATES = ['90%', '75%', '65%', '50%', '0%']
-const DEFAULT_AGENT_RATES = ['90%', '75%', '60%', '50%', '0%']
+const DEFAULT_AGENT_RATES = ['90%', '75%', '65%', '50%', '0%']
 
 function rateOrderValue(rate: string): number {
   const n = parseFloat(rate.replace('%', ''))
@@ -269,10 +270,14 @@ function exportShadowBB(facility: string, ext: BBSummaryExt, rows: ComputedLPRec
     ['UBS Participation Rate', ext.ubsParticipationPct ? pctStr(ext.ubsParticipationPct) : '—'],
     ['Facility LTV', ext.facilityLTV ? pctStr(ext.facilityLTV) : '—'],
     ['Available Commitment', fullDollar(ext.availableCommit)],
-    ['Facility Adv. Rate', ext.facilityAdvRate ? pctStr(ext.facilityAdvRate) : '—'],
+    ['Current Facility Advance Rate', ext.facilityAdvRate ? pctStr(ext.facilityAdvRate) : '—'],
     ['Agent Borrowing Base', fullDollar(ext.agentBBRaw)],
     ['UBS Borrowing Base', fullDollar(ext.ubsBBRaw)],
     ['UBS Advance Rate', pctStr(ext.ubsAdvRate)],
+    ['EAR Differential', pctStr(ext.ubsAdvRate - ext.facilityAdvRate)],
+    ['Uncalled to Facility', ext.facilitySize > 0 ? pctStr(ext.totalAllUncalled / ext.facilitySize) : '—'],
+    ['BB to Facility', ext.facilitySize > 0 ? pctStr(ext.agentBBRaw / ext.facilitySize) : '—'],
+    ['Facility to Fund Size', ext.totalCapCommit > 0 ? pctStr(ext.facilitySize / ext.totalCapCommit) : '—'],
     [],
   ]
   const pushBreak = (title: string, labelHeader: string, bk: BkRow[]) => {
@@ -881,10 +886,14 @@ export default function ShadowBB() {
                   { k: 'UBS Participation Rate', v: summaryExt.ubsParticipationPct ? p(summaryExt.ubsParticipationPct) : '—' },
                   { k: 'Facility LTV',           v: summaryExt.facilityLTV ? p(summaryExt.facilityLTV) : '—' },
                   { k: 'Available Commitment',   v: fmtMoneyM(summaryExt.availableCommit, true),   bold: true },
-                  { k: 'Facility Adv. Rate',     v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
+                  { k: 'Current Facility Advance Rate', v: summaryExt.facilityAdvRate ? p(summaryExt.facilityAdvRate) : '—' },
                   { k: 'Agent Borrowing Base',   v: fmtMoneyM(summaryExt.agentBBRaw, true),         bold: true, hl: 'agent' },
                   { k: 'UBS Borrowing Base',     v: fmtMoneyM(summaryExt.ubsBBRaw, true),           bold: true },
                   { k: 'UBS Advance Rate',       v: p(summaryExt.ubsAdvRate),                        hl: 'ubs-rate' },
+                  { k: 'EAR Differential',       v: p(summaryExt.ubsAdvRate - summaryExt.facilityAdvRate) },
+                  { k: 'Uncalled to Facility',   v: summaryExt.facilitySize > 0 ? p(summaryExt.totalAllUncalled / summaryExt.facilitySize) : '—' },
+                  { k: 'BB to Facility',         v: summaryExt.facilitySize > 0 ? p(summaryExt.agentBBRaw / summaryExt.facilitySize) : '—' },
+                  { k: 'Facility to Fund Size',  v: summaryExt.totalCapCommit > 0 ? p(summaryExt.facilitySize / summaryExt.totalCapCommit) : '—' },
                 ]} />
               </div>
               <div style={{ flex: '1 1 0', minWidth: 150, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -982,7 +991,7 @@ export default function ShadowBB() {
                             <td className="num">{rankByKey[key] ?? '—'}</td>
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
-                                <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
                                 {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}
@@ -995,7 +1004,7 @@ export default function ShadowBB() {
                             <td title={ov.investorType || LPRecord.investorType || '—'}>{ov.investorType || LPRecord.investorType || '—'}</td>
                             <td>{ov.instVsHnw || '—'}</td>
                             <td title={ov.agentCls || '—'}>{ov.agentCls || '—'}</td>
-                            <td style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={ov.cls || 'Unclassified'}>{ov.cls || 'Unclassified'}</td>
+                            <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: ov.cls ? undefined : 'var(--danger)' }} title={ov.cls || 'Unclassified'}><Tag>{ov.cls || 'Unclassified'}</Tag></td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
                             <td>{ov.ig ? 'Yes' : 'No'}</td>
                             <td>{ov.sp || '—'}</td>

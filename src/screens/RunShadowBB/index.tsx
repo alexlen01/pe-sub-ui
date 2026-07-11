@@ -34,7 +34,7 @@ export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
   name: 220, parent: 160, spv: 54,
   region: 140, investorType: 140, instVsHnw: 152, agentCls: 196, cls: 204,
   included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-  lpSizeBil: 134, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
+  lpSizeBil: 184, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
   calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
   agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
   concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
@@ -975,7 +975,7 @@ export default function RunShadowBB() {
                               background: !selected && missing ? 'color-mix(in srgb, var(--danger) 6%, transparent)' : undefined }}>
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
-                                <span style={{ fontWeight: selected ? 700 : 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
                                 {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {LPRecord._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
@@ -991,8 +991,8 @@ export default function RunShadowBB() {
                             <td className={agentClsAuto ? 'auto-mapped-cell' : undefined} title={agentClsAuto ? `${ov.agentCls || '—'} - Auto-filled from Agent BB data` : (ov.agentCls || '—')}>
                               <span className="auto-mapped-value"><span className="auto-mapped-text">{ov.agentCls || '—'}</span>{agentClsAuto && <span className="auto-mapped-badge">Auto</span>}</span>
                             </td>
-                            <td className={autoClsKind ? 'auto-mapped-cell' : undefined} style={{ color: ov.cls ? 'var(--text)' : 'var(--danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }} title={autoClsTitle ? `${ov.cls || 'Unclassified'} - ${autoClsTitle}` : (ov.cls || 'Unclassified')}>
-                              <span className="auto-mapped-value"><span className="auto-mapped-text">{ov.cls || 'Unclassified'}</span>{autoClsKind && <span className="auto-mapped-badge">Auto</span>}</span>
+                            <td className={autoClsKind ? 'auto-mapped-cell' : undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: ov.cls ? undefined : 'var(--danger)' }} title={autoClsTitle ? `${ov.cls || 'Unclassified'} - ${autoClsTitle}` : (ov.cls || 'Unclassified')}>
+                              <span className="auto-mapped-value"><span className="auto-mapped-text"><Tag>{ov.cls || 'Unclassified'}</Tag></span>{autoClsKind && <span className="auto-mapped-badge">Auto</span>}</span>
                             </td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
                             <td>{ov.ig ? 'Yes' : 'No'}</td>

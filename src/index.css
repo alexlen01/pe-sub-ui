@@ -84,8 +84,8 @@ body {
 /* ── Tag / Badge ───────────────────────────────────────────── */
 .tag            { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
 .tag-rated      { background: var(--red-lt); color: var(--navy); }
-.tag-un2        { background: var(--amber-lt); color: var(--amber); }
-.tag-un1        { background: #FFE0B3; color: #8A4B00; }
+.tag-un2        { background: #EBEBEB; color: #333333; }
+.tag-un1        { background: #E4E4E4; color: #444444; }
 .tag-elig       { background: var(--green-lt); color: var(--green); }
 .tag-excl       { background: var(--danger-lt); color: var(--danger); }
 .tag-active      { background: var(--green-lt);  color: var(--green); }

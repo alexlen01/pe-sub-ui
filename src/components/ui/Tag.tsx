@@ -1,9 +1,16 @@
 const CLS_MAP: Record<string, string> = {
-  'Rated':          'tag-rated',
-  'Unrated >2bn':   'tag-un2',
-  'Unrated 1–2bn':  'tag-un1',
-  'Eligible':       'tag-elig',
-  'Excluded':       'tag-excl',
+  // UBS LP Classification → colour tag. Keys mirror the DB-seeded CLS_TAG_MAP
+  // (V1_3__config.sql) so the classification badge colour-codes consistently
+  // across LP Master, Run Shadow BB, and Shadow BB.
+  'Rated Investor':             'tag-rated',
+  'Corp Pension > $5Bn Assets': 'tag-un1',
+  'Corp Pension > $1Bn Assets': 'tag-un1',
+  'Unrated NAV > $1Bn':         'tag-un2',
+  'FoF & Other > $10Bn AUM':    'tag-un2',
+  'Other Institutional':        'tag-elig',
+  'HNW Feeder (acceptable)':    'tag-elig',
+  'HNW (acceptable)':           'tag-elig',
+  'Excluded':                   'tag-excl',
   'In Progress':    'tag-inprogress',
   'Needs Review':   'tag-needsreview',
   'Not Started':    'tag-notstarted',

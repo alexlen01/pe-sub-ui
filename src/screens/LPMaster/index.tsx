@@ -542,7 +542,7 @@ export default function LPMaster() {
     name: 220, parent: 160, spv: 54,
     region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
     inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-    lpSize: 144, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
+    lpSize: 194, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
     calledCap: 116, uc: 126, pctUncalled: 128, pctCalled: 104,
     agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
