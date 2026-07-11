@@ -8,6 +8,7 @@ export type InvestorType =
   | 'Other Institutional'
 
 export interface LPRecord {
+  id?: number
   name: string
   parent: string
   spv: boolean

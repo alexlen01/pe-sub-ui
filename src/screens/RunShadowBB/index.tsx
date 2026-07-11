@@ -364,9 +364,11 @@ export default function RunShadowBB() {
   }, [activeSubmissionId, submissionDetails, submissionDetails?.periodMonth])
 
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
-    return facilityLPs.map(LPRecord => ({
+    return facilityLPs.map((LPRecord, index) => ({
       ...LPRecord,
-      _key: `LPRecord-${LPRecord.name}`, _isNew: false, _agentName: LPRecord.name,
+      _key: LPRecord.id != null ? `LPRecord-${LPRecord.id}` : `LPRecord-${index}-${LPRecord.name ?? ''}`,
+      _isNew: false,
+      _agentName: LPRecord.name,
     }))
   }, [facilityLPs])
 

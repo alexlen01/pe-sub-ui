@@ -89,7 +89,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const updateLPRecord = useCallback((updated: LPRecord) => {
-    setLpData(prev => prev.map(LPRecord => LPRecord.name === updated.name ? updated : LPRecord))
+    setLpData(prev => prev.map(LPRecord => {
+      if (updated.id != null && LPRecord.id != null) {
+        return LPRecord.id === updated.id ? updated : LPRecord
+      }
+      return LPRecord.name === updated.name ? updated : LPRecord
+    }))
   }, [])
 
   const abortSubmission = useCallback((facility: string) => {

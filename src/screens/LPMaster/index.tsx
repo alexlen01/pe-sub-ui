@@ -797,8 +797,16 @@ export default function LPMaster() {
               const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '—'
               const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pension || '—'
               const instHnw     = (LPRecord.instVsHnw === 'HNW' ? 'HNW' : LPRecord.instVsHnw ? 'Institutional' : '—')
+              const rowKey = [
+                LPRecord.name ?? 'LPRecord',
+                LPRecord.parent ?? '',
+                LPRecord.region ?? '',
+                LPRecord.cls ?? '',
+                LPRecord.fundSleeve ?? '',
+                i,
+              ].join('|')
               return (
-              <tr key={LPRecord.name ?? `LPRecord-${i}`} className={selected?.name === LPRecord.name ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
+              <tr key={rowKey} className={selected === LPRecord ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
                 <td className="num">{LPRecord.rank ?? '—'}</td>
                 <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.name}</strong>

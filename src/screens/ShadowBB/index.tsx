@@ -598,9 +598,13 @@ export default function ShadowBB() {
 
   // Re-run the BB engine whenever rawLPs or overrideMap changes. When no overrides exist,
   // patch in the server snapshot summary so the persisted figures show correctly.
+  const lpRowKey = (LPRecord: LPRecord, index: number) => (
+    LPRecord.id != null ? `LPRecord-${LPRecord.id}` : `LPRecord-${index}-${LPRecord.name ?? ''}`
+  )
+
   const result = useMemo<BBResult>(() => {
     if (rawLPs.length === 0) return computePortfolioBB([], bbParams, busaRates)
-    const merged = rawLPs.map(LPRecord => ({ ...LPRecord, ...(overrideMap[LPRecord.name ?? ''] ?? {}) }))
+    const merged = rawLPs.map((LPRecord, index) => ({ ...LPRecord, ...(overrideMap[lpRowKey(LPRecord, index)] ?? {}) }))
     const computed = computePortfolioBB(merged, bbParams, busaRates)
     const hasOverrides = Object.keys(overrideMap).length > 0
     return hasOverrides || Object.keys(snapshot).length === 0
@@ -618,9 +622,9 @@ export default function ShadowBB() {
   )
 
   const shadowRows = useMemo<SubmissionLP[]>(
-    () => (result.lps as ComputedLPRecord[]).map(LPRecord => ({
+    () => (result.lps as ComputedLPRecord[]).map((LPRecord, index) => ({
       ...LPRecord,
-      _key: LPRecord.name ?? '',
+      _key: lpRowKey(LPRecord, index),
       _isNew: false,
       _agentName: LPRecord.name ?? '',
     })),
@@ -628,7 +632,10 @@ export default function ShadowBB() {
   )
 
   const overrides = useMemo<Record<string, Override>>(
-    () => Object.fromEntries((result.lps as ComputedLPRecord[]).map(LPRecord => [LPRecord.name ?? '', buildOverride(LPRecord, resultTotalUncalledM, defaultConcLimitPct)])),
+    () => Object.fromEntries((result.lps as ComputedLPRecord[]).map((LPRecord, index) => [
+      lpRowKey(LPRecord, index),
+      buildOverride(LPRecord, resultTotalUncalledM, defaultConcLimitPct),
+    ])),
     [result.lps, resultTotalUncalledM, defaultConcLimitPct],
   )
 
@@ -718,23 +725,22 @@ export default function ShadowBB() {
       toast('Shadow BB data was not loaded from the database; save is disabled to avoid persisting UI defaults.')
       return
     }
-    const lpName = draft.name || selectedKey
+    const lpRecord = selectedLP ?? shadowRows.find(LPRecord => LPRecord._key === selectedKey) ?? null
+    const lpName = draft.name || lpRecord?.name || lpRecord?._agentName || selectedKey
     const changes = overrideToLPRecord(draft, totalUncalledM)
     setOverrideMap(prev => {
       const next = { ...prev }
-      if (lpName !== selectedKey) delete next[selectedKey]
-      next[lpName] = { ...(prev[selectedKey] ?? {}), ...changes }
+      next[selectedKey] = { ...(prev[selectedKey] ?? {}), ...changes }
       return next
     })
-    setSelectedKey(lpName)
 
     if (facilityId == null) return
-    setSaveStatuses(s => ({ ...s, [lpName]: 'saving' }))
+    setSaveStatuses(s => ({ ...s, [selectedKey]: 'saving' }))
     try {
       type ClassificationRow = LpClassificationRequest['rows'][number]
       const row: ClassificationRow = {
         name:              lpName,
-        originalName:      selectedKey,
+        originalName:      lpRecord?.name || lpRecord?._agentName || undefined,
         parent:            draft.parent || undefined,
         spv:               draft.spv,
         investorType:      draft.investorType || undefined,
@@ -759,13 +765,13 @@ export default function ShadowBB() {
         notes:             draft.notes ?? '',
       }
       await api.lpRecords.saveClassification({ facilityId, rows: [row] })
-      setSaveStatuses(s => ({ ...s, [lpName]: 'saved' }))
-      clearTimeout(saveTimers.current[lpName])
-      saveTimers.current[lpName] = setTimeout(() => {
-        setSaveStatuses(s => { const n = { ...s }; delete n[lpName]; return n })
+      setSaveStatuses(s => ({ ...s, [selectedKey]: 'saved' }))
+      clearTimeout(saveTimers.current[selectedKey])
+      saveTimers.current[selectedKey] = setTimeout(() => {
+        setSaveStatuses(s => { const n = { ...s }; delete n[selectedKey]; return n })
       }, 2000)
     } catch (e) {
-      setSaveStatuses(s => ({ ...s, [lpName]: 'error' }))
+      setSaveStatuses(s => ({ ...s, [selectedKey]: 'error' }))
       toast(`Save failed — ${e instanceof Error ? e.message : String(e)}`)
       throw e
     }
