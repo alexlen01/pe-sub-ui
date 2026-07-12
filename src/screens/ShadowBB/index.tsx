@@ -156,6 +156,15 @@ function normalizeRateLabel(raw: string | undefined | null): string {
   return Number.isFinite(n) ? `${Math.round(n)}%` : String(raw ?? '').trim()
 }
 
+function normalizeAgentSummaryRate(raw: string | undefined | null): string {
+  const rate = parseFloat(String(raw ?? '').replace('%', '').trim())
+  if (rate === 90 || rate === 95) return '90%'
+  if (rate >= 70 && rate <= 80) return '75%'
+  if (rate === 60 || rate === 65) return '65%'
+  if (rate >= 20 && rate <= 55) return '50%'
+  return '0%'
+}
+
 function uniqueRatesFromMap(map: Record<string, string> | undefined, fallback: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -884,12 +893,17 @@ export default function ShadowBB() {
 
   const summaryExt = useMemo((): BBSummaryExt => {
     const busaRatesForSummary = uniqueRatesFromMap(classCfg?.BUSA_RATE_MAP, DEFAULT_BUSA_RATES)
-    const agentRatesForSummary = uniqueRatesFromMap(classCfg?.AGENT_RATE_MAP, DEFAULT_AGENT_RATES)
+    const agentRatesForSummary = [...new Set(
+      uniqueRatesFromMap(classCfg?.AGENT_RATE_MAP, DEFAULT_AGENT_RATES).map(normalizeAgentSummaryRate),
+    )].sort((a, b) => rateOrderValue(b) - rateOrderValue(a))
     if (summaryExtApi) {
       return {
         ...summaryExtApi,
         busaBreakdown: completeRateBreakdown(summaryExtApi.busaBreakdown, busaRatesForSummary),
-        agentBreakdown: completeRateBreakdown(summaryExtApi.agentBreakdown, agentRatesForSummary),
+        agentBreakdown: completeRateBreakdown(
+          summaryExtApi.agentBreakdown?.map(row => ({ ...row, rate: normalizeAgentSummaryRate(row.rate) })),
+          agentRatesForSummary,
+        ),
       }
     }
     const lps = result.lps as ComputedLPRecord[]
@@ -914,7 +928,7 @@ export default function ShadowBB() {
     const clsMap: Record<string, BkRow & { label: string }> = { 'Rated Investors': { label: 'Rated Investors', count: 0, dollars: 0, pct: 0 }, 'Unrated Investors': { label: 'Unrated Investors', count: 0, dollars: 0, pct: 0 }, 'Eligible Investors': { label: 'Eligible Investors', count: 0, dollars: 0, pct: 0 }, 'Excluded Investors': { label: 'Excluded Investors', count: 0, dollars: 0, pct: 0 } }
     for (const LPRecord of lps) {
       const bkey = LPRecord.rate || '0%'; if (busaMap[bkey]) { busaMap[bkey].count++; busaMap[bkey].dollars += LPRecord.ucM }
-      const akey = LPRecord.agentRate || '0%'; if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += LPRecord.ucM
+      const akey = normalizeAgentSummaryRate(LPRecord.agentRate || '0%'); if (!agentMap[akey]) agentMap[akey] = { rate: akey, count: 0, dollars: 0, pct: 0 }; agentMap[akey].count++; agentMap[akey].dollars += LPRecord.ucM
       const clsLabel = canonicalClassBucket(LPRecord.cls)
       clsMap[clsLabel].count++; clsMap[clsLabel].dollars += LPRecord.ucM
     }
