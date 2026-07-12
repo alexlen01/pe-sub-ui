@@ -16,6 +16,10 @@ export const formatUsdMillions = (millions: number): string => {
   const dollars = millions * 1_000_000
   return USD0.format(Math.round(dollars) === 0 ? 0 : dollars)
 }
+export const formatSignedUsdMillions = (millions: number): string => {
+  const formatted = formatUsdMillions(Math.abs(millions))
+  return formatted === '$0' ? formatted : `${millions > 0 ? '+' : '-'}${formatted}`
+}
 export function formatUsdAmount(value: string | null | undefined): string {
   if (value == null) return '—'
   const cleaned = value.trim().replace(/[$,]/g, '')
@@ -71,14 +75,12 @@ export interface CertRow {
  *  summary. Eligible uncalled capital is the same base for both BB calculations. */
 export function buildCertRows(r: CollateralReport): CertRow[] {
   const s = r.summary
-  const bbDeltaAbs = formatUsdMillions(Math.abs(s.bbDelta))
-  const signedBbDelta = bbDeltaAbs === '$0' ? bbDeltaAbs : `${s.bbDelta >= 0 ? '+' : '-'}${bbDeltaAbs}`
   return [
     { metric: 'Total Eligible Uncalled Capital', ubs: formatUsdMillions(r.totalEligibleUncalledM), agent: formatUsdMillions(r.totalEligibleUncalledM), cls: 'total' },
     { metric: 'Included LP Count',               ubs: String(s.includedCount),        agent: String(s.includedCount),        cls: ''      },
     { metric: 'Total Borrowing Base',            ubs: formatUsdMillions(s.totalUBB),  agent: formatUsdMillions(s.totalABB),  cls: 'total' },
     { metric: 'Effective Advance Rate (EAR)',    ubs: fmtPct(s.ear),                  agent: fmtPct(s.agentEar),             cls: ''      },
-    { metric: 'UBS BB Delta',                    ubs: signedBbDelta,                  agent: '',                             cls: 'delta' },
+    { metric: 'UBS BB Delta',                    ubs: formatSignedUsdMillions(s.bbDelta), agent: '',                          cls: 'delta' },
     { metric: 'UBS EAR Delta',                   ubs: fmtDeltaPct(s.earDelta),        agent: '',                             cls: 'delta' },
   ]
 }

@@ -316,8 +316,9 @@ describe('getLPs / getLPByName / lookupLPsByName — live', () => {
   })
 
   it('getLPs passes the facility-specific rank through from the API', async () => {
-    // The API serves the persisted competition rank (by uncalled capital) on each LP record;
-    // non-rankable LPs (e.g. Excluded / not-included) carry a null rank.
+    // The API is the only place ranks are computed: it serves the persisted competition rank
+    // (by uncalled capital, Excluded LPs included) on each LP record; a record not yet ranked
+    // (no Shadow BB run since it was created) carries a null rank and renders as "—".
     stubFetch({ '/api/lpRecords': [
       { name: 'CalPERS', rank: 1 },
       { name: 'CalSTRS', rank: 2 },

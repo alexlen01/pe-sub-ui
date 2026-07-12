@@ -26,7 +26,6 @@ import {
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
 import Tag from '../../components/ui/Tag'
-import { competitionRank } from '../../utils/rank'
 
 // Maps the snapshot's persisted breaches (server verdict against the Concentration Limits
 // config) to the rows of the breach table shown above the LP table.
@@ -658,21 +657,13 @@ export default function ShadowBB() {
     [overrides, totalCommitM, totalUncalledM],
   )
 
-  const rankByKey = useMemo(() => {
-    const persistedRanks = Object.fromEntries(
-      shadowRows
-        .filter(LPRecord => typeof LPRecord.rank === 'number')
-        .map(LPRecord => [LPRecord._key, LPRecord.rank as number]),
-    )
-    if (Object.keys(persistedRanks).length > 0) return persistedRanks
-
-    return competitionRank(
-      shadowRows,
-      LPRecord => LPRecord._key,
-      LPRecord => parseMoneyM(overrides[LPRecord._key]?.ucM),
-      (a, b) => (a.name ?? a._agentName ?? '').localeCompare(b.name ?? b._agentName ?? ''),
-    )
-  }, [shadowRows, overrides])
+  // Ranks are computed by the API on each Shadow BB run and served on the LP records —
+  // the UI only displays them and never derives its own.
+  const rankByKey = useMemo(() => Object.fromEntries(
+    shadowRows
+      .filter(LPRecord => typeof LPRecord.rank === 'number')
+      .map(LPRecord => [LPRecord._key, LPRecord.rank as number]),
+  ), [shadowRows])
 
   const selectedLP = useMemo(
     () => (selectedKey ? shadowRows.find(r => r._key === selectedKey) ?? null : null),

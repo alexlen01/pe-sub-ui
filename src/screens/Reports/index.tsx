@@ -11,7 +11,7 @@ import {
   buildAgentBankRows, buildBreachRows, buildCertClassRows, buildCertRows,
   buildEarTrendRows, buildHistoryRows, downloadCollateralPdf, exportXlsx, formatReportTimestamp,
   getAgentBankExposure, getCollateralReport, getConcentrationBreaches, getEarTrend,
-  getReportHistory, recordReport, formatUsdAmount, formatUsdMillions, isNegativeDisplayValue, isPositiveDisplayValue,
+  getReportHistory, recordReport, formatUsdAmount, formatUsdMillions, formatSignedUsdMillions, isNegativeDisplayValue, isPositiveDisplayValue,
   type ReportHistoryRow, type XlsxSheet,
 } from '../../services/reportService'
 import { parseM } from '../../utils/execSummary'
@@ -151,7 +151,6 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
   const classRows = buildCertClassRows(report)
   const allLps: ComputedLP[] = snapshot?.result?.lps ?? []
   const lps = includeLps === 'all' ? allLps : allLps.filter(LPRecord => LPRecord.inc)
-  const highlightVariance = includeLps === 'variance'
   const breaches = snapshot?.result?.breaches ?? []
   const reclassed = allLps.filter(LPRecord => LPRecord.rcl)
   const trendRows = buildEarTrendRows(
@@ -279,7 +278,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
                   <td className="num" style={isNegativeDisplayValue(LPRecord.rate) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{LPRecord.rate}</td>
                   <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td>
                   <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td>
-                  <td className="num" style={(highlightVariance && LPRecord.deltaM !== 0) || isNegativeDisplayValue(formatUsdAmount(LPRecord.delta)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.delta)}</td>
+                  <td className="num" style={LPRecord.deltaM < 0 ? { color: 'var(--danger)', fontWeight: 700 } : LPRecord.deltaM > 0 ? { color: 'var(--success)', fontWeight: 700 } : undefined}>{formatSignedUsdMillions(LPRecord.deltaM)}</td>
                 </tr>
               ))}
             </tbody>
@@ -550,7 +549,7 @@ export default function Reports() {
         name: 'LPs',
         rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.inc)).map(LPRecord => ({
           'Investor Name': LPRecord.name, 'LP Category': LPRecord.cls, 'Uncalled Capital': formatUsdAmount(LPRecord.uc), 'Advance Rate': LPRecord.rate,
-          'Agent BB': formatUsdAmount(LPRecord.abb), 'UBS BB': formatUsdAmount(LPRecord.ubb), Delta: formatUsdAmount(LPRecord.delta),
+          'Agent BB': formatUsdAmount(LPRecord.abb), 'UBS BB': formatUsdAmount(LPRecord.ubb), Delta: formatSignedUsdMillions(LPRecord.deltaM),
         })),
       })
     }
