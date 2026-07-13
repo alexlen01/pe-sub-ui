@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 import { api } from '../../services/api'
 import type { RateTier, ConcLimit, GlobalSetting, BbCriteriaMatrix } from '../../services/configService'
 
@@ -60,6 +61,10 @@ const unit = (s: string) => (
 
 export default function Configuration() {
   const { toast, navigate } = useApp()
+  // Config is Analyst-editable only (RBAC_ROLES.md). Manager + Viewer see it read-only. This
+  // mirrors the server rule (PUT /api/config/** is ANALYST-gated); the server is authoritative.
+  const { can } = useAuth()
+  const readOnly = !can('editConfig')
 
   const [agentTiers,     setAgentTiers]     = useState<RateTier[]>([])
   const [concLimits,     setConcLimits]     = useState<ConcLimit[]>([])
@@ -104,7 +109,7 @@ export default function Configuration() {
     }
   }, [loadError, toast])
 
-  const busy = saving !== null || loading || loadError != null
+  const busy = saving !== null || loading || loadError != null || readOnly
 
   // ── Borrowing Base Criteria Matrix editors (immutable nested updates) ──
   const updRatedConc = (i: number, v: number) =>
@@ -133,6 +138,14 @@ export default function Configuration() {
 
   return (
     <div style={{ padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {readOnly && (
+        <div style={{ padding: '8px 14px', background: 'var(--tbl)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, color: 'var(--muted)' }}>
+          Read-only — configuration is maintained by Analysts. Your role can view these settings but not change them.
+        </div>
+      )}
+      {/* A disabled fieldset cascades to every input, select, and Save button inside, giving a
+          uniform read-only surface for Manager/Viewer without gating each control individually. */}
+      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
         {/* 2 — Agent Advance Rate Schedule */}
@@ -391,6 +404,7 @@ export default function Configuration() {
         </div>
       </Card>
 
+      </fieldset>
     </div>
   )
 }

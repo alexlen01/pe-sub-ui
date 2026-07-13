@@ -3,6 +3,8 @@ import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows, type SortSpec } from '../../hooks/useTableSort'
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
+import OwnershipBanner, { useCanEditSubmission } from '../../components/ui/OwnershipBanner'
 import StepBar from '../../components/ui/StepBar'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -26,6 +28,7 @@ import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
 import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificationRequest } from '../../services/api'
 import type { BBBreach } from '../../types/bb'
+import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
 
 const DEFAULT_CL_PCT = 7.5
 export const SHADOW_BB_TABLE_WIDTH = 3993
@@ -170,7 +173,7 @@ export const YesNo = ({ val }: { val: boolean }) => (
   </span>
 )
 
-export const pctStr = (v: number | '' | undefined) => (typeof v === 'number' ? `${v}%` : '—')
+export const pctStr = (v: number | '' | undefined) => (typeof v === 'number' ? formatPercentageValue(v) : '—')
 
 export function calcRow(ov: Override, totalCommitM: number, totalUncalledM: number) {
   const advRate  = num(ov.ubsAdvRatePct) / 100
@@ -272,8 +275,11 @@ export function buildBreachAlerts(breaches: BBBreach[]) {
 
 export default function RunShadowBB() {
   const { toast, navigate, bbParams, activeSubmission, activeSubmissionId, abortSubmission, setTargetFacility } = useApp()
+  const { can } = useAuth()
   const [matchQueue, setMatchQueue] = useState<Awaited<ReturnType<typeof getMatchQueue>>>([])
   const [running, setRunning] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted,  setSubmitted]  = useState(false)
   const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
   // Concentration breaches from the server run response — the engine checks them against the
   // Concentration Limits config on every run, so this is the authoritative list, not the local mirror.
@@ -282,6 +288,21 @@ export default function RunShadowBB() {
   const [abortOpen, setAbortOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
+  // A non-owner analyst is read-only until they take the submission over (concurrency guard).
+  const canEdit = useCanEditSubmission(submissionDetails)
+  const reloadSubmission = () => {
+    if (activeSubmissionId != null) api.submissions.get(activeSubmissionId).then(setSubmissionDetails).catch(() => {})
+  }
+  // Announce read-only once when landing on a submission owned by someone else, so the state is
+  // obvious even if the banner is scrolled off. Re-announces if ownership changes (e.g. taken back).
+  const readOnlyToasted = useRef(false)
+  useEffect(() => {
+    if (submissionDetails && !canEdit && !readOnlyToasted.current) {
+      readOnlyToasted.current = true
+      toast(`Read-only — this submission is owned by ${submissionDetails.ownerName ?? 'another analyst'}. Take it over to edit.`, 4500, 'warning')
+    }
+    if (canEdit) readOnlyToasted.current = false
+  }, [submissionDetails, canEdit, toast])
   const [extractedMap, setExtractedMap] = useState<Record<string, AgentExtractedRow>>({})
   const [lpRates, setLpRates] = useState<Map<string, LpRate>>(new Map())
   const [lpRatesLoaded, setLpRatesLoaded] = useState(false)
@@ -559,7 +580,10 @@ export default function RunShadowBB() {
         rows: [row],
       })
       if (activeSubmissionId != null) {
-        await api.submissions.saveShadowBbState(activeSubmissionId, nextOverrides)
+        // Pass the loaded version; the server rejects a stale write (409) and returns the fresh
+        // submission (new version) which we keep so subsequent saves stay current.
+        const updated = await api.submissions.saveShadowBbState(activeSubmissionId, nextOverrides, submissionDetails?.version)
+        setSubmissionDetails(updated)
       }
       setSaveState(s => ({ ...s, [key]: 'saved' }))
       clearTimeout(savedTimers.current[key])
@@ -579,6 +603,11 @@ export default function RunShadowBB() {
 
   const saveDraft = async (draft: Override) => {
     if (!selectedKey) return
+    // Read-only guard: a non-owner may not persist edits. Friendly message instead of a raw 403.
+    if (!canEdit) {
+      toast('Read-only — this submission is owned by another analyst. Take it over to edit.', 3600, 'warning')
+      return
+    }
     const key = selectedKey
     const old = overrides[key]
     const next = draft
@@ -755,7 +784,7 @@ export default function RunShadowBB() {
   }, [overrides, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc, ubsClsSortOrder])
 
   const { sort, sortedRows: sortedDisplayLPs, requestSort } = useSortableRows(displayLPs, sortColumns)
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedDisplayLPs)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedDisplayLPs)
   const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('run-shadow-bb', SHADOW_BB_INITIAL_WIDTHS)
 
   // Deselect if the selected row leaves the current page or the BB result replaces the table.
@@ -800,12 +829,12 @@ export default function RunShadowBB() {
       const concLimitM = typeof ov.concLimitPct === 'number'
         ? (ov.concLimitPct / 100) * totalUncalledM
         : (DEFAULT_CL_PCT / 100) * totalUncalledM
-      const rate      = typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (LPRecord.rate ?? '0%')
-      const agentRate = typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct.toFixed(1)}%` : (LPRecord.agentRate ?? '')
-      const agentConc = typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (LPRecord.agentConc ?? '')
+      const rate      = typeof ov.ubsAdvRatePct === 'number' ? formatPercentageValue(ov.ubsAdvRatePct) : formatPercentageText(LPRecord.rate, '0%')
+      const agentRate = typeof ov.agentRatePct  === 'number' ? formatPercentageValue(ov.agentRatePct) : formatPercentageText(LPRecord.agentRate, '')
+      const agentConc = typeof ov.agentConcLimitPct === 'number' ? formatPercentageValue(ov.agentConcLimitPct) : formatPercentageText(LPRecord.agentConc, '')
       const ubsConc   = typeof ov.concLimitPct === 'number'
-        ? `${ov.concLimitPct}%`
-        : (LPRecord.ubsConc?.includes('%') ? LPRecord.ubsConc : `${DEFAULT_CL_PCT}%`)
+        ? formatPercentageValue(ov.concLimitPct)
+        : formatPercentageText(LPRecord.ubsConc, formatPercentageValue(DEFAULT_CL_PCT))
       const sizeAum = ov.lpSizeCriteria === 'AUM' ? ov.lpSizeBil : ''
       const sizeNav = ov.lpSizeCriteria === 'NAV' ? ov.lpSizeBil : ''
       const sizeAssets = ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil : ''
@@ -861,7 +890,7 @@ export default function RunShadowBB() {
             agentConc:       LPRecord.agentConc || null,
             ubsConc:         LPRecord.ubsConc || null,
             // Resolved UBS advance rate (matrix default or manual override) so it round-trips to
-            // LP Master; `rate` is `${ov.ubsAdvRatePct}%` built above from the same criteria.
+            // LP Master; `rate` is formatted above from the same criteria.
             ubsRate:         LPRecord.rate || null,
             agentRate:       LPRecord.agentRate || null,
             abb:             LPRecord.abb || null,
@@ -881,14 +910,33 @@ export default function RunShadowBB() {
           return
         }
       }
-      if (activeSubmissionId != null) {
-        await api.submissions.complete(activeSubmissionId).catch(() => {})
-      }
     }
 
+    // Running only computes and snapshots — the submission stays In Progress so the analyst can
+    // iterate. Submitting for independent review is a deliberate, separate step (submitForReview).
     setResult(computed)
+    setSubmitted(false)
     setRunning(false)
     toast(`Shadow BB complete — ${overriddenLPs.length} LPs · UBS BB ${fmtM(summary.totalUBB)} · Delta ${fmtM(summary.bbDelta)}`)
+  }
+
+  // Maker step: hand the completed run to independent (Manager) review. Distinct from Run so the
+  // analyst can re-run and refine before committing to review.
+  const submitForReview = async () => {
+    if (activeSubmissionId == null) return
+    setSubmitting(true)
+    try {
+      const updated = await api.submissions.complete(activeSubmissionId, submissionDetails?.version)
+      setSubmissionDetails(updated)
+      setSubmitted(true)
+      toast('Submitted for independent review — awaiting Manager approval.', 3600, 'success')
+      setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null)
+      navigate('shadow-bb')
+    } catch (e) {
+      toast(`Submit for review failed: ${String(e)}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const resultRows = result ? [
@@ -911,6 +959,16 @@ export default function RunShadowBB() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
       {loadError && <div style={{ padding: '10px 16px', background: '#fff0f0', color: 'var(--danger)', fontSize: 12 }}>API error — {loadError}</div>}
+      {/* Changes Requested: the manager rejected the last submission. reviewNote (on a submission
+          back at step 5) is the signal — the analyst revises here and re-submits for review. */}
+      {submissionDetails?.reviewNote && submissionDetails.status === 'Review' && (
+        <div style={{ padding: '10px 16px', background: '#fff8e6', borderBottom: '1px solid var(--amber)', fontSize: 12, color: 'var(--text)' }}>
+          <strong style={{ color: '#8a6d00' }}>Changes requested by review</strong>
+          {submissionDetails.reviewedBy ? ` (${submissionDetails.reviewedBy})` : ''}: {submissionDetails.reviewNote}
+          {' '}— revise below and re-run, then Submit for Review again.
+        </div>
+      )}
+      <OwnershipBanner submission={submissionDetails} onTakenOver={reloadSubmission} />
       <StepBar steps={wizardSteps} current={4} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -931,8 +989,8 @@ export default function RunShadowBB() {
             action={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
-                <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running}>Abort Submission</Button>
-                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null || unclassified > 0} title={unclassified > 0 ? `Resolve ${unclassified} unclassified LPRecord${unclassified !== 1 ? 's' : ''} before running` : undefined}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
+                <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>Abort Submission</Button>
+                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null || unclassified > 0 || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : unclassified > 0 ? `Resolve ${unclassified} unclassified LPRecord${unclassified !== 1 ? 's' : ''} before running` : undefined}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
           >
@@ -1030,7 +1088,7 @@ export default function RunShadowBB() {
                 <div className="tbl-footer">
                   <span>Showing {from}–{to} of {displayLPs.length} LPs{unclassifiedOnly && unclassified > 0 && <span style={{ color: 'var(--muted)' }}> (filtered)</span>}{unclassified > 0 && <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · {unclassified} unclassified</span>}{newLPs.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {newLPs.length} new</span>}</span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+                    {total > 15 && <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>}
                     {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
                   </div>
                 </div>
@@ -1043,7 +1101,7 @@ export default function RunShadowBB() {
                     ov={overrides[selectedKey]}
                     totalCommitM={totalCommitM}
                     totalUncalledM={totalUncalledM}
-                    running={running || !lpRatesLoaded || loadError != null}
+                    running={running || !lpRatesLoaded || loadError != null || !canEdit}
                     onDeselect={() => setSelectedKey(null)}
                     onSave={saveDraft}
                     saveStatus={saveState[selectedKey]}
@@ -1054,7 +1112,7 @@ export default function RunShadowBB() {
           </Card>
         )}
 
-        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag><Button onClick={() => { setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null); navigate('shadow-bb') }}>{buildBreachAlerts(runBreaches).primaryButtonLabel}</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
+        {result && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Tag variant="active" style={{ fontSize: 12, padding: '5px 10px' }}>✓ Calculation complete</Tag>{can('runShadowBB') && <Button onClick={submitForReview} disabled={submitting || submitted || !canEdit} title={!canEdit ? 'Read-only — take over the submission to submit it.' : 'Submit this Shadow BB for independent Manager review'}>{submitting ? 'Submitting…' : submitted ? '✓ Submitted for Review' : 'Submit for Review'}</Button>}<Button variant="secondary" onClick={() => { setTargetFacility(submissionDetails?.facilityName ?? activeSubmission ?? null); navigate('shadow-bb') }}>{buildBreachAlerts(runBreaches).primaryButtonLabel}</Button><Button variant="secondary" onClick={() => navigate('upload')}>Upload Another Submission</Button></div>}
 
         {result && (
           <Card title="Calculation Results" subtitle={`${submissionLPs.length} LP records processed`}>
@@ -1231,11 +1289,24 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
 
   const pctInput = (label: string, field: keyof Override, step = 5) =>
     wrap(false, <>{flbl(label)}
-    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-      <input type="number" value={draft[field] === '' || draft[field] == null ? '' : Number(draft[field])} disabled={running || saving}
-        min={0} max={100} step={step} style={{ ...inputSt, textAlign: 'left' }}
-        onChange={e => change(field, e.target.value === '' ? '' : parseFloat(e.target.value))} />
-      <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 24px', alignItems: 'stretch', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', background: running || saving ? 'var(--tbl)' : 'var(--card)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+        <input type="text" inputMode="decimal" value={draft[field] === '' || draft[field] == null ? '' : Number(draft[field])} disabled={running || saving}
+          style={{ ...inputSt, width: '100%', border: 0, borderRadius: 0, paddingRight: 4, background: 'transparent', textAlign: 'left' }}
+          onChange={e => {
+            const value = e.target.value.trim()
+            if (value === '') change(field, '')
+            else {
+              const parsed = Number.parseFloat(value)
+              if (Number.isFinite(parsed)) change(field, Math.min(100, Math.max(0, parsed)))
+            }
+          }} aria-label={label} />
+        <span style={{ padding: '0 8px 0 2px', color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>%</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', borderLeft: '1px solid var(--border)' }}>
+        <button type="button" disabled={running || saving} onClick={() => change(field, Math.min(100, (typeof draft[field] === 'number' ? Number(draft[field]) : 0) + step))} aria-label={`Increase ${label}`} style={{ border: 0, borderBottom: '1px solid var(--border)', background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: running || saving ? 'default' : 'pointer', padding: 0 }}>▲</button>
+        <button type="button" disabled={running || saving} onClick={() => change(field, Math.max(0, (typeof draft[field] === 'number' ? Number(draft[field]) : 0) - step))} aria-label={`Decrease ${label}`} style={{ border: 0, background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: running || saving ? 'default' : 'pointer', padding: 0 }}>▼</button>
+      </div>
     </div>
     </>, label)
 

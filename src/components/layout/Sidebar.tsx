@@ -1,9 +1,12 @@
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 import { NAV, APP_TITLE, APP_SUBTITLE, SCREEN_NAV_PARENT } from '../../config/navigationConfig'
 
 export default function Sidebar() {
   const { screen, navigate, currentUser } = useApp()
+  const { meta } = useAuth()
   const activeId = SCREEN_NAV_PARENT[screen] ?? screen
+  const roleLabel = currentUser.role || meta.label
 
   return (
     <aside className="sidebar">
@@ -23,8 +26,10 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="sidebar-footer">
+        {/* Real authenticated identity from /api/users/me; the role label falls back to the
+            capability role's label when the server role string is empty. */}
         <div className="sidebar-user">{currentUser.name}</div>
-        <div className="sidebar-role">{currentUser.role} · {currentUser.department}</div>
+        <div className="sidebar-role">{roleLabel} · PE Sub Finance</div>
       </div>
     </aside>
   )

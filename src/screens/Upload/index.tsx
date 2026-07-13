@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApp }        from '../../context/AppContext'
+import { useAuth }       from '../../context/AuthContext'
 import StepBar            from '../../components/ui/StepBar'
 import Card               from '../../components/ui/Card'
 import Button             from '../../components/ui/Button'
@@ -55,10 +56,22 @@ async function waitForExtraction(submissionId: number, timeoutMs = 120_000) {
 // ── Submission Detail Panel ───────────────────────────────────────────────────
 
 function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: SubmissionRow; onClose: () => void; navigate: (screen: string) => void; onAbort: (sub: SubmissionRow) => void }) {
-  const { setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility } = useApp()
+  const { setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility, currentUser } = useApp()
+  const { role } = useAuth()
   const labelStyle: React.CSSProperties = { fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }
   const valueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--text)' }
+  // Only the owner (uploader) or a Manager may abort; other analysts see no Abort button. Mirrors
+  // the server rule in SubmissionController.abort. Legacy rows without a recorded owner stay abortable.
+  const isOwner   = !sub.ownerUuName || currentUser.uuName === sub.ownerUuName
+  const isManager = role === 'MANAGER'
+  const submittedBy = sub.ownerName
+    ? `${sub.ownerName}${sub.ownerUuName ? ` (${sub.ownerUuName})` : ''}`
+    : sub.ownerUuName ?? '—'
+  // A submission that has been submitted for review is in the manager's court (Approve/Reject) —
+  // the analyst does not abort it mid-review. Once accepted (Processed) or aborted it is terminal.
   const canAbort = sub.status !== 'Processed' && sub.status !== 'Aborted' && sub.status !== 'Cancelled'
+    && sub.status !== 'Pending Review'
+    && (isOwner || isManager)
 
   const resumeSubmission = (screen: string) => {
     if (sub.id != null)         setActiveSubmissionId(sub.id)
@@ -90,6 +103,7 @@ function SubmissionDetailPanel({ sub, onClose, navigate, onAbort }: { sub: Submi
           <div><div style={labelStyle}>Agent Bank</div><div style={valueStyle}>{sub.agentBank}</div></div>
           <div><div style={labelStyle}>File</div><div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{sub.file}</div></div>
           <div><div style={labelStyle}>Status</div><div style={{ marginTop: 2 }}><Tag>{sub.status}</Tag></div></div>
+          <div><div style={labelStyle}>Submitted By</div><div style={valueStyle}>{submittedBy}</div></div>
         </div>
 
         <div>
@@ -236,6 +250,10 @@ const NEW_SENTINEL = '__new__'
 
 export default function Upload() {
   const { toast, navigate, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, abortedFacilities, abortSubmission } = useApp()
+  // Uploading an Agent BB is a write; the IT read-only (Viewer) role cannot. The server also
+  // rejects the multipart POST for Viewer — this just disables the control to match.
+  const { can } = useAuth()
+  const canUpload = can('upload')
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
   const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
@@ -466,8 +484,17 @@ export default function Upload() {
                   </div>
                 )}
               </div>
+              {!canUpload && (
+                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                  Read-only role — uploading is disabled. You can view submissions and download reports.
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <Button onClick={handleUpload} disabled={processing || !facility}>
+                <Button
+                  onClick={handleUpload}
+                  disabled={processing || !facility || !canUpload}
+                  title={!canUpload ? 'Your role cannot upload submissions.' : undefined}
+                >
                   {processing ? 'Processing…' : '↑ Upload and Process'}
                 </Button>
                 <Button variant="secondary" onClick={handleCancel} disabled={processing}>Cancel</Button>

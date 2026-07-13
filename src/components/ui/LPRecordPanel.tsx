@@ -11,6 +11,7 @@ import {
 } from '../../services/configService'
 import { useConfigCache } from '../../store/configStore'
 import type { LPRecord } from '../../services/lpService'
+import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
 
 const NOTES_MAX    = 250
 
@@ -74,12 +75,28 @@ export function buildLpRecordFromForm(
   form: Record<string, unknown>,
   classCfg: { UBS_CLS_DEFAULT_RATE?: Record<string, string>; BUSA_RATE_MAP?: Record<string, string>; CLS_TAG_MAP?: Record<string, string> },
   busaRates: Record<string, number>,
+  totalUncalledM?: number,
 ): LPRecord {
   const eff = applyLpSizeToRecord(LPRecord, form)
-  const c = computeLPRecord(eff, undefined, busaRates)
+  const ubsConcPct = parseRatePct(eff.ubsConc)
+  const dynamicConcLimitM = totalUncalledM != null && Number.isFinite(ubsConcPct)
+    ? totalUncalledM * ubsConcPct
+    : undefined
+  const c = computeLPRecord(
+    dynamicConcLimitM == null ? eff : { ...eff, concLimitM: dynamicConcLimitM } as LPRecord & { concLimitM: number },
+    undefined,
+    busaRates,
+  )
   const capCommitM = parseM(eff.capCommit)
   const calledCapM = capCommitM - parseM(eff.uc)
   const agentRateDec = parseRatePct(eff.agentRate)
+  const agentConcPct = parseRatePct(eff.agentConc)
+  const agentConcLimitM = totalUncalledM != null && Number.isFinite(agentConcPct) && agentConcPct > 0
+    ? totalUncalledM * agentConcPct
+    : undefined
+  const agentExcessM = eff.inc && eff.cls !== 'Excluded' && agentConcLimitM != null
+    ? Math.max(0, parseM(eff.uc) - agentConcLimitM)
+    : 0
   return {
     ...eff,
     fundSleeve: form.fundSleeve as string | undefined,
@@ -92,6 +109,7 @@ export function buildLpRecordFromForm(
     ubb: c.ubb,
     uec: c.uec,
     ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
+    agentExcessConc: agentExcessM > 0 ? fmtM(agentExcessM) : '—',
   } as LPRecord
 }
 
@@ -124,20 +142,25 @@ export interface LPRecordPanelProps {
   open: boolean
   onClose: () => void
   onSave: (LPRecord: LPRecord) => void
+  /** When provided (and the panel is editable), shows a Delete action with inline confirmation. */
+  onDelete?: (LPRecord: LPRecord) => void
   canEdit?: boolean
   running?: boolean
   totalAgentBB?: number
   totalUbsBB?: number
+  /** Facility-wide uncalled capital, used to turn edited concentration percentages into dollar caps. */
+  totalUncalledM?: number
   enableReclassify?: boolean
 }
 
 export default function LPRecordPanel({
-  LPRecord, open, onClose, onSave, canEdit = true, running = false,
-  totalAgentBB, totalUbsBB, enableReclassify = false,
+  LPRecord, open, onClose, onSave, onDelete, canEdit = true, running = false,
+  totalAgentBB, totalUbsBB, totalUncalledM, enableReclassify = false,
 }: LPRecordPanelProps) {
   const [subview,   setSubview]   = useState<null | 'reclassify'>(null)
   const [newCls,    setNewCls]    = useState('')
   const [rationale, setRationale] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [form,      setForm]      = useState<Record<string, unknown>>({})
   const configCache = useConfigCache()
   const classCfg = configCache.classification
@@ -149,6 +172,7 @@ export default function LPRecordPanel({
     if (!LPRecord) return
     const lpSizeCriteria = inferLpSizeCriteria(LPRecord)
     setSubview(null)
+    setConfirmDelete(false)
     setForm({
       name: LPRecord.name ?? '', parent: LPRecord.parent ?? '', spv: LPRecord.spv, agentCls: LPRecord.agentCls ?? '',
       agentClsSource: LPRecord.agentClsSource ?? '',
@@ -182,7 +206,7 @@ export default function LPRecordPanel({
   }
 
   const agentRateScheduleOpts = eligCfg.AGENT_TIERS.map(({ cls, rate }) => ({
-    value: cls, label: `${cls} (${rate}%)`, rate: `${rate}%`,
+    value: cls, label: `${cls} (${formatPercentageValue(rate)})`, rate: formatPercentageValue(rate),
   }))
   const agentRateForClass = (cls: string): string =>
     agentRateScheduleOpts.find(o => o.value === cls)?.rate ?? ''
@@ -201,7 +225,7 @@ export default function LPRecordPanel({
           next.ubsConc = '0.0%'
         } else {
           const clsConcDefault = clsConcLimitPctForCls(eligCfg, String(value))
-          if (clsConcDefault !== '') next.ubsConc = `${clsConcDefault}%`
+          if (clsConcDefault !== '') next.ubsConc = formatPercentageValue(clsConcDefault)
         }
       }
       if (k === 'agentCls') {
@@ -213,7 +237,7 @@ export default function LPRecordPanel({
     })
 
   const handleSave = () => {
-    onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates))
+    onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates, totalUncalledM))
     onClose()
   }
 
@@ -243,7 +267,7 @@ export default function LPRecordPanel({
   const setField = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }))
 
   const f = (label: string, _viewVal: unknown, editKey: string | null, cfg: Record<string, unknown> = {}) => {
-    const { wide, span2, opts, chk, ta, ro, formula, cols, money, accent, maxLength, inputMode, width, emptyLabel, typeahead } = cfg
+    const { wide, span2, opts, chk, ta, ro, formula, cols, money, percentage, percentageStep, accent, maxLength, inputMode, width, emptyLabel, typeahead } = cfg
     const editVal = 'editVal' in cfg ? cfg.editVal : (editKey ? (form[editKey] ?? '') : '')
     const colSt: React.CSSProperties = wide ? { gridColumn: '1 / -1' } : cols ? { gridColumn: `span ${Number(cols)}` } : span2 ? { gridColumn: 'span 2' } : { gridColumn: 'span 3' }
     const caption = formula
@@ -258,10 +282,19 @@ export default function LPRecordPanel({
     const controlSt: React.CSSProperties = { width: width ? Number(width) : '100%', ...roSt }
     const displayVal = cfg.moneyUnit === 'B'
       ? billionToMoney(editVal as string | number | undefined)
-      : money ? formatMoneyText(editVal) : String(editVal ?? '')
+      : money ? formatMoneyText(editVal) : percentage ? formatPercentageText(editVal, '') : String(editVal ?? '')
     const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
     const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
     const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || String(emptyLabel ?? 'Not Rated')) : o.label
+    const percentageNumber = String(editVal ?? '').trim() === ''
+      ? ''
+      : Number.parseFloat(String(editVal).replace(/,/g, '').replace('%', ''))
+    const pctStep = typeof percentageStep === 'number' ? percentageStep : 0.1
+    const stepPercentage = (direction: 1 | -1) => {
+      const current = Number.isFinite(percentageNumber) ? Number(percentageNumber) : 0
+      const next = Math.min(100, Math.max(0, current + direction * pctStep))
+      setField(editKey!, formatPercentageValue(next, ''))
+    }
     return (
       <div className="form-group" style={{ ...colSt, ...boxSt, marginBottom: 0 }} key={label || editKey || ''}>
         <label style={{ display: 'block' }}>{fieldLabel(label, !!ro)}</label>
@@ -277,6 +310,32 @@ export default function LPRecordPanel({
           ? <select style={controlSt} value={String(editVal)} onChange={disabled ? undefined : set(editKey!)} disabled={disabled}>
               {selectOptions.map(o => <option key={optionValue(o) || '__empty'} value={optionValue(o)}>{optionLabel(o)}</option>)}
             </select>
+          : percentage && !ro
+          ? <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 24px', alignItems: 'stretch', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden', background: disabled ? 'var(--tbl)' : 'var(--card)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  style={{ ...controlSt, border: 0, borderRadius: 0, paddingRight: 4, background: 'transparent', textAlign: 'left' }}
+                  value={Number.isFinite(percentageNumber) ? percentageNumber : ''}
+                  onChange={e => {
+                    const value = e.target.value.trim()
+                    if (value === '') setField(editKey!, '')
+                    else {
+                      const parsed = Number.parseFloat(value)
+                      if (Number.isFinite(parsed)) setField(editKey!, formatPercentageValue(Math.min(100, Math.max(0, parsed)), ''))
+                    }
+                  }}
+                  disabled={disabled}
+                  aria-label={label}
+                />
+                <span style={{ padding: '0 8px 0 2px', color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>%</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', borderLeft: '1px solid var(--border)' }}>
+                <button type="button" onClick={() => stepPercentage(1)} disabled={disabled} aria-label={`Increase ${label}`} style={{ border: 0, borderBottom: '1px solid var(--border)', background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: disabled ? 'default' : 'pointer', padding: 0 }}>▲</button>
+                <button type="button" onClick={() => stepPercentage(-1)} disabled={disabled} aria-label={`Decrease ${label}`} style={{ border: 0, background: 'var(--tbl)', color: 'var(--navy)', fontSize: 9, lineHeight: 1, cursor: disabled ? 'default' : 'pointer', padding: 0 }}>▼</button>
+              </div>
+            </div>
           : <input type="text" style={controlSt} value={displayVal} onChange={ro || disabled ? undefined : set(editKey!)} readOnly={!!ro} disabled={disabled} inputMode={typeof inputMode === 'string' ? inputMode as React.HTMLAttributes<HTMLInputElement>['inputMode'] : undefined} maxLength={typeof maxLength === 'number' ? maxLength : undefined} />
         }
         {caption}
@@ -290,7 +349,15 @@ export default function LPRecordPanel({
 
   const renderDetail = () => {
     const eff = applyLpSizeToRecord(LPRecord, form)
-    const c = computeLPRecord(eff, undefined, busaRates)
+    const ubsConcPctForCalc = parseRatePct(eff.ubsConc)
+    const dynamicConcLimitM = totalUncalledM != null && Number.isFinite(ubsConcPctForCalc)
+      ? totalUncalledM * ubsConcPctForCalc
+      : undefined
+    const c = computeLPRecord(
+      dynamicConcLimitM == null ? eff : { ...eff, concLimitM: dynamicConcLimitM } as LPRecord & { concLimitM: number },
+      undefined,
+      busaRates,
+    )
     const capCommitM = parseM(eff.capCommit)
     const ucM = parseM(eff.uc)
     const calledCapM = capCommitM - ucM
@@ -300,7 +367,14 @@ export default function LPRecordPanel({
     const agentBBStr     = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'
     const agentBBM       = Number.isFinite(agentRateDec) ? ucM * agentRateDec : 0
     const ubsExcessStr   = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
-    const agentExcessStr = eff.agentExcessConc || '—'
+    const agentConcPctForCalc = parseRatePct(eff.agentConc)
+    const agentConcLimitM = totalUncalledM != null && Number.isFinite(agentConcPctForCalc) && agentConcPctForCalc > 0
+      ? totalUncalledM * agentConcPctForCalc
+      : undefined
+    const agentExcessM = eff.inc && eff.cls !== 'Excluded' && agentConcLimitM != null
+      ? Math.max(0, ucM - agentConcLimitM)
+      : 0
+    const agentExcessStr = agentConcLimitM != null ? (agentExcessM > 0 ? fmtM(agentExcessM) : '—') : (eff.agentExcessConc || '—')
     const agentClsValue  = String(form.agentCls ?? '')
     const agentClsOptions = agentClsValue && !agentRateScheduleOpts.some(o => o.value === agentClsValue)
       ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...agentRateScheduleOpts]
@@ -359,10 +433,10 @@ export default function LPRecordPanel({
         {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
         {sec('Borrowing Base Calculation')}
-        {f('Agent Advance Rate', LPRecord.agentRate, 'agentRate')}
-        {f('UBS Advance Rate', LPRecord.rate, 'rate')}
-        {f('Agent Concentration Limit', LPRecord.agentConc, 'agentConc')}
-        {f('UBS Concentration Limit', LPRecord.ubsConc, 'ubsConc')}
+        {f('Agent Advance Rate', LPRecord.agentRate, 'agentRate', { percentage: true, percentageStep: 5 })}
+        {f('UBS Advance Rate', LPRecord.rate, 'rate', { percentage: true, percentageStep: 5 })}
+        {f('Agent Concentration Limit', LPRecord.agentConc, 'agentConc', { percentage: true, percentageStep: 0.5 })}
+        {f('UBS Concentration Limit', LPRecord.ubsConc, 'ubsConc', { percentage: true, percentageStep: 0.5 })}
         {concOutOfRange && concBounds && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#7a5c00', background: '#fff8e6', border: '1px solid #f0d98a', borderRadius: 4, padding: '6px 10px', marginTop: -2 }}>
             <strong>⚠ Outside norm:</strong> {ubsConcPct}% is outside the accepted {concBounds.min}–{concBounds.max}% range for {String(form.cls)}. Verify before saving.
@@ -461,10 +535,21 @@ export default function LPRecordPanel({
               <Button disabled={newCls === LPRecord.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
             </div>
           </>
+        ) : confirmDelete ? (
+          <>
+            <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>
+              Delete "{LPRecord.name}" from this facility's LP records? Ranks will be recomputed. This cannot be undone.
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              <Button variant="danger" onClick={() => onDelete?.(LPRecord)}>Confirm Delete</Button>
+            </div>
+          </>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8 }}>
               {enableReclassify && editable && <Button variant="secondary" onClick={() => { setNewCls(LPRecord.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
+              {onDelete && editable && <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={onClose}>Cancel</Button>

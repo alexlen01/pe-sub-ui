@@ -1,7 +1,10 @@
-// Application-wide navigation, branding, and user identity.
-// Replace CURRENT_USER with an auth context or API call when auth is added.
+// Application-wide navigation, branding, and local dev user identity.
 
 export interface User {
+  uuName:        string
+  firstName:     string
+  lastName:      string
+  email:         string
   name:          string
   initials:      string
   role:          string
@@ -12,10 +15,24 @@ export interface User {
 export const APP_TITLE    = 'PE Sub Platform'
 export const APP_SUBTITLE = 'Borrowing Base & Collateral Analysis'
 
+function user(uuName: string, firstName: string, lastName: string, email: string, role: string, notifications: number): User {
+  return {
+    uuName,
+    firstName,
+    lastName,
+    email,
+    name: `${firstName} ${lastName}`.trim(),
+    initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
+    role,
+    department: 'PE Sub Finance',
+    notifications,
+  }
+}
+
 export const USERS: User[] = [
-  { name: 'J. Smith',  initials: 'JS', role: 'Analyst',                    department: 'PE Sub Finance', notifications: 3 },
-  { name: 'M. Chen',   initials: 'MC', role: 'Analyst',                    department: 'PE Sub Finance', notifications: 1 },
-  { name: 'L. Torres', initials: 'LT', role: 'Account/Transaction Manager', department: 'PE Sub Finance', notifications: 5 },
+  user('js25029', 'J.', 'Smith',  'john.smith@ubs.com',  'Analyst', 3),
+  user('mc48102', 'M.', 'Chen',   'mary.chen@ubs.com',   'Analyst', 1),
+  user('lt09341', 'L.', 'Torres', 'lisa.torres@ubs.com', 'Account/Transaction Manager', 5),
 ]
 
 export const DEFAULT_USER: User = USERS[0]

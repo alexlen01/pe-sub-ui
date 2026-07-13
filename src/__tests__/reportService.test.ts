@@ -164,7 +164,7 @@ describe('buildCertRows', () => {
       },
     })
     expect(rows[4].ubs).toBe('$0')
-    expect(rows[5].ubs).toBe('0.0%')
+    expect(rows[5].ubs).toBe('0%')
   })
 })
 
@@ -228,8 +228,8 @@ describe('concentration test mapping', () => {
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].test).toBe('single-lp limit')
-    expect(rows[0].value).toBe('68.0%')
-    expect(rows[0].limit).toBe('15.0%')
+    expect(rows[0].value).toBe('68%')
+    expect(rows[0].limit).toBe('15%')
   })
 
   it('returns no rows when no tests are selected', () => {

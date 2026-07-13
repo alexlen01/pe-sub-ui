@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useApp, SCREENS } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 
 const ROLE_COLOR: Record<string, string> = {
-  'Analyst':                    'var(--navy)',
+  'Analyst':                     'var(--navy)',
   'Account/Transaction Manager': 'var(--amber)',
+  'Admin':                       'var(--blue)',
 }
 
 // The prototype is a separate application (pe-sub-platform) served on its own port. Selecting
@@ -35,7 +37,8 @@ function useApiReachable(): Reachability {
 }
 
 export default function TopBar() {
-  const { screen, currentUser } = useApp()
+  const { screen, currentUser, setCurrentUser, users } = useApp()
+  const { canSwitchRole } = useAuth()
   const info     = SCREENS[screen] ?? { title: screen, sub: '' }
   const apiState = useApiReachable()
 
@@ -67,18 +70,37 @@ export default function TopBar() {
               ● Live
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{currentUser.name}</div>
-              <div style={{ fontSize: 10, color: ROLE_COLOR[currentUser.role] ?? 'var(--muted)', fontWeight: 600 }}>{currentUser.role}</div>
+          {canSwitchRole && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{currentUser.name}</div>
+                <div style={{ fontSize: 10, color: ROLE_COLOR[currentUser.role] ?? 'var(--muted)', fontWeight: 600 }}>{currentUser.role}</div>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={currentUser.name}
+                  onChange={e => setCurrentUser(users.find(user => user.name === e.target.value))}
+                  style={{
+                    position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%',
+                  }}
+                >
+                  {users.map(user => (
+                    <option key={user.name} value={user.name}>{user.initials} · {user.name} ({user.role})</option>
+                  ))}
+                </select>
+                <div
+                  className="avatar"
+                  title={`Switch user — ${currentUser.role}`}
+                  style={{ background: ROLE_COLOR[currentUser.role] ?? 'var(--navy)', cursor: 'pointer', userSelect: 'none' }}
+                >
+                  {currentUser.initials}
+                </div>
+              </div>
+              {currentUser.notifications > 0 && (
+                <div className="status-dot" title={`${currentUser.notifications} pending notifications`} />
+              )}
             </div>
-            <div className="avatar" style={{ background: ROLE_COLOR[currentUser.role] ?? 'var(--navy)' }}>
-              {currentUser.initials}
-            </div>
-            {currentUser.notifications > 0 && (
-              <div className="status-dot" title={`${currentUser.notifications} pending notifications`} />
-            )}
-          </div>
+          )}
         </div>
       </div>
     </header>

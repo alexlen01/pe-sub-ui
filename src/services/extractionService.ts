@@ -1,4 +1,5 @@
 import { api, type DocRecognition } from './api'
+import { formatPercentageFraction, formatPercentageText } from '../utils/percentage'
 
 function parseMoney(s: string): number {
   const cleaned = (s || '').replace(/[$,]/g, '')
@@ -13,7 +14,7 @@ function formatMoney(n: number): string {
 }
 
 function formatPct(n: number): string {
-  return (n * 100).toFixed(2) + '%'
+  return formatPercentageFraction(n)
 }
 
 function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -41,8 +42,8 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
     // Only compute % Called when we actually have both commit and uncalled values.
     // parseMoney('') returns 0, which would make (c-0)/c = 100% — a misleading result.
     const pctCalledFmt = r.pctCalledFmt !== undefined
-      ? r.pctCalledFmt
-      : (c && uncalledStr.trim() ? Math.max(0, (c - u) / c * 100).toFixed(1) + '%' : '')
+      ? formatPercentageText(r.pctCalledFmt, '')
+      : (c && uncalledStr.trim() ? formatPercentageFraction(Math.max(0, (c - u) / c), '') : '')
     const bb = (r.agentBBRaw as number) || 0
     const eligible = (r.eligibleCommitmentRaw as number) || 0
     const excess = Math.max(0, u - eligible)
@@ -58,13 +59,13 @@ function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown
     return {
       ...r,
       pctCalledFmt,
-      pctUnfundedFmt: r.pctUnfundedFmt ?? (totalUncalled && u ? formatPct(u / totalUncalled) : ''),
-      pctEligibleUnfundedFmt: r.pctEligibleUnfundedFmt ?? (totalEligible && eligible ? formatPct(eligible / totalEligible) : ''),
+      pctUnfundedFmt: r.pctUnfundedFmt != null ? formatPercentageText(r.pctUnfundedFmt, '') : (totalUncalled && u ? formatPct(u / totalUncalled) : ''),
+      pctEligibleUnfundedFmt: r.pctEligibleUnfundedFmt != null ? formatPercentageText(r.pctEligibleUnfundedFmt, '') : (totalEligible && eligible ? formatPct(eligible / totalEligible) : ''),
       excessConcFmt: r.excessConcFmt ?? (u ? formatMoney(excess) : ''),
       eligibleCommitmentFmt: r.eligibleCommitmentFmt ?? (eligible ? formatMoney(eligible) : ''),
       agentBBFmt: r.agentBBFmt ?? (bb ? formatMoney(bb) : ''),
       // Only the BB-mapped-without-BB% case changes; every other row keeps its prior value.
-      pctBBFmt:   pctBBCalculated ? computedPctBB : (r.pctBBFmt ?? computedPctBB),
+      pctBBFmt:   pctBBCalculated ? computedPctBB : (r.pctBBFmt != null ? formatPercentageText(r.pctBBFmt, '') : computedPctBB),
       pctBBCalculated,
     }
   })

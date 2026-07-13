@@ -58,6 +58,21 @@ describe('getClassificationConfig', () => {
   })
 })
 
+describe('current user', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('loads employee attributes from the API', async () => {
+    stubFetch({ '/api/users/me': {
+      uuName: 'js25029', firstName: 'John', lastName: 'Smith',
+      email: 'john.smith@ubs.com', role: 'Analyst',
+    } })
+    await expect(api.users.me()).resolves.toEqual({
+      uuName: 'js25029', firstName: 'John', lastName: 'Smith',
+      email: 'john.smith@ubs.com', role: 'Analyst',
+    })
+  })
+})
+
 describe('getFacilities — live', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -285,6 +300,49 @@ describe('api.facilities.remove', () => {
       Promise.resolve(new Response(JSON.stringify({ detail: 'Cannot delete a facility that has LP records (3). Remove its LP records first.' }), { status: 409 }))
     ))
     await expect(api.facilities.remove(9)).rejects.toThrow('Cannot delete a facility that has LP records')
+  })
+})
+
+// ── api.lpRecords.remove / api.lpMaster.remove (manual row-correction deletes) ──
+
+describe('api.lpRecords.remove', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('issues a DELETE to the LP record resource', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }))
+
+    await api.lpRecords.remove(41)
+
+    expect(calls[0].url).toContain('/api/lpRecords/41')
+    expect(calls[0].init?.method).toBe('DELETE')
+  })
+
+  it('rejects with the API ProblemDetail message when the record is missing (404)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ detail: 'LP record 41 not found' }), { status: 404 }))
+    ))
+    await expect(api.lpRecords.remove(41)).rejects.toThrow('LP record 41 not found')
+  })
+})
+
+describe('api.lpMaster.remove', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('issues a DELETE to the bank-wide LP Master resource', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }))
+
+    await api.lpMaster.remove(7)
+
+    expect(calls[0].url).toContain('/api/lp-master/7')
+    expect(calls[0].init?.method).toBe('DELETE')
   })
 })
 
@@ -569,8 +627,8 @@ describe('getExtractedLPs — Agent BB % derivation', () => {
     })
     const rows = await getExtractedLPs(1)
     // Each LP's share = its Borrowing Base ÷ total Borrowing Base ($100M)
-    expect(rows[0].pctBBFmt).toBe('60.00%')
-    expect(rows[1].pctBBFmt).toBe('40.00%')
+    expect(rows[0].pctBBFmt).toBe('60%')
+    expect(rows[1].pctBBFmt).toBe('40%')
     expect(rows[0].pctBBCalculated).toBe(true)
     expect(rows[1].pctBBCalculated).toBe(true)
   })
@@ -583,7 +641,7 @@ describe('getExtractedLPs — Agent BB % derivation', () => {
     })
     const rows = await getExtractedLPs(1)
     // Provided value passes through — not recomputed to the 100% single-row share
-    expect(rows[0].pctBBFmt).toBe('55.00%')
+    expect(rows[0].pctBBFmt).toBe('55%')
     expect(rows[0].pctBBCalculated).toBe(false)
   })
 

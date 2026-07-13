@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows, type SortSpec } from '../../hooks/useTableSort'
 import Button from '../../components/ui/Button'
@@ -6,6 +6,7 @@ import Card from '../../components/ui/Card'
 import DraggablePanel from '../../components/ui/DraggablePanel'
 import { formatRegion } from '../../config/regionReference'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 import { computePortfolioBB, fmtM, fmtPct, getFacilityBBSnapshot, getFacilitySummaryExt, parseM } from '../../services/bbCalculationService'
 import { getLPsForFacility } from '../../services/lpService'
 import { getFacilities } from '../../services/facilityService'
@@ -14,7 +15,7 @@ import InfoTip from '../../components/ui/InfoTip'
 import type { LPRecord } from '../../services/lpService'
 import type { ComputedLPRecord, BBSummaryExt } from '../../services/bbCalculationService'
 import { api } from '../../services/api'
-import type { LpClassificationRequest } from '../../services/api'
+import type { LpClassificationRequest, Submission } from '../../services/api'
 import { BREACH_TYPE_LABEL } from '../../services/reportService'
 import type { BBBreach } from '../../types/bb'
 import { buildBusaRateFractions, busaClassificationOptions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
@@ -26,6 +27,7 @@ import {
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
 import Tag from '../../components/ui/Tag'
+import { formatPercentageFraction, formatPercentageText, formatPercentageValue } from '../../utils/percentage'
 
 // Maps the snapshot's persisted breaches (server verdict against the Concentration Limits
 // config) to the rows of the breach table shown above the LP table.
@@ -152,8 +154,7 @@ function rateOrderValue(rate: string): number {
 }
 
 function normalizeRateLabel(raw: string | undefined | null): string {
-  const n = parseFloat(String(raw ?? '').replace('%', '').trim())
-  return Number.isFinite(n) ? `${Math.round(n)}%` : String(raw ?? '').trim()
+  return formatPercentageText(raw, '')
 }
 
 function normalizeAgentSummaryRate(raw: string | undefined | null): string {
@@ -240,7 +241,7 @@ function SummaryBreakTable({ title, rows, full, labelHeader = 'Rate' }: { title:
             <td style={{ ...CELL, color: 'var(--muted)' }}>{r.rate ?? r.label}</td>
             <td style={{ ...CELL, textAlign: 'right', color: 'var(--muted)' }}>{r.count.toLocaleString()}</td>
             <td style={{ ...CELL, textAlign: 'right' }}>{fmtMoneyM(r.dollars, full)}</td>
-            <td style={{ ...CELL, textAlign: 'right', color: 'var(--muted)' }}>{r.pct === 0 ? '0%' : `${(r.pct * 100).toFixed(0)}%`}</td>
+            <td style={{ ...CELL, textAlign: 'right', color: 'var(--muted)' }}>{formatPercentageFraction(r.pct)}</td>
           </tr>
         ))}
         <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
@@ -260,7 +261,7 @@ async function exportShadowBB(facility: string, ext: BBSummaryExt, rows: Compute
     import('file-saver'),
   ])
 
-  const pctStr = (n: number) => `${(n * 100).toFixed(0)}%`
+  const pctStr = (n: number) => formatPercentageFraction(n)
   type Cell = string | number
   const summaryAoa: Cell[][] = [
     ['LP Portfolio', ''],
@@ -273,7 +274,7 @@ async function exportShadowBB(facility: string, ext: BBSummaryExt, rows: Compute
     ['% HNW', pctStr(ext.pctHNW)],
     ['% Top 10', pctStr(ext.pctTop10)],
     ['% Top 20', pctStr(ext.pctTop20)],
-    ['Investment Grade', `${(ext.igRatio * 100).toFixed(1)}%`],
+    ['Investment Grade', formatPercentageFraction(ext.igRatio)],
     ['% Uncalled from LPs > $25bn AUM', ext.pctUncalledGt25bnAum ? pctStr(ext.pctUncalledGt25bnAum) : '—'],
     [],
     ['Borrowing Base', ''],
@@ -491,10 +492,10 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
     pension: ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil || undefined : undefined,
     capCommit: ov.capCommit || undefined,
     uc: ov.ucM || undefined,
-    rate: typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : undefined,
-    agentRate: typeof ov.agentRatePct === 'number' ? `${ov.agentRatePct}%` : undefined,
-    ubsConc: typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : undefined,
-    agentConc: typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : undefined,
+    rate: typeof ov.ubsAdvRatePct === 'number' ? formatPercentageValue(ov.ubsAdvRatePct) : undefined,
+    agentRate: typeof ov.agentRatePct === 'number' ? formatPercentageValue(ov.agentRatePct) : undefined,
+    ubsConc: typeof ov.concLimitPct === 'number' ? formatPercentageValue(ov.concLimitPct) : undefined,
+    agentConc: typeof ov.agentConcLimitPct === 'number' ? formatPercentageValue(ov.agentConcLimitPct) : undefined,
     concLimitM,
     inc: ov.inc,
     notes: ov.notes ?? '',
@@ -504,7 +505,8 @@ function overrideToLPRecord(ov: Override, totalUncalledM: number): Partial<LPRec
 type BBResult = ReturnType<typeof computePortfolioBB>
 
 export default function ShadowBB() {
-  const { bbParams, toast, targetFacility, setTargetFacility } = useApp()
+  const { bbParams, toast, targetFacility, setTargetFacility, currentUser } = useApp()
+  const { can } = useAuth()
   const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string }[]>([])
   const [facilityRows,    setFacilityRows]    = useState<FacilityRow[]>([])
   const [facility,        setFacility]        = useState('')
@@ -517,6 +519,11 @@ export default function ShadowBB() {
   const [loadError,       setLoadError]       = useState<string | null>(null)
   const [classCfg,        setClassCfg]        = useState<ClassificationConfig | null>(null)
   const [rerunning,       setRerunning]       = useState(false)
+
+  // Independent-review state: the most recent submission for the selected facility. When it is
+  // 'Pending Review', a Manager sees Approve/Reject; everyone else sees a read-only status.
+  const [reviewSub,  setReviewSub]  = useState<Submission | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
 
   // Raw LP records + snapshot kept in state so local overrides can trigger recomputation.
   const [rawLPs,       setRawLPs]       = useState<LPRecord[]>([])
@@ -692,10 +699,10 @@ export default function ShadowBB() {
     nav:         ov.lpSizeCriteria === 'NAV' ? (ov.lpSizeBil || '') : (LPRecord.nav ?? ''),
     pension:     LPRecord.pension ?? '', pensionFunded: LPRecord.pensionFunded ?? '',
     capCommit:   ov.capCommit ?? '', uc: ov.ucM != null ? String(ov.ucM) : (LPRecord.uc ?? ''),
-    rate:        typeof ov.ubsAdvRatePct === 'number' ? `${ov.ubsAdvRatePct}%` : (LPRecord.rate ?? ''),
-    agentRate:   typeof ov.agentRatePct  === 'number' ? `${ov.agentRatePct}%`  : (LPRecord.agentRate ?? ''),
-    agentConc:   typeof ov.agentConcLimitPct === 'number' ? `${ov.agentConcLimitPct}%` : (LPRecord.agentConc ?? ''),
-    ubsConc:     typeof ov.concLimitPct === 'number' ? `${ov.concLimitPct}%` : (LPRecord.ubsConc ?? ''),
+    rate:        typeof ov.ubsAdvRatePct === 'number' ? formatPercentageValue(ov.ubsAdvRatePct) : formatPercentageText(LPRecord.rate, ''),
+    agentRate:   typeof ov.agentRatePct  === 'number' ? formatPercentageValue(ov.agentRatePct)  : formatPercentageText(LPRecord.agentRate, ''),
+    agentConc:   typeof ov.agentConcLimitPct === 'number' ? formatPercentageValue(ov.agentConcLimitPct) : formatPercentageText(LPRecord.agentConc, ''),
+    ubsConc:     typeof ov.concLimitPct === 'number' ? formatPercentageValue(ov.concLimitPct) : formatPercentageText(LPRecord.ubsConc, ''),
     inc: ov.inc, notes: ov.notes ?? '', rcl: LPRecord.rcl ?? false, tf: LPRecord.tf ?? false, hq: LPRecord.hq ?? false,
     abb: LPRecord.abb ?? '', ubb: LPRecord.ubb ?? '', delta: LPRecord.delta ?? '', uec: LPRecord.uec ?? '',
     pctCapCommit: LPRecord.pctCapCommit ?? '', calledCap: LPRecord.calledCap ?? '',
@@ -866,7 +873,7 @@ export default function ShadowBB() {
     ]
   }, [overrides, rankByKey, totalCommitM, totalUncalledM, totalAgentBBCalc, totalUbsBBCalc, ubsClsSortOrder])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'rank', direction: 'asc' })
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('shadow-bb', SHADOW_RESULTS_INITIAL_WIDTHS)
 
   useEffect(() => {
@@ -962,7 +969,50 @@ export default function ShadowBB() {
     }
   }, [classCfg, facility, facilityRows, result, summaryExtApi, summary])
 
-  const p = (n: number) => `${(n * 100).toFixed(0)}%`
+  const p = (n: number) => formatPercentageFraction(n)
+
+  // Load the latest submission for the facility so the review bar knows whether one is pending.
+  const loadReviewSub = useCallback(() => {
+    if (facilityId == null) { setReviewSub(null); return }
+    api.submissions.list({ facilityId })
+      .then(list => setReviewSub(list.find(s => s.status !== 'Aborted') ?? null))
+      .catch(() => setReviewSub(null))
+  }, [facilityId])
+  useEffect(() => { loadReviewSub() }, [loadReviewSub])
+
+  const pendingReview = reviewSub?.status === 'Pending Review'
+  // Maker ≠ checker: a manager who submitted this run may not accept it (the server also enforces).
+  const isMaker = pendingReview && reviewSub?.submittedBy === currentUser.uuName
+
+  const acceptReview = async () => {
+    if (!reviewSub) return
+    setReviewBusy(true)
+    try {
+      await api.submissions.accept(reviewSub.id)
+      toast('Shadow BB accepted — facility activated.', 3200, 'success')
+      loadReviewSub()
+    } catch (e) {
+      toast(String(e))
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  const rejectReview = async () => {
+    if (!reviewSub) return
+    const reason = window.prompt('Reason for rejection (required):')?.trim()
+    if (!reason) return
+    setReviewBusy(true)
+    try {
+      await api.submissions.reject(reviewSub.id, reason)
+      toast('Shadow BB rejected and returned to the analyst.')
+      loadReviewSub()
+    } catch (e) {
+      toast(String(e))
+    } finally {
+      setReviewBusy(false)
+    }
+  }
 
   return (
     <div>
@@ -981,6 +1031,38 @@ export default function ShadowBB() {
         </select>
         {calcMeta && <span style={{ fontSize: 11, color: 'var(--muted)' }}>Last run: {calcMeta.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {calcMeta.facility}</span>}
       </div>
+
+      {/* Independent-review bar. Appears only when a submission is pending review. A Manager gets
+          Approve / Reject; every other role sees a read-only "awaiting review" status. */}
+      {pendingReview && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          margin: '12px 24px 0', padding: '10px 16px', borderRadius: 8,
+          background: '#fff8e6', border: '1px solid var(--amber)',
+        }}>
+          <Tag variant="pending" style={{ fontSize: 11 }}>Pending independent review</Tag>
+          <span style={{ fontSize: 12, color: 'var(--text)' }}>
+            Submitted for review by <strong>{reviewSub?.submittedBy ?? 'an analyst'}</strong>.
+          </span>
+          <div style={{ flex: 1 }} />
+          {can('reviewShadowBB') ? (
+            <>
+              <Button
+                variant="secondary"
+                disabled={reviewBusy}
+                onClick={rejectReview}
+              >Reject…</Button>
+              <Button
+                disabled={reviewBusy || isMaker}
+                title={isMaker ? 'You submitted this run; a different manager must review it.' : undefined}
+                onClick={acceptReview}
+              >{reviewBusy ? 'Working…' : 'Approve'}</Button>
+            </>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Awaiting Account/Transaction Manager approval.</span>
+          )}
+        </div>
+      )}
 
       <div style={{ padding: '16px 24px 0' }}>
         <Card title="Portfolio & BB Summary"
@@ -1003,7 +1085,7 @@ export default function ShadowBB() {
                   { k: '% HNW',                      v: p(summaryExt.pctHNW) },
                   { k: '% Top 10',                   v: p(summaryExt.pctTop10) },
                   { k: '% Top 20',                   v: p(summaryExt.pctTop20) },
-                  { k: 'Investment Grade',            v: `${(summaryExt.igRatio * 100).toFixed(1)}%` },
+                  { k: 'Investment Grade',            v: formatPercentageFraction(summaryExt.igRatio) },
                   { k: '% Uncalled from LPs > $25bn AUM', v: summaryExt.pctUncalledGt25bnAum ? p(summaryExt.pctUncalledGt25bnAum) : '—' },
                 ]} />
               </div>
@@ -1166,7 +1248,7 @@ export default function ShadowBB() {
                 <div className="tbl-footer">
                   <span>Showing {from}–{to} of {filtered.length} LPs &nbsp;·&nbsp; {compact ? fmtM(summary.totalUBB) : fmtMoneyM(summary.totalUBB, true)} UBS BB &nbsp;·&nbsp; {compact ? fmtM(summary.bbDelta) : fmtMoneyM(summary.bbDelta, true)} delta</span>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+                    {total > 15 && <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>}
                     {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
                   </div>
                 </div>
@@ -1181,6 +1263,7 @@ export default function ShadowBB() {
                       onSave={saved => saveDraft(sbLpToOv(saved, overrides[selectedKey]))}
                       totalAgentBB={totalAgentBBCalc}
                       totalUbsBB={totalUbsBBCalc}
+                      totalUncalledM={totalUncalledM}
                     />
                   </DraggablePanel>
                 )}

@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react'
 import { AppProvider, useApp } from './context/AppContext'
+import { AuthProvider } from './context/AuthContext'
 import Sidebar from './components/layout/Sidebar'
 import TopBar  from './components/layout/TopBar'
 import Toast   from './components/ui/Toast'
@@ -46,17 +47,19 @@ function ScreenRouter() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <div className="shell">
-        <Sidebar />
-        <div className="main">
-          <TopBar />
-          <div className="content">
-            <ScreenRouter />
+    <AuthProvider>
+      <AppProvider>
+        <div className="shell">
+          <Sidebar />
+          <div className="main">
+            <TopBar />
+            <div className="content">
+              <ScreenRouter />
+            </div>
           </div>
         </div>
-      </div>
-      <Toast />
-    </AppProvider>
+        <Toast />
+      </AppProvider>
+    </AuthProvider>
   )
 }

@@ -10,9 +10,11 @@ import InfoTip        from '../../components/ui/InfoTip'
 import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
 import { getLPsForFacility } from '../../services/lpService'
 import { api } from '../../services/api'
+import { formatPercentageFraction } from '../../utils/percentage'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
+import { lpCategoryColor } from '../../utils/lpCategoryPalette'
 import { useConfigCache } from '../../store/configStore'
 
 const FACILITY_STATUS_ITEMS = [
@@ -68,27 +70,6 @@ const FACILITY_COLS = [
   { key: 'collateralDate',     label: 'Collateral Date',      align: 'right', style: { width: 'var(--dash-collateral-col)' } },
   { key: 'status',             label: 'Facility Status',                      style: { width: 'var(--dash-status-col)' }, render: (r: FacilityRow) => <Tag>{r.status}</Tag> },
 ]
-
-// Prototype LP category palette (exact):
-// Rated -> dark gray, FoF/Unrated >2bn -> red, Unrated 1-2bn -> medium gray,
-// Eligible/Other Institutional -> green, Excluded -> light gray.
-const LP_CATEGORY_COLOR_BY_CLASS: Record<string, string> = {
-  'rated': '#4F4F4F',
-  'rated investor': '#4F4F4F',
-  'unrated >2bn': '#E60000',
-  'fof & other > $10bn aum': '#E60000',
-  'unrated 1–2bn': '#767676',
-  'unrated 1-2bn': '#767676',
-  'unrated nav > $1bn': '#767676',
-  'eligible': '#007A38',
-  'other institutional': '#007A38',
-  'excluded': '#C8C8C8',
-}
-
-function lpCategoryColor(label: string): string {
-  const base = label.split('(')[0].trim().toLowerCase()
-  return LP_CATEGORY_COLOR_BY_CLASS[base] ?? '#767676'
-}
 
 export default function Dashboard() {
   const { navigate, currentUser, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId, setTargetFacility, screen } = useApp()
@@ -163,7 +144,7 @@ export default function Dashboard() {
         return {
           label: rate ? `${cls} (${rate})` : cls,
           n,
-          pct: `${((n / total) * 100).toFixed(1)}%`,
+          pct: formatPercentageFraction(n / total),
           color: lpCategoryColor(cls),
         }
       })
@@ -280,7 +261,7 @@ export default function Dashboard() {
           >
             {(() => {
               const f = selectedFacility
-              const isOwner = f?.submittedBy === currentUser.name
+              const isOwner = f?.submittedBy === currentUser.uuName
               const isPrivileged = currentUser.role === 'Account/Transaction Manager'
               const canAct = isOwner || isPrivileged
 
@@ -293,6 +274,13 @@ export default function Dashboard() {
 
               const cta = f?.status === 'Active' ? (
                 <Button size="sm" variant="action" onClick={() => { setTargetFacility(f.name); navigate('shadow-bb') }}>View Shadow BB ›</Button>
+              ) : f?.status === 'Pending Review' ? (
+                // Same state, role-aware action: the Manager reviews; everyone else waits.
+                isPrivileged ? (
+                  <Button size="sm" variant="action" onClick={() => { setTargetFacility(f.name); navigate('shadow-bb') }}>Review Shadow BB ›</Button>
+                ) : (
+                  <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>Awaiting approval</span>
+                )
               ) : f?.status === 'Needs Review' ? (
                 <Button size="sm" variant="action" onClick={() => {
                   setActiveSubmission(f.name)

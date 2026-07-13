@@ -3,6 +3,7 @@ export type { BBSummaryExt }
 import { regionOf } from '../config/regionReference'
 import type { LPRecord } from './lpService'
 import type { BBBreach } from '../types/bb'
+import { formatPercentageFraction } from '../utils/percentage'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ export function fmtM(n: number): string {
   return `${n < 0 ? '–' : ''}$${abs.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
 }
 
-export function fmtPct(n: number): string { return `${(n * 100).toFixed(1)}%` }
+export function fmtPct(n: number): string { return formatPercentageFraction(n) }
 
 // Advance rate (as a fraction) for an LPRecord. An explicit per-LP rate — e.g. the UBS Advance Rate
 // assigned on the Run Shadow BB screen, "90%" — takes precedence; otherwise fall back to the
@@ -95,7 +96,7 @@ export function computeLPRecord(
     uec:   excluded ? '$0' : fmtM(uecM),
     ubb:   fmtM(ubbM),
     delta: fmtM(deltaM),
-    rate:  `${(busaRate * 100).toFixed(0)}%`,
+    rate:  formatPercentageFraction(busaRate),
     abb:   LPRecord.abb ?? '$0',
   }
 }

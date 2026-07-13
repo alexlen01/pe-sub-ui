@@ -18,6 +18,7 @@ export function usePagination<T>(items: T[], initialPageSize = PAGE_SIZE) {
     page: p,
     setPage,
     totalPages,
+    total: items.length,
     pageItems: items.slice(start, start + pageSize),
     from: items.length === 0 ? 0 : start + 1,
     to:   Math.min(start + pageSize, items.length),

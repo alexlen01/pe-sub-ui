@@ -9,9 +9,12 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import DraggablePanel from '../../components/ui/DraggablePanel'
+import OwnershipBanner, { useCanEditSubmission } from '../../components/ui/OwnershipBanner'
 import { getExtractedLPs, getExtractionFieldMap, getDocRecognition, getUnrecognizedColumns, getAllCanonicalFields, type DocRecognitionRow, type UnrecognizedColumn } from '../../services/extractionService'
+import { formatPercentageText } from '../../utils/percentage'
 import { initTemplateService, getTemplateProfiles, getTemplateProfile, detectTemplate, findDetectedTemplate, buildDocRecognition, type MappedColumn, type TemplateProfile } from '../../services/templateService'
 import { api } from '../../services/api'
+import type { Submission } from '../../services/api'
 import { getWizardConfig } from '../../services/configService'
 
 type FieldMapRow = Awaited<ReturnType<typeof getExtractionFieldMap>>[0]
@@ -253,7 +256,7 @@ const CHIP: Record<string, React.CSSProperties> = {
 const HDR: React.CSSProperties = { whiteSpace: 'nowrap', verticalAlign: 'middle', overflow: 'hidden', textOverflow: 'ellipsis' }
 
 function LPDetailPanel({
-  row, onClose, onDiscard, fieldMap, overlay = false, compact = false,
+  row, onClose, onDiscard, fieldMap, overlay = false, compact = false, canEdit = true,
 }: {
   row: ExtractedRow
   onClose: () => void
@@ -261,6 +264,7 @@ function LPDetailPanel({
   fieldMap: FieldMapRow[]
   overlay?: boolean
   compact?: boolean
+  canEdit?: boolean
 }) {
   const lpFields = detailFieldsFromMapping(fieldMap)
   const detailFields = lpFields.length ? lpFields : FALLBACK_DETAIL_FIELDS
@@ -313,7 +317,7 @@ function LPDetailPanel({
         </div>
       </div>
       <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="danger" size="sm" onClick={() => onDiscard(row.id)}>⊘ Discard Row</Button>
+        <Button variant="danger" size="sm" onClick={() => onDiscard(row.id)} disabled={!canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>⊘ Discard Row</Button>
       </div>
     </div>
   )
@@ -458,6 +462,9 @@ function hasGridValue(row: ExtractedRow, col: ExtractedGridColumn): boolean {
 function gridValue(row: ExtractedRow, col: ExtractedGridColumn, compact: boolean): string {
   const raw = rawCanonicalValue(row, col)
   if (typeof raw === 'boolean') return raw ? 'Y' : '—'
+  if (col.canonical.includes('%') || col.canonical === 'Advance Rate' || col.canonical === 'Concentration Limit') {
+    return formatPercentageText(raw)
+  }
   return formatDisplayValue(raw == null ? undefined : String(raw), Boolean(col.money), compact)
 }
 
@@ -499,6 +506,7 @@ export default function ExtractionPreview() {
   const [docRec,         setDocRec]       = useState<DocRecognitionRow[]>([])
   const [canonicals,     setCanonicals]   = useState<CanonicalField[]>([])
   const [confirmed,      setConfirmed]    = useState(false)
+  const [submission,     setSubmission]   = useState<Submission | null>(null)
   const [abortOpen,      setAbortOpen]    = useState(false)
   const [discardConfirmId, setDiscardConfirmId] = useState<number | null>(null)
   const [selectedLPId,   setSelectedLPId] = useState<number | null>(null)
@@ -562,6 +570,13 @@ export default function ExtractionPreview() {
     setLoadError(null)
     loadData(activeSubmissionId)
   }, [activeSubmission, activeSubmissionId])
+
+  // Fetch the submission for its ownership; a non-owner analyst is read-only until they take over.
+  const reloadSubmission = () => {
+    if (activeSubmissionId != null) api.submissions.get(activeSubmissionId).then(setSubmission).catch(() => {})
+  }
+  useEffect(() => { reloadSubmission() }, [activeSubmissionId])  // eslint-disable-line react-hooks/exhaustive-deps
+  const canEdit = useCanEditSubmission(submission)
 
   useEffect(() => {
     const el = document.querySelector('.content') as HTMLElement | null
@@ -807,6 +822,7 @@ export default function ExtractionPreview() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
       {loadError && <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: '#fff0f0', color: 'var(--danger)', borderRadius: 6, fontSize: 12 }}>API error — {loadError}</div>}
+      <OwnershipBanner submission={submission} onTakenOver={reloadSubmission} />
       <StepBar steps={wizardSteps} current={2} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 40px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
@@ -819,13 +835,13 @@ export default function ExtractionPreview() {
               <select
                 value={profileId}
                 onChange={e => setProfileId(e.target.value)}
-                disabled={reextracting}
+                disabled={reextracting || !canEdit}
                 title="Override recognized Agent BB format"
                 style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', background: 'var(--card)', color: 'var(--text)' }}
               >
                 {templates.map(p => <option key={p.id} value={p.id}>{p.fund}</option>)}
               </select>
-              <Button variant="secondary" size="sm" onClick={handleReextract} disabled={reextracting}>
+              <Button variant="secondary" size="sm" onClick={handleReextract} disabled={reextracting || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>
                 {reextracting ? 'Re-extracting...' : 'Re-extract'}
               </Button>
               <CollapseBtn collapsed={docCollapsed} onToggle={() => setDocCollapsed(v => !v)} />
@@ -886,7 +902,7 @@ export default function ExtractionPreview() {
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}><Tag>{m.group}</Tag></td>
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: exact ? 'var(--green)' : 'var(--amber)', fontSize: 11, fontWeight: exact ? 600 : 700 }}>{m.note}</td>
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-                          {!exact && <Button size="sm" variant="secondary" onClick={() => undoFieldMapping(m)}>Undo</Button>}
+                          {!exact && <Button size="sm" variant="secondary" onClick={() => undoFieldMapping(m)} disabled={!canEdit}>Undo</Button>}
                         </td>
                       </tr>
                     )
@@ -925,7 +941,7 @@ export default function ExtractionPreview() {
                       </td>
                       <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <Button size="sm" onClick={() => suggestMapping(col.extracted)} disabled={!col.suggestedCanonical || remapping.has(col.extracted)}>{remapping.has(col.extracted) ? 'Mapping...' : 'Map'}</Button>
+                          <Button size="sm" onClick={() => suggestMapping(col.extracted)} disabled={!col.suggestedCanonical || remapping.has(col.extracted) || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>{remapping.has(col.extracted) ? 'Mapping...' : 'Map'}</Button>
                           <Button size="sm" variant="secondary" onClick={() => dismissUnrecog(col.extracted)}>Discard</Button>
                         </div>
                       </td>
@@ -968,7 +984,7 @@ export default function ExtractionPreview() {
                 ? `Row #${selectedLP.id} selected`
                 : 'Click any row to review extracted fields'
             }
-            action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0} title={activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
+            action={<div style={{ display: 'flex', gap: 8 }}><Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={!canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>Abort Submission</Button><Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0 || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running matching...' : 'Confirm & Run LP Matching'}</Button></div>}
           >
             {/* position:relative here anchors the overlay to the table rows, not the footer */}
             <div style={{ position: 'relative' }}>
@@ -1049,6 +1065,7 @@ export default function ExtractionPreview() {
                     fieldMap={fieldMap}
                     overlay
                     compact={compact}
+                    canEdit={canEdit}
                   />
                 </DraggablePanel>
               )}
@@ -1057,14 +1074,20 @@ export default function ExtractionPreview() {
             <div className="tbl-footer">
               <span>Showing {from}–{to} of {extracted.length} · {extracted.filter(r => r.commit && r.uncalled).length} complete · {extracted.filter(r => !r.commit || !r.uncalled).length} with missing fields</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                  {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
-                </select>
-                {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                {/* Pagination controls appear only when there is more than one page of records
+                    (matches the shared DataTable) — no point showing a page-size picker for < 16 rows. */}
+                {extracted.length > 15 && (
+                  <>
+                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                      {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
+                    </select>
+                    {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
+                  </>
+                )}
                 {activeUnrecog.length > 0 && (
                   <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>⚠ {activeUnrecog.length} unmatched — resolve above</span>
                 )}
-                <Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0} title={activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running...' : 'Confirm & Run LP Matching'}</Button>
+                <Button size="sm" onClick={handleConfirm} disabled={confirmed || activeUnrecog.length > 0 || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : activeUnrecog.length > 0 ? 'Resolve unmatched columns before proceeding' : undefined}>{confirmed ? 'Running...' : 'Confirm & Run LP Matching'}</Button>
               </div>
             </div>
           </Card>

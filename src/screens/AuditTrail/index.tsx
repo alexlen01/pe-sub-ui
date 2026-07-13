@@ -1,12 +1,28 @@
 import { useState, useMemo, useEffect } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
+import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import { useApp }  from '../../context/AppContext'
 import Button       from '../../components/ui/Button'
 import Tag          from '../../components/ui/Tag'
 import { getAuditLog } from '../../services/facilityService'
 import { getAuditConfig, type AuditConfig } from '../../services/configService'
 import type { AuditRow } from '../../services/facilityService'
+
+const AUDIT_TRAIL_INITIAL_WIDTHS: ColWidths = {
+  ts: 150,
+  event: 160,
+  detail: 520,
+  facility: 260,
+  user: 220,
+  ip: 120,
+}
+
+const ellipsisCell = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const
 
 export default function AuditTrail() {
   const { toast } = useApp()
@@ -36,12 +52,14 @@ export default function AuditTrail() {
     return auditLog.filter(r => {
       const matchQ   = !q || r.detail.toLowerCase().includes(q) || r.facility.toLowerCase().includes(q)
       const matchEvt = !evtFilter  || r.event === evtFilter
-      const matchUsr = !userFilter || r.user  === userFilter
+      const matchUsr = !userFilter || r.userId === userFilter
       return matchQ && matchEvt && matchUsr
     })
   }, [auditLog, search, evtFilter, userFilter])
 
-  const users = [...new Set(auditLog.map(r => r.user).filter(Boolean))]
+  const users = Array.from(new Map(auditLog
+    .filter(r => r.userId)
+    .map(r => [r.userId, r.user])).entries())
   const sortColumns = useMemo(() => [
     { key: 'ts', getValue: (r: AuditRow) => r.ts },
     { key: 'event', getValue: (r: AuditRow) => r.event },
@@ -51,7 +69,8 @@ export default function AuditTrail() {
     { key: 'ip', getValue: (r: AuditRow) => r.ip },
   ], [])
   const { sort, sortedRows, requestSort } = useSortableRows(rows, sortColumns)
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { widths, onResizeStart, tableWidth } = useColumnResize('audit-trail', AUDIT_TRAIL_INITIAL_WIDTHS)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-h))' }}>
@@ -63,7 +82,7 @@ export default function AuditTrail() {
         </select>
         <select style={{ width: 160 }} value={userFilter} onChange={e => setUserFilter(e.target.value)}>
           <option value="">User: All</option>
-          {users.map(u => <option key={u} value={u}>{u}</option>)}
+          {users.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
         <div className="form-group" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>From</label>
@@ -75,27 +94,27 @@ export default function AuditTrail() {
         <Button variant="secondary" size="sm" onClick={() => toast('Audit log exported to Excel.')}>↓ Export</Button>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{rows.length} of {auditLog.length} events</span>
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <table className="data-table">
+      <div className="data-table-wrap" style={{ flex: 1, overflow: 'auto' }}>
+        <table className="data-table" style={{ tableLayout: 'fixed', width: tableWidth }}>
           <thead>
             <tr>
-              <SortableHeader sortKey="ts" sort={sort} onSort={requestSort} style={{ width: 140 }}>Timestamp</SortableHeader>
-              <SortableHeader sortKey="event" sort={sort} onSort={requestSort} style={{ width: 150 }}>Event Type</SortableHeader>
-              <SortableHeader sortKey="detail" sort={sort} onSort={requestSort}>Detail</SortableHeader>
-              <SortableHeader sortKey="facility" sort={sort} onSort={requestSort} style={{ width: 180 }}>Facility</SortableHeader>
-              <SortableHeader sortKey="user" sort={sort} onSort={requestSort} style={{ width: 100 }}>User</SortableHeader>
-              <SortableHeader sortKey="ip" sort={sort} onSort={requestSort} style={{ width: 100 }}>IP Address</SortableHeader>
+              <SortableHeader sortKey="ts" sort={sort} onSort={requestSort} style={{ width: widths.ts }} onResizeStart={onResizeStart}>Timestamp</SortableHeader>
+              <SortableHeader sortKey="event" sort={sort} onSort={requestSort} style={{ width: widths.event }} onResizeStart={onResizeStart}>Event Type</SortableHeader>
+              <SortableHeader sortKey="detail" sort={sort} onSort={requestSort} style={{ width: widths.detail }} onResizeStart={onResizeStart}>Detail</SortableHeader>
+              <SortableHeader sortKey="facility" sort={sort} onSort={requestSort} style={{ width: widths.facility }} onResizeStart={onResizeStart}>Facility</SortableHeader>
+              <SortableHeader sortKey="user" sort={sort} onSort={requestSort} style={{ width: widths.user }} onResizeStart={onResizeStart}>User</SortableHeader>
+              <SortableHeader sortKey="ip" sort={sort} onSort={requestSort} style={{ width: widths.ip }} onResizeStart={onResizeStart}>IP Address</SortableHeader>
             </tr>
           </thead>
           <tbody>
             {pageItems.map((r, i) => (
               <tr key={i}>
-                <td style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>{r.ts}</td>
-                <td><Tag variant={auditCfg?.EVENT_TYPE_VARIANT[r.event] ?? ''}>{r.event}</Tag></td>
-                <td style={{ fontSize: 12 }}>{r.detail}</td>
-                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{r.facility}</td>
-                <td style={{ fontWeight: 600, fontSize: 12 }}>{r.user}</td>
-                <td style={{ color: 'var(--muted)', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{r.ip}</td>
+                <td title={r.ts} style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', fontSize: 11, ...ellipsisCell }}>{r.ts}</td>
+                <td title={r.event} style={ellipsisCell}><Tag variant={auditCfg?.EVENT_TYPE_VARIANT[r.event] ?? ''}>{r.event}</Tag></td>
+                <td title={r.detail} style={{ fontSize: 12, ...ellipsisCell }}>{r.detail}</td>
+                <td title={r.facility} style={{ color: 'var(--muted)', fontSize: 12, ...ellipsisCell }}>{r.facility}</td>
+                <td title={r.user} style={{ fontWeight: 600, fontSize: 12, ...ellipsisCell }}>{r.user}</td>
+                <td title={r.ip} style={{ color: 'var(--muted)', fontSize: 11, fontVariantNumeric: 'tabular-nums', ...ellipsisCell }}>{r.ip}</td>
               </tr>
             ))}
           </tbody>
@@ -104,9 +123,11 @@ export default function AuditTrail() {
         <div className="tbl-footer">
           <span>Showing {from}–{to} of {rows.length} events · Retention: {auditCfg?.AUDIT_RETENTION_LABEL ?? '—'}</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {total > 15 && (
             <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
               {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
             </select>
+            )}
             {totalPages > 1 && (
               <>
                 <Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button>

@@ -17,6 +17,7 @@ import { api, type LpClassificationRequest } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
+import { formatPercentageFraction, formatPercentageText } from '../../utils/percentage'
 
 function formatMoneyText(value: unknown): string {
   const s = String(value ?? '').trim()
@@ -194,7 +195,7 @@ function participationSupport(form: FacilityForm, facility: FacilityRow) {
 }
 
 function pctDisplay(value: number | null): string {
-  return value == null ? '—' : `${(value * 100).toFixed(1)}%`
+  return value == null ? '—' : formatPercentageFraction(value)
 }
 
 function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
@@ -537,7 +538,7 @@ export default function LPMaster() {
     { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
   ], [])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'rank', direction: 'asc' })
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
     rank: 64,
     name: 220, parent: 160, spv: 54,
@@ -637,6 +638,27 @@ export default function LPMaster() {
     setFacilities(prev => prev.filter(f => f.id !== target.id))
     setEditingFacility(null)
     toast(`Facility deleted — ${target.name}.`)
+  }
+
+  // Hard-delete an erroneously ingested LP record (correction path for rows that slipped
+  // past extraction review). The API recomputes the facility's ranks, so the list is
+  // re-fetched rather than filtered locally to pick up the refreshed Rank column.
+  const handleDelete = async (target: LPRecord) => {
+    if (target.id == null) return
+    try {
+      await api.lpRecords.remove(target.id)
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : 'Could not delete LP record — API unavailable.')
+      return
+    }
+    setSelected(null)
+    try {
+      const refreshed = facFilter?.id != null ? await getLPsForFacility(facFilter.id) : await getLPs()
+      setLpData(refreshed)
+    } catch {
+      setLpData(lpData.filter(LPRecord => LPRecord.id !== target.id))
+    }
+    toast(`LP record deleted — ${target.name}.`)
   }
 
   const handleRerunShadowBB = async () => {
@@ -839,13 +861,13 @@ export default function LPMaster() {
                 <td className="num">{tableMoney(lpSizeVal)}</td>
                 <td>{sizeMeasure}</td>
                 <td className="num">{tableMoney(LPRecord.capCommit)}</td>
-                <td className="num">{LPRecord.pctCapCommit || '—'}</td>
+                <td className="num">{formatPercentageText(LPRecord.pctCapCommit)}</td>
                 <td className="num">{tableMoney(LPRecord.calledCap)}</td>
                 <td className="num">{tableMoney(LPRecord.uc)}</td>
-                <td className="num">{LPRecord.pctUncalled || '—'}</td>
-                <td className="num">{LPRecord.pctCalled || '—'}</td>
-                <td className="num">{LPRecord.agentRate || '—'}</td>
-                <td className="num">{LPRecord.rate || '—'}</td>
+                <td className="num">{formatPercentageText(LPRecord.pctUncalled)}</td>
+                <td className="num">{formatPercentageText(LPRecord.pctCalled)}</td>
+                <td className="num">{formatPercentageText(LPRecord.agentRate)}</td>
+                <td className="num">{formatPercentageText(LPRecord.rate)}</td>
                 <td className="num">{LPRecord.agentConc || '—'}</td>
                 <td className="num">{LPRecord.ubsConc || '—'}</td>
                 <td className="num">{tableMoney(LPRecord.agentExcessConc)}</td>
@@ -862,6 +884,7 @@ export default function LPMaster() {
         <div className="tbl-footer">
           <span>Showing {from}–{to} of {filtered.length}</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {total > 15 && (
             <select
               value={pageSize}
               onChange={e => setPageSize(Number(e.target.value))}
@@ -869,6 +892,7 @@ export default function LPMaster() {
             >
               {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
             </select>
+            )}
             {totalPages > 1 && (
               <>
                 <Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>&#x2039; Prev</Button>
@@ -890,8 +914,10 @@ export default function LPMaster() {
             open={!!selected}
             onClose={() => setSelected(null)}
             onSave={handleSave}
+            onDelete={canEdit ? handleDelete : undefined}
             canEdit={canEdit}
             enableReclassify
+            totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uc) ?? 0) / 1_000_000), 0)}
           />
         </DraggablePanel>
       )}

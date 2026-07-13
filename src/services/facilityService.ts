@@ -1,4 +1,5 @@
 import { api } from './api'
+import { formatPercentageFraction } from '../utils/percentage'
 
 // ── Date formatters ───────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ function formatDeltaM(n: number | null | undefined): string {
 // A rate stored as a fraction (0.874) → "87.4%". "—" when absent.
 function formatPctFraction(n: number | null | undefined): string {
   if (n == null) return '—'
-  return `${(n * 100).toFixed(1)}%`
+  return formatPercentageFraction(n)
 }
 
 // Inverse of formatMoney for the Facility Edit input — parses "$2.5B" / "150M" / "1,200,000"
@@ -128,6 +129,8 @@ export interface SubmissionRow {
   file:        string
   agentBank:   string
   notes:       string
+  ownerUuName: string | null
+  ownerName:   string | null
 }
 
 export interface ActivityRow {
@@ -135,6 +138,7 @@ export interface ActivityRow {
   event:  string
   detail: string
   user:   string
+  userId: string
   color:  string
   time:   string
 }
@@ -145,6 +149,7 @@ export interface AuditRow {
   facility: string
   detail:   string
   user:     string
+  userId:   string
   ip:       string
 }
 
@@ -175,7 +180,7 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       facilitySize:         formatMoney(f.facilitySize),
       ubsParticipation:     formatMoney(f.ubsParticipation),
       ubsParticipationRate: (f.facilitySize && f.ubsParticipation)
-                              ? `${((f.ubsParticipation / f.facilitySize) * 100).toFixed(0)}%`
+                              ? formatPercentageFraction(f.ubsParticipation / f.facilitySize)
                               : '—',
       agentBB:              formatM(f.agentBB),
       ubsBB:                formatM(f.ubsBB),
@@ -209,6 +214,8 @@ export async function getSubmissions(): Promise<SubmissionRow[]> {
     file:       s.fileName,
     agentBank:  s.agentBank,
     notes:      s.notes ?? '',
+    ownerUuName: s.ownerUuName ?? null,
+    ownerName:   s.ownerName ?? null,
   }))
 }
 
@@ -230,7 +237,8 @@ export async function getActivityFeed(): Promise<ActivityRow[]> {
       ts:     r.ts,
       event:  r.event,
       detail: r.facility && r.facility !== '—' ? `${r.facility} · ${r.detail}` : r.detail,
-      user:   r.user,
+      user:   r.userDisplay || r.user,
+      userId: r.user,
       color:  activityColor(r.event),
       time:   formatActivityTime(r.ts),
     }))
@@ -238,7 +246,12 @@ export async function getActivityFeed(): Promise<ActivityRow[]> {
 
 export async function getAuditLog(): Promise<AuditRow[]> {
   const data = await api.audit.list()
-  return data.map(r => ({ ...r, ts: formatAuditTs(r.ts) }))
+  return data.map(r => ({
+    ...r,
+    ts: formatAuditTs(r.ts),
+    user: r.userDisplay || r.user,
+    userId: r.user,
+  }))
 }
 
 export async function createFacility(name: string, agentBank: string): Promise<{ ok: true; id?: number } | { ok: false; error: string }> {

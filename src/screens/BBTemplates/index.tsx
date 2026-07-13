@@ -79,6 +79,14 @@ const chip: React.CSSProperties = {
   background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 10,
   padding: '1px 8px', fontSize: 10, fontFamily: 'monospace',
 }
+const notesContent: React.CSSProperties = {
+  width: '100%',
+  fontSize: 11,
+  color: 'var(--muted)',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+}
 
 // ── Form state ────────────────────────────────────────────────────────────────
 
@@ -761,7 +769,7 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
     ['Tranche Count',     template.trancheCount],
   ]
   return (
-    <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', fontSize: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px 32px', fontSize: 12, alignItems: 'start', width: '100%' }}>
 
       {/* Recognition */}
       <div>
@@ -842,7 +850,7 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
 
       {/* Legend */}
       {template.legend.length > 0 && (
-        <div>
+        <div style={{ gridColumn: '1 / -1' }}>
           <div style={detailHeading}>Cell Format Legend</div>
           {template.legend.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
@@ -855,11 +863,15 @@ function TemplateDetail({ template }: { template: BbTemplate }) {
 
       {/* Notes */}
       {template.notes.length > 0 && (
-        <div style={{ maxWidth: 320 }}>
+        <div style={{ gridColumn: '1 / -1' }}>
           <div style={detailHeading}>Notes</div>
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {template.notes.map((n, i) => <li key={i} style={{ fontSize: 11, padding: '1px 0', color: 'var(--muted)' }}>{n}</li>)}
-          </ul>
+          <div style={notesContent}>
+            {template.notes.map((n, i) => (
+              <div key={i} style={{ padding: i === 0 ? 0 : '6px 0 0' }}>
+                {n}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

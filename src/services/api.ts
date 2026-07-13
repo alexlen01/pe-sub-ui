@@ -194,6 +194,13 @@ export interface Submission {
   id: number; facilityId: number; facilityName: string; agentBank: string; periodMonth: string
   status: string; fileName: string; uploadedBy: number | null; notes: string | null
   wizardStep: number; shadowBbOverrides: Record<string, unknown> | null
+  // Optimistic-concurrency token — pass back on commit writes so a stale edit is rejected (409).
+  version: number
+  // Ownership captured at upload: the analyst who uploaded/owns the submission.
+  ownerUuName: string | null; ownerName: string | null
+  // Independent-review (maker-checker) attribution. submittedBy = operator who submitted for
+  // review (maker); reviewedBy = manager who accepted/rejected (checker); reviewNote = reason.
+  submittedBy: string | null; reviewedBy: string | null; reviewNote: string | null
   createdAt: string; updatedAt: string
 }
 
@@ -453,10 +460,21 @@ export interface ReportConfig {
   CONCENTRATION_TESTS: string[]
   REPORT_SCHEDULES: Array<{ name: string; freq: string; next: string }>
 }
+export interface CurrentUser {
+  uuName: string
+  firstName: string
+  lastName: string
+  email: string
+  role: string
+}
 
 // ── API client ────────────────────────────────────────────────────────────────
 
 export const api = {
+
+  users: {
+    me: () => get<CurrentUser>('/api/users/me'),
+  },
 
   // ── Facilities ──────────────────────────────────────────────────────────────
   facilities: {
@@ -490,6 +508,9 @@ export const api = {
       get<ApiLP[]>(`/api/lpRecords/lookup${qs({ name })}`).then(rows => rows.map(normalizeLP)),
     rates: (effectiveDate?: string) =>
       get<LpRate[]>(`/api/lpRecords/rates${qs({ effective_date: effectiveDate })}`),
+    // Hard-delete an erroneously ingested LP record; the API recomputes the facility's ranks.
+    remove: (id: number) =>
+      del(`/api/lpRecords/${id}`),
   },
 
   // ── LP Master (bank-wide) ────────────────────────────────────────────────────
@@ -498,6 +519,9 @@ export const api = {
     get: (id: number) => get<ApiLP>(`/api/lp-master/${id}`).then(normalizeLP),
     count: () => get<{ count: number }>('/api/lp-master/count'),
     investorTypes: () => get<string[]>('/api/lp-master/investor-types'),
+    // Hard-delete a bank-wide LP Master row (ANALYST-gated); facility LP records are detached, not deleted.
+    remove: (id: number) =>
+      del(`/api/lp-master/${id}`),
   },
 
   // ── Borrowing Base ───────────────────────────────────────────────────────────
@@ -550,10 +574,23 @@ export const api = {
       post<void>(`/api/submissions/${id}/abort`, {}),
     confirm: (id: number) =>
       post<{ templateSaved: boolean; templateName: string }>(`/api/submissions/${id}/confirm`, {}),
-    saveShadowBbState: (id: number, overrides: Record<string, unknown> | null) =>
-      patch<Submission>(`/api/submissions/${id}/shadow-bb-state`, { overrides }),
-    complete: (id: number) =>
-      post<Submission>(`/api/submissions/${id}/complete`, {}),
+    saveShadowBbState: (id: number, overrides: Record<string, unknown> | null, expectedVersion?: number) =>
+      patch<Submission>(
+        `/api/submissions/${id}/shadow-bb-state${expectedVersion != null ? `?expectedVersion=${expectedVersion}` : ''}`,
+        { overrides }),
+    // Ownership handoff: claim a colleague's in-flight submission so it can be edited. After this
+    // the previous owner is read-only (their writes 403) and is notified.
+    takeOver: (id: number) =>
+      post<Submission>(`/api/submissions/${id}/take-over`, {}),
+    // Maker step: submit the completed Shadow BB for independent (Manager) review.
+    complete: (id: number, expectedVersion?: number) =>
+      post<Submission>(
+        `/api/submissions/${id}/complete${expectedVersion != null ? `?expectedVersion=${expectedVersion}` : ''}`, {}),
+    // Checker steps (Manager-only; the API enforces maker ≠ checker).
+    accept: (id: number) =>
+      post<Submission>(`/api/submissions/${id}/accept`, {}),
+    reject: (id: number, reason: string) =>
+      post<Submission>(`/api/submissions/${id}/reject`, { reason }),
   },
 
   // ── Extraction ────────────────────────────────────────────────────────────────
@@ -627,7 +664,7 @@ export const api = {
   // ── Audit ─────────────────────────────────────────────────────────────────────
   audit: {
     list: () =>
-      get<Array<{ ts: string; event: string; detail: string; facility: string; user: string; ip: string }>>('/api/audit'),
+      get<Array<{ ts: string; event: string; detail: string; facility: string; user: string; userDisplay?: string; ip: string }>>('/api/audit'),
     login: () =>
       post<void>('/api/audit/login'),
   },

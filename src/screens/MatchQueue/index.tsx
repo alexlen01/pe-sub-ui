@@ -10,6 +10,7 @@ import StepBar from '../../components/ui/StepBar'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import { getMatchingConfig, getWizardConfig } from '../../services/configService'
+import { formatPercentageValue } from '../../utils/percentage'
 import { normaliseName, jwSim, levSim, combineScores } from '../../utils/fuzzyMatch'
 import { analysisCandidates, normalisedAgentName } from './matchAnalysis'
 import type { MatchAnalysis, MatchingConfig, MatchingThresholds } from '../../services/api'
@@ -122,9 +123,9 @@ function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: Q
                   {candidates.map((c, i) => (
                     <tr key={i} style={{ background: i === 0 && hasProposedMatch ? 'var(--red-lt)' : 'transparent' }}>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', fontWeight: i === 0 ? 600 : 400 }}>{c.name}</td>
-                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? `${c.jw}%` : c.jw}</td>
-                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? `${c.lev}%` : c.lev}</td>
-                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: typeof c.combined === 'number' ? scoreColor(c.combined) : 'var(--muted)' }}>{typeof c.combined === 'number' ? `${c.combined}%` : c.combined}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.jw === 'number' ? formatPercentageValue(c.jw) : c.jw}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: 'var(--muted)' }}>{typeof c.lev === 'number' ? formatPercentageValue(c.lev) : c.lev}</td>
+                      <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: typeof c.combined === 'number' ? scoreColor(c.combined) : 'var(--muted)' }}>{typeof c.combined === 'number' ? formatPercentageValue(c.combined) : c.combined}</td>
                       <td style={{ padding: '5px 6px', borderBottom: '1px solid var(--border)', textAlign: 'center', color: verdictColor(c.verdict), fontWeight: 600, fontSize: 10 }}>{c.verdict}</td>
                     </tr>
                   ))}
@@ -228,7 +229,7 @@ export default function MatchQueue() {
     { key: 'action', getValue: (r: QueueRow) => r.status },
   ], [matchingConfig])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
-  const { page, setPage, totalPages, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth: mqTableWidth } = useColumnResize('match-queue', {
     checkbox: 36, agentName: 250, masterName: 250, score: 160, quality: 96, status: 82, action: 160,
   })
@@ -339,7 +340,7 @@ export default function MatchQueue() {
           <div className="tbl-footer">
             <span>Showing {from}–{to} of {filtered.length} · {queue.filter(r => r.status === 'Accepted').length} accepted · {queue.filter(r => r.status === 'Rejected').length} rejected · {pending} pending</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+              {total > 15 && <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>{PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}</select>}
               {totalPages > 1 && (<><Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button><span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span><Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button></>)}
               <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
             </div>

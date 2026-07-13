@@ -16,6 +16,7 @@ const CLS_MAP: Record<string, string> = {
   'Not Started':    'tag-notstarted',
   'Active':         'tag-active',
   'Pending':        'tag-pending',
+  'Pending Review': 'tag-pending',
   'Review':         'tag-review',
   'Processed':      'tag-processed',
   'Processing':     'tag-processing',

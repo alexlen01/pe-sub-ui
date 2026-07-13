@@ -20,6 +20,15 @@
   --amber:     #B86A00;
   --amber-lt:  #FFF3D0;
   --sky:       #4A90D9;
+  --lp-chart-rated-investors:     #4F4F4F;
+  --lp-chart-corp-pension-5bn:    #4A90D9;
+  --lp-chart-corp-pension-1bn:    #38A169;
+  --lp-chart-unrated-nav-1bn:     #007A38;
+  --lp-chart-fof-other-10bn:      #E60000;
+  --lp-chart-other-institutional: #718096;
+  --lp-chart-hnw-feeder:          #B91C1C;
+  --lp-chart-hnw:                 #E2C185;
+  --lp-chart-excluded:            #C8C8C8;
   --sidebar-w: 220px;
   --topbar-h:  62px;
   --radius:    6px;
