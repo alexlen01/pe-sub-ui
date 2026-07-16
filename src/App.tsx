@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, type JSX } from 'react'
 import { AppProvider, useApp } from './context/AppContext'
 import { AuthProvider } from './context/AuthContext'
 import Sidebar from './components/layout/Sidebar'
