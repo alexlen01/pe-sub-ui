@@ -13,6 +13,7 @@ import Modal from '../../components/ui/Modal'
 import DraggablePanel from '../../components/ui/DraggablePanel'
 import RegionTypeahead from '../../components/ui/RegionTypeahead'
 import { formatRegion } from '../../config/regionReference'
+import { lpSizeFormat } from '../../utils/lpSize'
 import {
   buildBusaRateFractions,
   busaClassificationOptions,
@@ -1060,7 +1061,7 @@ export default function RunShadowBB() {
                             <td>{ov.sp || '—'}</td>
                             <td>{ov.mdy || '—'}</td>
                             <td>{ov.fitch || '—'}</td>
-                            <td className="num" title={ov.lpSizeBil || '—'}>{fmtBillionDisplay(ov.lpSizeBil)}</td>
+                            <td className="num" title={ov.lpSizeBil || '—'}>{lpSizeFormat(ov.lpSizeBil)}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
                             <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
                             <td className="num">{fmtPct(c.cmtPct)}</td>

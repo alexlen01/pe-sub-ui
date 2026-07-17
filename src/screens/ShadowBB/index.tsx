@@ -21,9 +21,10 @@ import type { BBBreach } from '../../types/bb'
 import { buildBusaRateFractions, busaClassificationOptions, getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import {
   YesNo,
-  calcRow, fmtBillionDisplay, fmtFull, parseMoneyM, parsePct, pctStr,
+  calcRow, fmtFull, parseMoneyM, parsePct, pctStr,
   type Override, type SubmissionLP,
 } from '../RunShadowBB'
+import { lpSizeFormat } from '../../utils/lpSize'
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
 import LPRecordPanel from '../../components/ui/LPRecordPanel'
 import Tag from '../../components/ui/Tag'
@@ -1221,7 +1222,7 @@ export default function ShadowBB() {
                             <td>{ov.mdy || '—'}</td>
                             <td>{ov.fitch || '—'}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
-                            <td className="num" title={ov.lpSizeBil || '—'}>{fmtBillionDisplay(ov.lpSizeBil)}</td>
+                            <td className="num" title={ov.lpSizeBil || '—'}>{lpSizeFormat(ov.lpSizeBil)}</td>
                             <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
                             <td className="num">{fmtPct(c.cmtPct)}</td>
                             <td className="num">{fmtFull(c.calledM)}</td>

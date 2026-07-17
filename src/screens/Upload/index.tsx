@@ -256,7 +256,7 @@ export default function Upload() {
   const canUpload = can('upload')
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionRow[]>([])
-  const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string }[]>([])
+  const [facilities,     setFacilities]     = useState<{ id?: number; name: string; agentBank: string; status: string; accountNumber: string }[]>([])
   const [loadError,      setLoadError]      = useState<string | null>(null)
   const [wizardSteps,    setWizardSteps]    = useState<string[]>([])
 
@@ -278,9 +278,11 @@ export default function Upload() {
     ]).then(([subs, fs]) => {
       setAllSubmissions(subs)
       setFacilities(fs.map(f => ({
-        id:        f.id,
-        name:      f.name,
-        agentBank: f.agentBank ?? '',
+        id:            f.id,
+        name:          f.name,
+        agentBank:     f.agentBank ?? '',
+        status:        f.status,
+        accountNumber: f.accountNumber ?? '',
       })))
     }).catch(e => setLoadError(String(e)))
   }, [])
@@ -291,6 +293,16 @@ export default function Upload() {
   const [facilityId,    setFacilityId]    = useState<number | null>(null)
   const [isNewFacility, setIsNewFacility] = useState(false)
   const [newFacModal, setNewFacModal] = useState(false)
+
+  // A facility can only receive a new borrowing-base submission when it is Active and mapped to a
+  // valid agent Account ID. The "Unknown"-bank placeholder facilities (Inactive, orphan accounts)
+  // are intentionally excluded here — they remain visible in LP Master but are never an upload
+  // target. The currently-selected facility (e.g. one just onboarded via the modal) always stays
+  // in the list so the <select> can render the chosen value.
+  const isValidAccountId = (acct: string) => acct.trim() !== '' && acct.trim() !== '—'
+  const selectableFacilities = facilities.filter(
+    f => (f.status === 'Active' && isValidAccountId(f.accountNumber)) || f.name === facility,
+  )
 
   const today = new Date().toISOString().slice(0, 10)
   const [subDate,        setSubDate]        = useState(today)
@@ -341,7 +353,7 @@ export default function Upload() {
   }
 
   const handleNewFacilitySave = ({ name, agentBank: ab, id }: { name: string; agentBank: string; creditRef: string; id?: number }) => {
-    setFacilities(prev => [...prev, { id, name, agentBank: ab }])
+    setFacilities(prev => [...prev, { id, name, agentBank: ab, status: 'Not Started', accountNumber: '' }])
     setFacility(name)
     setFacilityId(id ?? null)
     setAgentBank(ab)
@@ -408,7 +420,7 @@ export default function Upload() {
               <label className="form-label">Facility</label>
               <select style={{ width: '100%' }} value={facility} onChange={handleFacilityChange}>
                 <option value="">— Select a facility —</option>
-                {facilities.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                {selectableFacilities.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
                 <option disabled>────────────────</option>
                 <option value={NEW_SENTINEL}>+ Onboard New Facility…</option>
               </select>

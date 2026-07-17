@@ -18,6 +18,7 @@ import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
 import { formatPercentageFraction, formatPercentageText } from '../../utils/percentage'
+import { lpSizeFormat } from '../../utils/lpSize'
 
 function formatMoneyText(value: unknown): string {
   const s = String(value ?? '').trim()
@@ -858,7 +859,7 @@ export default function LPMaster() {
                 <td>{LPRecord.sp || '—'}</td>
                 <td>{LPRecord.mdy || '—'}</td>
                 <td>{LPRecord.fitch || '—'}</td>
-                <td className="num">{tableMoney(lpSizeVal)}</td>
+                <td className="num">{lpSizeFormat(lpSizeVal)}</td>
                 <td>{sizeMeasure}</td>
                 <td className="num">{tableMoney(LPRecord.capCommit)}</td>
                 <td className="num">{formatPercentageText(LPRecord.pctCapCommit)}</td>

@@ -12,6 +12,7 @@ import {
 import { useConfigCache } from '../../store/configStore'
 import type { LPRecord } from '../../services/lpService'
 import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
+import { lpSizeFormat } from '../../utils/lpSize'
 
 const NOTES_MAX    = 250
 
@@ -280,8 +281,13 @@ export default function LPRecordPanel({
       ? { border: '1px dotted var(--green)', background: 'var(--green-lt)', borderRadius: 4, padding: '6px 8px' }
       : {}
     const controlSt: React.CSSProperties = { width: width ? Number(width) : '100%', ...roSt }
+    // LP Size is edited in $ billions, but when the panel is read-only the extracted value is
+    // shown AS-IS (short-currency if purely numeric) per the LP Size display rule, rather than
+    // the billions-reinterpreted "$0.7B" form.
     const displayVal = cfg.moneyUnit === 'B'
-      ? billionToMoney(editVal as string | number | undefined)
+      ? (!editable && 'lpSizeRaw' in cfg
+          ? lpSizeFormat(cfg.lpSizeRaw)
+          : billionToMoney(editVal as string | number | undefined))
       : money ? formatMoneyText(editVal) : percentage ? formatPercentageText(editVal, '') : String(editVal ?? '')
     const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
     const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
@@ -423,7 +429,7 @@ export default function LPRecordPanel({
         {f('Fitch', LPRecord.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
 
         {sec('Capital Metrics')}
-        {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B' })}
+        {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B', lpSizeRaw: (form.lpSizeCriteria === 'NAV' ? LPRecord.nav : form.lpSizeCriteria === 'Assets' ? LPRecord.pension : LPRecord.aum) ?? '' })}
         {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: classCfg.LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
         {f('Capital Commitments', LPRecord.capCommit, 'capCommit', { money: true })}
         {calc('% of Capital Commitments', LPRecord.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
