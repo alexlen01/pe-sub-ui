@@ -70,4 +70,24 @@ describe('buildLpRecordFromForm', () => {
     expect(saved.uec).toBe('$10.0M')
     expect(saved.ubb).toBe('$9.0M')
   })
+
+  it('preserves free-form LP Size text without currency conversion', () => {
+    const baseRecord = {
+      name: 'Free-form LP', cls: 'Rated', inc: true, uc: '$10M', capCommit: '$10M',
+      rate: '90%', agentRate: '90%', parent: '', spv: false, hq: false,
+      instVsHnw: 'Institutional', region: 'North America', ig: false, clsTag: '',
+      sp: '', mdy: '', fitch: '', aum: '', nav: '', pension: '', pensionFunded: '',
+      pctCapCommit: '', calledCap: '', pctUncalled: '', pctCalled: '', agentConc: '', ubsConc: '',
+      abb: '$0', ubb: '$0', delta: '$0', uec: '$0', rcl: false, tf: false, notes: '',
+    } as LPRecord
+
+    const saved = buildLpRecordFromForm(baseRecord, {
+      lpSizeCriteria: 'AUM',
+      lpSize: '$21 bn+ / reported tier',
+    }, {
+      UBS_CLS_DEFAULT_RATE: {}, BUSA_RATE_MAP: {}, CLS_TAG_MAP: {},
+    }, {})
+
+    expect(saved.aum).toBe('$21 bn+ / reported tier')
+  })
 })

@@ -143,6 +143,7 @@ describe('getFacilities — live', () => {
     expect(rows[0].ubsBB).toBe('$130.4M')
     expect(rows[0].delta).toBe('-$8.2M')
     expect(rows[0].ear).toBe('87.4%')
+    expect(rows[0].hasShadowBB).toBe(true)
   })
 
   it('shows — for Shadow BB figures before any BB has been run', async () => {
@@ -156,6 +157,17 @@ describe('getFacilities — live', () => {
     expect(rows[0].ubsBB).toBe('—')
     expect(rows[0].delta).toBe('—')
     expect(rows[0].ear).toBe('—')
+    expect(rows[0].hasShadowBB).toBe(false)
+  })
+
+  it('marks a facility with a recorded Shadow BB run even when legacy summary figures are absent', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 3, name: 'Legacy Fund', agentBank: 'Citi', status: 'Active', lpCount: 10,
+                             agentBB: null, ubsBB: null, lastRunAt: '2026-07-17T15:30:00' }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].hasShadowBB).toBe(true)
   })
 
   it('derives the wizard step from the latest in-Review submission', async () => {

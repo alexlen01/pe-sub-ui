@@ -1288,9 +1288,6 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
   const amountTxt = (label: string, field: keyof Override, span2: boolean | number = false) =>
     wrap(span2, <>{flbl(label)}<input type="text" value={fmtMoneyInput(String(draft[field] ?? ''))} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)} /></>, label)
 
-  const billionTxt = (label: string, field: keyof Override, span2: boolean | number = false) =>
-    wrap(span2, <>{flbl(label)}<input type="text" value={fmtBillionDisplay(String(draft[field] ?? '')) === '—' ? '' : fmtBillionDisplay(String(draft[field] ?? ''))} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)} /></>, label)
-
   const sel = (label: string, field: keyof Override, opts: readonly string[], span2: boolean | number = false) =>
     wrap(span2, <>{flbl(label)}<select value={String(draft[field] ?? '')} disabled={running || saving} style={inputSt} onChange={e => change(field, e.target.value)}>{opts.map(o => <option key={o || '__empty'} value={o}>{o || '—'}</option>)}</select></>, label)
 
@@ -1361,7 +1358,7 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
           {sel('Fitch', 'fitch', classCfg.FITCH_RATING_OPTS, 2)}
 
           {sec('Capital Metrics')}
-          {billionTxt('LP Size ($ Bil)', 'lpSizeBil')}
+          {txt('LP Size ($ Bil)', 'lpSizeBil')}
           {sel('LP Size Criteria', 'lpSizeCriteria', classCfg.LP_SIZE_CRITERIA_OPTS)}
           {amountTxt('Capital Commitment', 'capCommit')}
           {amountTxt('Uncalled Capital', 'ucM')}

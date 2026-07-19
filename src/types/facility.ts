@@ -2,6 +2,7 @@ export type FacilityStatus =
   | 'Not Started'
   | 'In Progress'
   | 'Needs Review'
+  | 'Pending Review'
   | 'Active'
   | 'Pending'
   | 'Inactive'

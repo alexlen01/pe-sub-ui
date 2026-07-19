@@ -508,7 +508,7 @@ export function buildShadowRows(snapshotLps: ComputedLP[], rawLPs: LPRecord[]): 
 export default function ShadowBB() {
   const { bbParams, toast, targetFacility, setTargetFacility } = useApp()
   const { can } = useAuth()
-  const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string }[]>([])
+  const [facilityOptions, setFacilityOptions] = useState<{ id?: number; name: string; status: string }[]>([])
   const [facility,        setFacility]        = useState('')
   const [facilityId,      setFacilityId]      = useState<number | null>(null)
   const [clsFilter,       setClsFilter]       = useState('')
@@ -566,7 +566,7 @@ export default function ShadowBB() {
   useEffect(() => {
     setLoadError(null)
     getFacilities().then(fs => {
-      const opts = fs.map(f => ({ id: f.id, name: f.name }))
+      const opts = fs.map(f => ({ id: f.id, name: f.name, status: f.status }))
       setFacilityOptions(opts)
       if (opts.length > 0) {
         const target = targetFacility ? opts.find(o => o.name === targetFacility) : undefined
@@ -613,6 +613,7 @@ export default function ShadowBB() {
   }, [facility, facilityId])
 
   const shadowRows = useMemo<ShadowRow[]>(() => buildShadowRows(snapshotLps, rawLPs), [rawLPs, snapshotLps])
+  const facilityInactive = facilityOptions.find(option => option.id === facilityId)?.status === 'Inactive'
 
   // Snapshot summary, frozen at the last run — the only source of portfolio totals.
   const summary = useMemo(() => snapshot as unknown as Partial<BBSummary>, [snapshot])
@@ -757,7 +758,7 @@ export default function ShadowBB() {
   }
 
   const handleRerunShadowBB = async () => {
-    if (facilityId == null) return
+    if (facilityId == null || facilityInactive) return
     const selectedFacilityId = facilityId
     const selectedFacilityName = facility
     setRerunning(true)
@@ -769,7 +770,7 @@ export default function ShadowBB() {
         getFacilitySummaryExt(selectedFacilityId),
         getFacilities(),
       ])
-      const options = facilities.map(f => ({ id: f.id, name: f.name }))
+      const options = facilities.map(f => ({ id: f.id, name: f.name, status: f.status }))
       const selectedFacility =
         options.find(o => o.id === selectedFacilityId)
         ?? options.find(o => o.name === selectedFacilityName)
@@ -794,6 +795,10 @@ export default function ShadowBB() {
     } finally {
       setRerunning(false)
     }
+  }
+
+  const explainInactiveRerun = () => {
+    toast('Re-run Shadow BB is unavailable because this facility is inactive.')
   }
 
   useEffect(() => () => { Object.values(saveTimers.current).forEach(clearTimeout) }, [])
@@ -1120,7 +1125,31 @@ export default function ShadowBB() {
         <div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Card title="LP-Level Shadow BB" subtitle={`${facility} · Conc. Limit: $${bbParams.concLimitM.toFixed(0)}M per LPRecord`}
-              action={<div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}><option value="">Classification: All</option>{clsOptions.map(c => <option key={c} value={c}>{c}</option>)}</select><InfoTip title="Column Guide" items={bbColumnItems} width={340} /><Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || facilityId == null || shadowRows.length === 0}>{rerunning ? 'Re-running...' : 'Re-run Shadow BB'}</Button><Button variant="secondary" size="sm" disabled={!summaryExt} onClick={() => { if (!summaryExt) return; void exportShadowBB(facility, summaryExt, sortedRows).then(() => toast('Shadow BB exported to Excel.')).catch(() => toast('Could not export Shadow BB Excel.')) }}>↓ Export</Button></div>}>
+              action={(
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select style={{ width: 160 }} value={clsFilter} onChange={e => setClsFilter(e.target.value)}>
+                    <option value="">Classification: All</option>
+                    {clsOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <InfoTip title="Column Guide" items={bbColumnItems} width={340} />
+                  <span
+                    onClick={facilityInactive ? explainInactiveRerun : undefined}
+                    style={{ display: 'inline-flex', cursor: facilityInactive ? 'not-allowed' : undefined }}
+                    title={facilityInactive ? 'Re-run is unavailable while the facility is inactive' : undefined}
+                  >
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleRerunShadowBB}
+                      disabled={rerunning || facilityId == null || shadowRows.length === 0 || facilityInactive}
+                      style={facilityInactive ? { pointerEvents: 'none' } : undefined}
+                    >
+                      {rerunning ? 'Re-running...' : 'Re-run Shadow BB'}
+                    </Button>
+                  </span>
+                  <Button variant="secondary" size="sm" disabled={!summaryExt} onClick={() => { if (!summaryExt) return; void exportShadowBB(facility, summaryExt, sortedRows).then(() => toast('Shadow BB exported to Excel.')).catch(() => toast('Could not export Shadow BB Excel.')) }}>↓ Export</Button>
+                </div>
+              )}>
               <div style={{ position: 'relative' }}>
                 <div className="data-table-wrap">
                   <table className="data-table dense" style={{ tableLayout: 'fixed', width: bbTableWidth, minWidth: bbTableWidth }}>

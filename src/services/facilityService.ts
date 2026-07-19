@@ -106,6 +106,7 @@ export interface FacilityRow {
   delta:                string
   ear:                  string
   lastRun:              string
+  hasShadowBB:          boolean
   step:                 number | null
   submittedBy:          string | null
   accountNumber:        string
@@ -186,6 +187,9 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       delta:                formatDeltaM(f.bbDelta),
       ear:                  formatPctFraction(f.ear),
       lastRun:              f.lastRunAt ? formatLastRun(f.lastRunAt) : '—',
+      // Latest BB figures come from the snapshot table. Keep lastRunAt as a
+      // fallback for older snapshots whose summary may not contain every figure.
+      hasShadowBB:          f.lastRunAt != null || f.agentBB != null || f.ubsBB != null,
       step:                 review?.wizardStep ?? null,
       submittedBy:          null as string | null,
       id:                   f.id,

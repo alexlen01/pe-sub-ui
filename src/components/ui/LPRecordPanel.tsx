@@ -12,36 +12,15 @@ import {
 import { useConfigCache } from '../../store/configStore'
 import type { LPRecord } from '../../services/lpService'
 import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
-import { lpSizeFormat } from '../../utils/lpSize'
 
 const NOTES_MAX    = 250
 
 type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
 
-function moneyToBillion(s: string | undefined | null): number | null {
-  const m = String(s ?? '').match(/\$?\s*([\d,.]+)\s*([KMBT]?)/i)
-  if (!m) return null
-  const val = parseFloat(m[1].replace(/,/g, ''))
-  if (!Number.isFinite(val)) return null
-  const unit = m[2].toUpperCase()
-  if (unit === 'T') return val * 1000
-  if (unit === 'M') return val / 1000
-  if (unit === 'K') return val / 1_000_000
-  return val
-}
-
-function billionToMoney(b: string | number | undefined | null): string {
-  const fromMoney = typeof b === 'string' ? moneyToBillion(b) : null
-  const n = fromMoney ?? (typeof b === 'number' ? b : parseFloat(String(b ?? '').replace(/[$,B]/gi, '')))
-  return Number.isFinite(n)
-    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 3 })}B`
-    : ''
-}
-
 function inferLpSizeCriteria(LPRecord: LPRecord): LpSizeCriteria {
-  if (moneyToBillion(LPRecord.aum) != null) return 'AUM'
-  if (moneyToBillion(LPRecord.nav) != null) return 'NAV'
-  if (moneyToBillion(LPRecord.pension) != null) return 'Assets'
+  if (String(LPRecord.aum ?? '').trim()) return 'AUM'
+  if (String(LPRecord.nav ?? '').trim()) return 'NAV'
+  if (String(LPRecord.pension ?? '').trim()) return 'Assets'
   return ''
 }
 
@@ -56,13 +35,12 @@ function agentClsSourceNote(source: string | undefined | null, hasAgentCls: bool
 
 function lpSizeValue(LPRecord: LPRecord, criteria: string): string {
   const source = criteria === 'NAV' ? LPRecord.nav : criteria === 'Assets' ? LPRecord.pension : LPRecord.aum
-  const b = moneyToBillion(source)
-  return b == null ? '' : String(Number(b.toFixed(3)))
+  return String(source ?? '')
 }
 
 function applyLpSizeToRecord(LPRecord: LPRecord, form: Record<string, unknown>): LPRecord {
   const next = { ...LPRecord, ...form as Partial<LPRecord> } as LPRecord
-  const size = billionToMoney(form.lpSize as string | number | undefined)
+  const size = String(form.lpSize ?? '')
   switch (form.lpSizeCriteria) {
     case 'AUM': next.aum = size; break
     case 'NAV': next.nav = size; break
@@ -283,14 +261,7 @@ export default function LPRecordPanel({
       ? { border: '1px dotted var(--green)', background: 'var(--green-lt)', borderRadius: 4, padding: '6px 8px' }
       : {}
     const controlSt: React.CSSProperties = { width: width ? Number(width) : '100%', ...roSt }
-    // LP Size is edited in $ billions, but when the panel is read-only the extracted value is
-    // shown AS-IS (short-currency if purely numeric) per the LP Size display rule, rather than
-    // the billions-reinterpreted "$0.7B" form.
-    const displayVal = cfg.moneyUnit === 'B'
-      ? (!editable && 'lpSizeRaw' in cfg
-          ? lpSizeFormat(cfg.lpSizeRaw)
-          : billionToMoney(editVal as string | number | undefined))
-      : money ? formatMoneyText(editVal) : percentage ? formatPercentageText(editVal, '') : String(editVal ?? '')
+    const displayVal = money ? formatMoneyText(editVal) : percentage ? formatPercentageText(editVal, '') : String(editVal ?? '')
     const selectOptions = (opts as readonly (string | { value: string; label: string })[] | undefined) ?? []
     const optionValue = (o: string | { value: string; label: string }) => typeof o === 'string' ? o : o.value
     const optionLabel = (o: string | { value: string; label: string }) => typeof o === 'string' ? (o || String(emptyLabel ?? 'Not Rated')) : o.label
@@ -431,7 +402,7 @@ export default function LPRecordPanel({
         {f('Fitch', LPRecord.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
 
         {sec('Capital Metrics')}
-        {f('LP Size', form.lpSize, 'lpSize', { moneyUnit: 'B', lpSizeRaw: (form.lpSizeCriteria === 'NAV' ? LPRecord.nav : form.lpSizeCriteria === 'Assets' ? LPRecord.pension : LPRecord.aum) ?? '' })}
+        {f('LP Size', form.lpSize, 'lpSize')}
         {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: classCfg.LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
         {f('Capital Commitments', LPRecord.capCommit, 'capCommit', { money: true })}
         {calc('% of Capital Commitments', LPRecord.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}

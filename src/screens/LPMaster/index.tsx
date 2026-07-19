@@ -123,9 +123,18 @@ function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: Facili
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{facility.agentBank}</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-        <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
-          {facility.lps?.toLocaleString() ?? '—'}
-          <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>LPs</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
+            {facility.lps?.toLocaleString() ?? '—'}
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>LPs</span>
+          </span>
+          {facility.hasShadowBB && (
+            <span
+              aria-label="Existing Shadow BB"
+              title={`Existing Shadow BB${facility.lastRun !== '—' ? ` · last run ${facility.lastRun}` : ''}`}
+              style={{ flex: '0 0 auto', padding: '2px 5px', borderRadius: 8, background: '#e8f1fb', color: '#2e5f91', fontSize: 9, fontWeight: 700, letterSpacing: '.03em', lineHeight: 1.3 }}
+            >◆ BB</span>
+          )}
         </span>
         <span style={{ fontSize: 11, fontWeight: 600, color }}>● {facility.status}</span>
       </div>
@@ -667,7 +676,7 @@ export default function LPMaster() {
   }
 
   const handleRerunShadowBB = async () => {
-    if (!facFilter?.id) return
+    if (!facFilter?.id || facFilter.status === 'Inactive') return
     setRerunning(true)
     try {
       const { snapshot, submission } = await api.bb.rerunFromLpMaster(facFilter.id)
@@ -693,6 +702,10 @@ export default function LPMaster() {
     } finally {
       setRerunning(false)
     }
+  }
+
+  const explainInactiveRerun = () => {
+    toast('Re-run Shadow BB is unavailable because this facility is inactive.')
   }
 
   // ── Facility grid view ────────────────────────────────────────────────────
@@ -783,9 +796,21 @@ export default function LPMaster() {
             <option value="N">Excluded from BB</option>
           </select>
           {facFilter && (
-            <Button variant="secondary" size="sm" onClick={handleRerunShadowBB} disabled={rerunning || lpData.length === 0}>
-              {rerunning ? 'Re-running...' : 'Re-run Shadow BB'}
-            </Button>
+            <span
+              onClick={facFilter.status === 'Inactive' ? explainInactiveRerun : undefined}
+              style={{ display: 'inline-flex', cursor: facFilter.status === 'Inactive' ? 'not-allowed' : undefined }}
+              title={facFilter.status === 'Inactive' ? 'Re-run is unavailable while the facility is inactive' : undefined}
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleRerunShadowBB}
+                disabled={rerunning || lpData.length === 0 || facFilter.status === 'Inactive'}
+                style={facFilter.status === 'Inactive' ? { pointerEvents: 'none' } : undefined}
+              >
+                {rerunning ? 'Re-running...' : 'Re-run Shadow BB'}
+              </Button>
+            </span>
           )}
           <Button variant="secondary" size="sm" onClick={() => toast('LPRecord master exported to Excel.')}>&#x2193; Export</Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>

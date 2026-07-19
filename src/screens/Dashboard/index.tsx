@@ -13,6 +13,7 @@ import { api } from '../../services/api'
 import { formatPercentageFraction } from '../../utils/percentage'
 import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
+import { isDashboardNeedsReviewStatus } from '../../utils/dashboardStatus'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
 import { lpCategoryColor } from '../../utils/lpCategoryPalette'
 import { sortLpCategoriesByRate } from '../../utils/lpCategoryOrder'
@@ -121,7 +122,11 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [screen])
 
-  const filteredFacilities = statusFilter === 'All' ? facilities : facilities.filter(f => f.status === statusFilter)
+  const filteredFacilities = statusFilter === 'All'
+    ? facilities
+    : facilities.filter(f => statusFilter === 'Needs Review'
+      ? isDashboardNeedsReviewStatus(f.status)
+      : f.status === statusFilter)
   const donut = useMemo(() => {
     if (facilityLPs.length === 0) return null
     const total = facilityLPs.length
@@ -151,10 +156,10 @@ export default function Dashboard() {
     return { total, segments }
   }, [facilityLPs, classCfg])
   const activeCount         = facilities.filter(f => f.status === 'Active').length
-  const needsReviewCount    = facilities.filter(f => f.status === 'Needs Review').length
+  const needsReviewCount    = facilities.filter(f => isDashboardNeedsReviewStatus(f.status)).length
   const inProgressCount     = facilities.filter(f => f.status === 'In Progress').length
   const notStartedCount     = facilities.filter(f => f.status === 'Not Started').length
-  const pendingReviewFacilities = facilities.filter(f => f.status === 'Needs Review' || f.status === 'Review')
+  const pendingReviewFacilities = facilities.filter(f => isDashboardNeedsReviewStatus(f.status))
   const pendingLpReviews = pendingReviewFacilities.reduce((sum, f) => sum + (f.lps ?? 0), 0)
   const latestBbRun = useMemo(() => {
     return facilities.reduce<FacilityRow | null>((latest, facility) => {
