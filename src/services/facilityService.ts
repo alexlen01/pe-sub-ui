@@ -112,7 +112,6 @@ export interface FacilityRow {
   loanAmount:           string
   maturityDate:         string
   collateralDate:       string
-  facilityStatusDate:   string
   id?:                  number
   lastRunAt?:           string | null
   latestSubmissionId?:  number | null
@@ -196,7 +195,6 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       loanAmount:           formatLoanAmount(f.loanAmount),
       maturityDate:         f.maturityDate ? formatFullDate(f.maturityDate) : '—',
       collateralDate:       f.collateralDate ? formatFullDate(f.collateralDate) : '—',
-      facilityStatusDate:   f.lastRunAt ? formatFullDate(f.lastRunAt) : '—',
     }
   }) as FacilityRow[]
 }

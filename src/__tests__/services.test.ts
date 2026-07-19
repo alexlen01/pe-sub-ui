@@ -417,7 +417,23 @@ describe('getFacilityBBSnapshot — live mode', () => {
       new Response(JSON.stringify({ facilityId: 1, result: { summary } }), { status: 200 })
     ))
     const result = await getFacilityBBSnapshot(1)
-    expect(result).toEqual({ summary, breaches: [] })
+    expect(result).toEqual({ summary, breaches: [], lps: [] })
+  })
+
+  it('passes through the per-LP engine results persisted with the snapshot', async () => {
+    const summary = { totalUBB: 18.0, totalABB: 18.0 }
+    const lps = [
+      { id: 51, name: 'Alpha Pension', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
+      { id: 52, name: 'Beta Endowment', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ facilityId: 1, result: { summary, lps } }), { status: 200 })
+    ))
+    const result = await getFacilityBBSnapshot(1)
+    expect(result?.lps).toHaveLength(2)
+    expect(result?.lps[0].name).toBe('Alpha Pension')
+    expect(result?.lps[0].pctAgentBB).toBeCloseTo(0.5)
+    expect(result?.lps[1].agentExcessM).toBeCloseTo(2.0)
   })
 
   it('passes through the snapshot breaches persisted with the run', async () => {
@@ -497,7 +513,7 @@ describe('api.bb.run — LP commit', () => {
     aum: '$500.0B', nav: null, pension: null, pensionFunded: null,
     capCommit: '$20.0M', pctCapCommit: null, calledCap: '$14.0M',
     uc: '$20.0M', pctUncalled: null, pctCalled: null,
-    agentConc: '7.5%', ubsConc: '7.5%', ubsRate: '90%', agentRate: '95.0%', abb: '$19.0M',
+    agentConc: '7.5%', ubsConc: '7.5%', ubsRate: '90%', agentRate: '95.0%',
     inc: true, rcl: false, notes: null,
   }
 
@@ -519,6 +535,11 @@ describe('api.bb.run — LP commit', () => {
     expect(body.lps[0].ubsConc).toBe('7.5%')
     // The resolved UBS advance rate must round-trip so it reaches LP Master (writeBack reads it).
     expect(body.lps[0].ubsRate).toBe('90%')
+    // Engine outputs are server-computed at run time — the commit payload must not carry them.
+    expect(body.lps[0]).not.toHaveProperty('abb')
+    expect(body.lps[0]).not.toHaveProperty('ubb')
+    expect(body.lps[0]).not.toHaveProperty('agentExcessConc')
+    expect(body.lps[0]).not.toHaveProperty('ubsExcessConc')
   })
 
   it('returns the config-driven breaches from the run response', async () => {
@@ -543,7 +564,7 @@ describe('api.bb.run — LP commit', () => {
     expect(result.result.breaches[1].severity).toBe('warning')
   })
 
-  it('POSTs with no body when no LPs provided', async () => {
+  it('regenerates from persisted facility LP records with a bodyless run', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 201 }))
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -551,6 +572,106 @@ describe('api.bb.run — LP commit', () => {
 
     const call = fetchSpy.mock.calls[0] as [string, RequestInit]
     expect(call[1].body).toBeUndefined()
+  })
+
+  it('allows one direct LP Master bootstrap when no Shadow BB snapshot exists', async () => {
+    const fetchSpy = vi.fn((url: string) => {
+      if (url === '/api/bb/snapshots/1/latest') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (url === '/api/bb/run/1') {
+        return Promise.resolve(new Response(JSON.stringify(snapshot), { status: 201 }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await api.bb.rerunFromLpMaster(1)
+
+    expect(result.snapshot.id).toBe(7)
+    expect(result.submission).toBeNull()
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(fetchSpy.mock.calls[1][0]).toBe('/api/bb/run/1')
+  })
+
+  it('requires the approval path for an LP Master facility that already has a snapshot', async () => {
+    const pendingSubmission = {
+      id: 42, facilityId: 1, facilityName: 'Apex', agentBank: 'Wells Fargo',
+      periodMonth: '2026-06', status: 'Pending Review', fileName: 'agent.xlsx',
+      uploadedBy: 1, notes: null, wizardStep: 6, shadowBbOverrides: null, version: 4,
+      ownerUuName: 'analyst1', ownerName: 'Analyst One', submittedBy: 'analyst1',
+      reviewedBy: null, reviewNote: null, createdAt: '2026-06-01', updatedAt: '2026-06-02',
+    }
+    const fetchSpy = vi.fn((url: string) => {
+      if (url === '/api/bb/snapshots/1/latest' || url === '/api/bb/run/1') {
+        return Promise.resolve(new Response(JSON.stringify(snapshot), { status: url.includes('snapshots') ? 200 : 201 }))
+      }
+      if (String(url).startsWith('/api/submissions?')) {
+        return Promise.resolve(new Response(JSON.stringify([{ ...pendingSubmission, status: 'Processed' }]), { status: 200 }))
+      }
+      if (url === '/api/submissions/42/complete') {
+        return Promise.resolve(new Response(JSON.stringify(pendingSubmission), { status: 200 }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await api.bb.rerunFromLpMaster(1)
+
+    expect(result.submission?.status).toBe('Pending Review')
+    expect(fetchSpy.mock.calls.map(call => call[0])).toEqual([
+      '/api/bb/snapshots/1/latest',
+      '/api/submissions?facilityId=1',
+      '/api/bb/run/1',
+      '/api/submissions/42/complete',
+    ])
+  })
+
+  it('re-runs the latest eligible submission and submits it for Manager review', async () => {
+    const pendingSubmission = {
+      id: 42, facilityId: 1, facilityName: 'Apex', agentBank: 'Wells Fargo',
+      periodMonth: '2026-06', status: 'Pending Review', fileName: 'agent.xlsx',
+      uploadedBy: 1, notes: null, wizardStep: 6, shadowBbOverrides: null, version: 4,
+      ownerUuName: 'analyst1', ownerName: 'Analyst One', submittedBy: 'analyst1',
+      reviewedBy: null, reviewNote: null, createdAt: '2026-06-01', updatedAt: '2026-06-02',
+    }
+    const fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+      void init
+      if (String(url).startsWith('/api/submissions?')) {
+        return Promise.resolve(new Response(JSON.stringify([
+          { ...pendingSubmission, id: 43, status: 'Aborted', wizardStep: 6 },
+          { ...pendingSubmission, status: 'Processed', wizardStep: 6 },
+        ]), { status: 200 }))
+      }
+      if (url === '/api/bb/run/1') {
+        return Promise.resolve(new Response(JSON.stringify(snapshot), { status: 201 }))
+      }
+      if (url === '/api/submissions/42/complete') {
+        return Promise.resolve(new Response(JSON.stringify(pendingSubmission), { status: 200 }))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await api.bb.rerunForReview(1)
+
+    expect(result.snapshot.id).toBe(7)
+    expect(result.submission.status).toBe('Pending Review')
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+    expect(fetchSpy.mock.calls[1][0]).toBe('/api/bb/run/1')
+    expect((fetchSpy.mock.calls[1][1] as RequestInit).body).toBeUndefined()
+    expect(fetchSpy.mock.calls[2][0]).toBe('/api/submissions/42/complete')
+    expect((fetchSpy.mock.calls[2][1] as RequestInit).method).toBe('POST')
+  })
+
+  it('does not recalculate when no completed submission can enter approval', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify([
+      { status: 'Review', wizardStep: 4 },
+    ]), { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(api.bb.rerunForReview(1)).rejects.toThrow('No completed Shadow BB submission')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
   it('throws on API error', async () => {

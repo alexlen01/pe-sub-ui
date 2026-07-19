@@ -7,6 +7,11 @@ export interface ComputedLP extends LPRecord {
   abbM: number
   deltaM: number
   concExcessM: number
+  // Optional: absent on snapshots persisted before the server-authoritative extension.
+  ucM?: number
+  agentExcessM?: number
+  pctAgentBB?: number
+  pctUbsBB?: number
   highQuality: boolean
 }
 
@@ -19,6 +24,11 @@ export interface BBSummary {
   earDelta: number
   includedCount: number
   excludedCount: number
+  // Optional: absent on snapshots persisted before the server-authoritative extension.
+  totalUEC?: number
+  totalUC?: number
+  totalConcExcess?: number
+  reclassCount?: number
 }
 
 export type BreachType = 'single-lp' | 'top10' | 'unrated' | 'non-us'

@@ -64,7 +64,14 @@ describe('buildExecRowsFromSummary', () => {
     expect(ear.agent).toBe('85.5%')
   })
 
-  it('derives Total Eligible Uncalled = UBS BB / EAR', () => {
+  it('uses the server-computed totalUEC when the summary carries it', () => {
+    const tuc = buildExecRowsFromSummary({ ...SUMMARY, totalUEC: 27500.0 })
+      .find(r => r.metric === 'Total Eligible Uncalled')!
+    expect(tuc.ubs).toBe('$27500.0M')
+    expect(tuc.agent).toBe('$27500.0M')
+  })
+
+  it('derives Total Eligible Uncalled = UBS BB / EAR for pre-extension snapshots', () => {
     const tuc = buildExecRowsFromSummary(SUMMARY).find(r => r.metric === 'Total Eligible Uncalled')!
     // 22822.1 / 0.829 ≈ 27529.7
     expect(tuc.ubs).toBe(tuc.agent)

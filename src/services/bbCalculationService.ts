@@ -1,8 +1,10 @@
+// Preview-only client math — authoritative BB figures (per-row results, summary totals,
+// breaches) always come from the API's Shadow BB run; computeLPRecord exists solely so the
+// LP record panel can preview unsaved edits before the next run.
 import { api, type BBSummaryExt } from './api'
 export type { BBSummaryExt }
-import { regionOf } from '../config/regionReference'
 import type { LPRecord } from './lpService'
-import type { BBBreach } from '../types/bb'
+import type { BBBreach, ComputedLP as ComputedServerLP } from '../types/bb'
 import { formatPercentageFraction } from '../utils/percentage'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,16 +62,6 @@ export interface ComputedLPRecord extends LPRecord {
   uec: string; ubb: string; delta: string; rate: string; agentExcess: string
 }
 
-export interface BBSummary {
-  totalUBB: number; totalABB: number; bbDelta: number; ear: number
-  agentEar: number; earDelta: number; totalUEC: number; totalUC: number
-  totalConcExcess: number; includedCount: number; excludedCount: number
-  reclassCount: number; calculatedAt: Date; params: typeof DEFAULT_FACILITY_PARAMS
-}
-
-export interface BBBreachResult { rule: string; entity: string; value: string; limit: string; severity: 'breach' | 'warning' }
-export interface BBResult { lps: ComputedLPRecord[]; summary: BBSummary; breaches: BBBreachResult[] }
-
 export function computeLPRecord(
   LPRecord: LPRecord,
   params = DEFAULT_FACILITY_PARAMS,
@@ -101,51 +93,6 @@ export function computeLPRecord(
   }
 }
 
-export function computePortfolioBB(
-  lps: LPRecord[],
-  params = DEFAULT_FACILITY_PARAMS,
-  busaRates: Record<string, number> = {},
-): BBResult {
-  const raw = lps.map(LPRecord => computeLPRecord(LPRecord, params, busaRates))
-  const totalAllUC = raw.reduce((s, r) => s + r.ucM, 0)
-  const computed = raw.map(LPRecord => {
-    const pctStr = LPRecord.agentConc ?? ''
-    const rawPct = parseFloat(pctStr) || 0
-    const agentConcPct = pctStr.includes('%') ? rawPct / 100 : rawPct
-    const agentConcLimitM = agentConcPct > 0 ? totalAllUC * agentConcPct : 0
-    const agentExcessM = agentConcLimitM > 0 ? Math.max(0, LPRecord.ucM - agentConcLimitM) : 0
-    return { ...LPRecord, agentExcessM, agentExcess: agentExcessM > 0 ? fmtM(agentExcessM) : '—' }
-  })
-  const included = computed.filter(r => r.inc && r.cls !== 'Excluded')
-  const totalUBB = included.reduce((s, r) => s + r.ubbM, 0)
-  const totalABB = computed.reduce((s, r) => s + r.abbM, 0)
-  const totalUEC = included.reduce((s, r) => s + r.uecM, 0)
-  const totalUC  = included.reduce((s, r) => s + r.ucM,  0)
-  const bbDelta  = totalUBB - totalABB
-  const ear      = totalUEC > 0 ? totalUBB / totalUEC : 0
-  const agentEar = totalUEC > 0 ? totalABB / totalUEC : 0
-  const breaches: BBBreachResult[] = []
-  if (totalUBB > 0) {
-    included.forEach(LPRecord => { const pct = LPRecord.ubbM / totalUBB; if (pct > 0.15) breaches.push({ rule: 'Single LPRecord Concentration', entity: LPRecord.name, value: fmtPct(pct), limit: '15%', severity: 'breach' }) })
-    const sorted = [...included].sort((a, b) => b.ubbM - a.ubbM)
-    const top10Pct = sorted.slice(0, 10).reduce((s, r) => s + r.ubbM, 0) / totalUBB
-    if (top10Pct > 0.60) breaches.push({ rule: 'Top-10 LPRecord Concentration', entity: 'Top 10 LPs', value: fmtPct(top10Pct), limit: '60%', severity: 'breach' })
-    else if (top10Pct > 0.50) breaches.push({ rule: 'Top-10 LPRecord Concentration', entity: 'Top 10 LPs', value: fmtPct(top10Pct), limit: '60%', severity: 'warning' })
-    // "Unrated" = any included LPRecord outside the rated tier. Stated as the complement of the rated
-    // classes so it holds for both the legacy taxonomy (non-'Rated' included = the old explicit
-    // list) and the UBS taxonomy (non-'Rated Investor' included).
-    const RATED_CLASSES = ['Rated', 'Rated Investor']
-    const unratedPct = included.filter(r => !RATED_CLASSES.includes(r.cls)).reduce((s,r) => s+r.ubbM, 0) / totalUBB
-    if (unratedPct > 0.50) breaches.push({ rule: 'Unrated Aggregate Concentration', entity: 'Unrated LPs', value: fmtPct(unratedPct), limit: '50%', severity: 'breach' })
-    // Non-US = any region other than North America. Derived from the structured region token
-    // (regionOf tolerates legacy free-text like "North America") so a display-label change can
-    // never silently flip this 30% concentration test.
-    const nonUSPct = included.filter(r => regionOf(r.region) !== 'NAM').reduce((s,r) => s+r.ubbM, 0) / totalUBB
-    if (nonUSPct > 0.30) breaches.push({ rule: 'Non-US LPRecord Concentration', entity: 'Non-US LPs', value: fmtPct(nonUSPct), limit: '30%', severity: 'breach' })
-  }
-  return { lps: computed, summary: { totalUBB, totalABB, bbDelta, ear, agentEar, earDelta: ear - agentEar, totalUEC, totalUC, totalConcExcess: computed.reduce((s,r) => s+r.concExcessM, 0), includedCount: included.length, excludedCount: computed.filter(r => r.cls === 'Excluded').length, reclassCount: computed.filter(r => r.rcl).length, calculatedAt: new Date(), params }, breaches }
-}
-
 // ── Selector functions (API-first) ────────────────────────────────────────────
 
 export interface FacilityBBSnapshotView {
@@ -153,13 +100,15 @@ export interface FacilityBBSnapshotView {
   /** Concentration breaches persisted with the snapshot — the engine's verdict against the
    *  Concentration Limits config at run time. */
   breaches: BBBreach[]
+  /** Per-LP engine results persisted with the snapshot — the authoritative row-level figures. */
+  lps: ComputedServerLP[]
 }
 
 export async function getFacilityBBSnapshot(facilityId: number): Promise<FacilityBBSnapshotView | null> {
   const snapshot = await api.bb.latestSnapshot(facilityId)
   const summary = (snapshot?.result?.summary as unknown as Record<string, unknown>) ?? null
   if (!summary) return null
-  return { summary, breaches: snapshot?.result?.breaches ?? [] }
+  return { summary, breaches: snapshot?.result?.breaches ?? [], lps: snapshot?.result?.lps ?? [] }
 }
 
 export async function getFacilitySummaryExt(facilityId: number): Promise<BBSummaryExt | null> {

@@ -179,6 +179,15 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
   --dash-collateral-col: 1%;
   --dash-status-col: 1%;
 }
+.dashboard-summary-column {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  position: sticky;
+  top: 12px;
+}
 .dashboard-screen .data-table-wrap { overflow-x: auto; }
 .dashboard-screen .data-table {
   table-layout: auto;

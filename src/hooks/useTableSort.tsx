@@ -90,7 +90,7 @@ export function useSortableRows<T>(
     })
   }
 
-  return { sort, sortedRows, requestSort }
+  return { sort, setSort, sortedRows, requestSort }
 }
 
 export function SortableHeader({ sortKey, sort, onSort, children, className, style, title, onResizeStart }: SortableHeaderProps) {

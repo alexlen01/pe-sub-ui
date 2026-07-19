@@ -419,7 +419,6 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
           <input type="date" style={{ width: '100%' }} value={form.collateralDate} onChange={e => setForm(p => ({ ...p, collateralDate: e.target.value }))} aria-label="Collateral Date" />
         </div>
         {ro('Facility Status', <Tag>{facility.status}</Tag>)}
-        {ro('Facility Status Date', facility.facilityStatusDate)}
 
       </div>
     </Modal>
@@ -538,7 +537,10 @@ export default function LPMaster() {
     { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubb ?? '' },
     { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
   ], [])
-  const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'rank', direction: 'asc' })
+  const { sort, setSort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'name', direction: 'asc' })
+  useEffect(() => {
+    setSort({ key: facFilter ? 'rank' : 'name', direction: 'asc' })
+  }, [facFilter, setSort])
   const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
     rank: 64,
@@ -550,6 +552,9 @@ export default function LPMaster() {
     agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
     agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
   })
+  const visibleTableWidth = facFilter || typeof tableWidth !== 'number'
+    ? tableWidth
+    : tableWidth - widths.rank
   const handleSave = async (updated: LPRecord) => {
     const originalId = selected?.id
     const originalName = selected?.name
@@ -642,8 +647,7 @@ export default function LPMaster() {
   }
 
   // Hard-delete an erroneously ingested LP record (correction path for rows that slipped
-  // past extraction review). The API recomputes the facility's ranks, so the list is
-  // re-fetched rather than filtered locally to pick up the refreshed Rank column.
+  // past extraction review). Re-fetch the list so all server-managed record data stays current.
   const handleDelete = async (target: LPRecord) => {
     if (target.id == null) return
     try {
@@ -666,7 +670,7 @@ export default function LPMaster() {
     if (!facFilter?.id) return
     setRerunning(true)
     try {
-      const snapshot = await api.bb.run(facFilter.id)
+      const { snapshot, submission } = await api.bb.rerunFromLpMaster(facFilter.id)
       const refreshedLPs = await getLPsForFacility(facFilter.id)
       setLpData(refreshedLPs)
       if (selected) {
@@ -679,7 +683,11 @@ export default function LPMaster() {
       setFacilities(refreshedFacilities)
       setTargetFacility(facFilter.name)
       const summary = snapshot.result.summary
-      toast(`Shadow BB re-run complete — UBS BB ${formatUsdNoDecimals(summary.totalUBB * 1_000_000)}.`)
+      toast(
+        `Shadow BB re-run complete — UBS BB ${formatUsdNoDecimals(summary.totalUBB * 1_000_000)}.${submission ? ' Submitted for Manager approval.' : ''}`,
+        3600,
+        'success',
+      )
     } catch (e) {
       toast(e instanceof Error && e.message ? e.message : 'Could not re-run Shadow BB — API unavailable.')
     } finally {
@@ -788,10 +796,12 @@ export default function LPMaster() {
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <div style={{ height: '100%', minWidth: 0, overflowY: 'auto' }}>
             <div className="data-table-wrap">
-        <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: tableWidth, width: tableWidth }}>
+        <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: visibleTableWidth, width: visibleTableWidth }}>
           <thead>
             <tr>
-              <SortableHeader sortKey="rank"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rank }} onResizeStart={onResizeStart}>Rank</SortableHeader>
+              {facFilter && (
+                <SortableHeader sortKey="rank" sort={sort} onSort={requestSort} className="num" style={{ width: widths.rank }} onResizeStart={onResizeStart}>Rank</SortableHeader>
+              )}
               <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
               <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
               <SortableHeader sortKey="spv"            sort={sort} onSort={requestSort} style={{ width: widths.spv }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
@@ -841,7 +851,7 @@ export default function LPMaster() {
                   ].join('|')
               return (
               <tr key={rowKey} className={selected === LPRecord ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
-                <td className="num">{LPRecord.rank ?? '—'}</td>
+                {facFilter && <td className="num">{LPRecord.rank ?? '—'}</td>}
                 <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.name}</strong>
                   {LPRecord.rcl && <span className="rcl-badge">R</span>}
@@ -918,6 +928,7 @@ export default function LPMaster() {
             onDelete={canEdit ? handleDelete : undefined}
             canEdit={canEdit}
             enableReclassify
+            showRank={Boolean(facFilter)}
             totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uc) ?? 0) / 1_000_000), 0)}
           />
         </DraggablePanel>

@@ -63,11 +63,16 @@ The main workflow is a five-step wizard:
    ("must resolve before submitting BB certificate to agent"), an amber box for warnings, and
    the primary action relabels to **Review Breaches in BB Results** while breaches exist
 
-The **Shadow BB Results** screen shows the same persisted breach verdict above the LP table:
-collapsible red (breach) and amber (warning) panels listing rule, detail, and actual vs configured
-limit, sourced from the latest snapshot via `getFacilityBBSnapshot` (which returns
-`{ summary, breaches }`). The panels hide while local overrides are active, since the stored
-verdict no longer matches the recomputed table.
+The **Shadow BB Results** screen is **server-rendered**: the grid joins the latest snapshot's
+per-LP engine results (`getFacilityBBSnapshot` returns `{ summary, breaches, lps }`) with the live
+LP records (input fields, rank), and every BB figure — per-row Agent/UBS BB, excess
+concentrations, %-of-BB shares, footer totals, the 5-table summary (`GET /api/bb/summary-ext`),
+and the breach verdict — comes from the server, frozen at the last run. The UI computes **nothing
+authoritative**: `calcRow` and `computeLPRecord` survive only as instant previews of *unsaved*
+edits (an edited row shows live preview values; an "Unsaved changes" banner explains that totals,
+summary and breaches stay frozen until **Re-run Shadow BB**). The Run Shadow BB wizard step
+likewise posts input fields only — `abb`/`ubb`/excess concentrations are no longer part of the
+commit payload — and renders the run response's summary.
 
 ## Dashboard
 

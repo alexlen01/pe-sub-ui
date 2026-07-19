@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import Button from './Button'
 import { SortableHeader, useSortableRows, type SortValue } from '../../hooks/useTableSort'
 import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
-
-const PAGE_SIZE_OPTS = [15, 30, 45]
+import { PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 
 export interface Column<T> {
   key: string

@@ -185,8 +185,9 @@ export interface CommitLpRow {
   capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
   uc: string | null; pctUncalled: string | null; pctCalled: string | null
   agentConc: string | null; ubsConc: string | null; ubsRate?: string | null
-  agentRate: string | null; abb: string | null; ubb?: string | null
-  agentExcessConc?: string | null; ubsExcessConc?: string | null
+  agentRate: string | null
+  // Engine outputs (abb/ubb/excess concentrations) are computed and persisted server-side at
+  // run time — they are deliberately not part of the commit payload.
   inc: boolean; rcl: boolean; tf?: boolean; rank?: number | null; notes: string | null
 }
 
@@ -528,6 +529,30 @@ export const api = {
   bb: {
     run: (facilityId: number, lps?: CommitLpRow[]) =>
       post<BBSnapshot>(`/api/bb/run/${facilityId}`, lps ? { lps } : undefined),
+    // LP Master historical bootstrap is the only direct-run exception. Once any snapshot exists,
+    // subsequent re-runs must use the submission-backed Manager approval workflow.
+    rerunFromLpMaster: async (facilityId: number): Promise<{ snapshot: BBSnapshot; submission: Submission | null }> => {
+      const existingSnapshot = await getOrNull<BBSnapshot>(`/api/bb/snapshots/${facilityId}/latest`)
+      if (existingSnapshot == null) {
+        const snapshot = await post<BBSnapshot>(`/api/bb/run/${facilityId}`)
+        return { snapshot, submission: null }
+      }
+      return api.bb.rerunForReview(facilityId)
+    },
+    // Re-runs launched outside the submission wizard must enter the same maker/checker workflow
+    // as a completed Run Shadow BB. Resolve the latest eligible submission before calculating so
+    // a facility without a reviewable submission is not silently recalculated without approval.
+    rerunForReview: async (facilityId: number): Promise<{ snapshot: BBSnapshot; submission: Submission }> => {
+      const submissions = await get<Submission[]>(`/api/submissions${qs({ facilityId })}`)
+      const submission = submissions.find(candidate =>
+        candidate.status !== 'Aborted' && candidate.wizardStep >= 5)
+      if (!submission) {
+        throw new Error('No completed Shadow BB submission is available to submit for approval.')
+      }
+      const snapshot = await post<BBSnapshot>(`/api/bb/run/${facilityId}`)
+      const pendingSubmission = await post<Submission>(`/api/submissions/${submission.id}/complete`, {})
+      return { snapshot, submission: pendingSubmission }
+    },
     snapshots: (facilityId: number) =>
       get<BBSnapshot[]>(`/api/bb/snapshots/${facilityId}`),
     latestSnapshot: (facilityId: number) =>

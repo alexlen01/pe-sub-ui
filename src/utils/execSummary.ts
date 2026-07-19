@@ -33,7 +33,9 @@ export function fmtDeltaPct(n: number): string {
 export function buildExecRowsFromSummary(summary: BBSummary | null | undefined): ExecRow[] {
   if (!summary) return []
 
-  const uecM = summary.ear > 0 ? summary.totalUBB / summary.ear : 0
+  // Server-authoritative summaries carry totalUEC directly; snapshots persisted before the
+  // extension lack it, so fall back to the historical back-derivation (UBB ÷ EAR).
+  const uecM = summary.totalUEC ?? (summary.ear > 0 ? summary.totalUBB / summary.ear : 0)
 
   return [
     { metric: 'Total Eligible Uncalled', ubs: fmtM(uecM),                    agent: fmtM(uecM)                    },

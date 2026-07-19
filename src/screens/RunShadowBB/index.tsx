@@ -15,7 +15,6 @@ import RegionTypeahead from '../../components/ui/RegionTypeahead'
 import { formatRegion } from '../../config/regionReference'
 import { lpSizeFormat } from '../../utils/lpSize'
 import {
-  buildBusaRateFractions,
   busaClassificationOptions,
   clsConcLimitPctForCls,
   resolveBbCriteria,
@@ -23,12 +22,12 @@ import {
   ubsClassFromAgentRate,
 } from '../../services/configService'
 import { useConfigCache } from '../../store/configStore'
-import { computePortfolioBB, fmtM, fmtPct } from '../../services/bbCalculationService'
+import { fmtM, fmtPct } from '../../services/bbCalculationService'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import type { LPRecord } from '../../services/lpService'
 import type { Submission, AgentExtractedRow, LpRate, CommitLpRow, LpClassificationRequest } from '../../services/api'
-import type { BBBreach } from '../../types/bb'
+import type { BBBreach, BBResult } from '../../types/bb'
 import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
 
 const DEFAULT_CL_PCT = 7.5
@@ -99,6 +98,16 @@ export function parsePct(str: string | undefined | null): number | '' {
   const n = parseFloat(String(str).replace('%', ''))
   return Number.isFinite(n) ? n : ''
 }
+
+export function isRunShadowBbDisabled(
+  running: boolean,
+  lpRatesLoaded: boolean,
+  hasLoadError: boolean,
+  canEdit: boolean,
+): boolean {
+  return running || !lpRatesLoaded || hasLoadError || !canEdit
+}
+
 export function parseMoneyM(str: string | undefined | null): number {
   if (!str) return 0
   const m = String(str).match(/\$?\s*([\d,.]+)\s*([MB])?/i)
@@ -275,13 +284,13 @@ export function buildBreachAlerts(breaches: BBBreach[]) {
 }
 
 export default function RunShadowBB() {
-  const { toast, navigate, bbParams, activeSubmission, activeSubmissionId, abortSubmission, setTargetFacility } = useApp()
+  const { toast, navigate, activeSubmission, activeSubmissionId, abortSubmission, setTargetFacility } = useApp()
   const { can } = useAuth()
   const [matchQueue, setMatchQueue] = useState<Awaited<ReturnType<typeof getMatchQueue>>>([])
   const [running, setRunning] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted,  setSubmitted]  = useState(false)
-  const [result, setResult] = useState<ReturnType<typeof computePortfolioBB> | null>(null)
+  const [result, setResult] = useState<BBResult | null>(null)
   // Concentration breaches from the server run response — the engine checks them against the
   // Concentration Limits config on every run, so this is the authoritative list, not the local mirror.
   const [runBreaches, setRunBreaches] = useState<BBBreach[]>([])
@@ -313,8 +322,6 @@ export default function RunShadowBB() {
   const wizardSteps = configCache.wizard?.WIZARD_STEPS ?? []
   const classCfg = configCache.classification
   const eligCfg = configCache.eligibility
-
-  const busaRates = useMemo(() => classCfg ? buildBusaRateFractions(classCfg) : {}, [classCfg])
 
   useEffect(() => {
     if (configCache.status === 'failed' && configCache.error) setLoadError(configCache.error)
@@ -825,7 +832,6 @@ export default function RunShadowBB() {
 
     const overriddenLPs = submissionLPs.map(LPRecord => {
       const ov         = overrides[LPRecord._key] ?? buildOverride(LPRecord)
-      const c          = calcRow(ov, totalCommitM, totalUncalledM)
       const ucM        = parseMoneyM(ov.ucM)
       const concLimitM = typeof ov.concLimitPct === 'number'
         ? (ov.concLimitPct / 100) * totalUncalledM
@@ -849,18 +855,21 @@ export default function RunShadowBB() {
         aum: sizeAum, nav: sizeNav, pension: sizeAssets, pensionFunded: '',
         capCommit: ov.capCommit, rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
         agentConc, ubsConc,
-        agentExcessConc: fmtM(c.agentExcess), ubsExcessConc: fmtM(c.ubsExcess),
-        abb: fmtM(c.agentBBCalc), ubb: fmtM(c.ubsBBCalc),
         concLimitM, inc: ov.inc ?? false, notes: ov.notes,
       }
     })
 
-    const computed = computePortfolioBB(overriddenLPs as LPRecord[], bbParams, busaRates)
-    const { summary } = computed
-
+    // The server engine is authoritative: the run POSTs inputs only and renders the
+    // response — no BB figure is computed client-side.
+    let runResult: BBResult | null = null
     {
       const facilityId = submissionDetails?.facilityId
-      if (facilityId != null) {
+      if (facilityId == null) {
+        setLoadError('No facility linked to this submission — cannot run Shadow BB.')
+        setRunning(false)
+        return
+      }
+      {
         try {
           const commitRows: CommitLpRow[] = overriddenLPs.map(LPRecord => ({
             name:            LPRecord.name ?? '',
@@ -894,17 +903,14 @@ export default function RunShadowBB() {
             // LP Master; `rate` is formatted above from the same criteria.
             ubsRate:         LPRecord.rate || null,
             agentRate:       LPRecord.agentRate || null,
-            abb:             LPRecord.abb || null,
-            ubb:             LPRecord.ubb || null,
-            agentExcessConc: LPRecord.agentExcessConc || null,
-            ubsExcessConc:   LPRecord.ubsExcessConc || null,
             inc:             LPRecord.inc ?? false,
             rcl:             LPRecord.rcl ?? false,
             tf:              LPRecord.tf ?? false,
             notes:           LPRecord.notes || null,
           }))
           const snap = await api.bb.run(facilityId, commitRows)
-          setRunBreaches(snap?.result?.breaches ?? [])
+          runResult = snap?.result ?? null
+          setRunBreaches(runResult?.breaches ?? [])
         } catch (e) {
           setLoadError(String(e))
           setRunning(false)
@@ -915,10 +921,13 @@ export default function RunShadowBB() {
 
     // Running only computes and snapshots — the submission stays In Progress so the analyst can
     // iterate. Submitting for independent review is a deliberate, separate step (submitForReview).
-    setResult(computed)
+    setResult(runResult)
     setSubmitted(false)
     setRunning(false)
-    toast(`Shadow BB complete — ${overriddenLPs.length} LPs · UBS BB ${fmtM(summary.totalUBB)} · Delta ${fmtM(summary.bbDelta)}`)
+    const summary = runResult?.summary
+    toast(summary
+      ? `Shadow BB complete — ${overriddenLPs.length} LPs · UBS BB ${fmtM(summary.totalUBB)} · Delta ${fmtM(summary.bbDelta)}`
+      : `Shadow BB complete — ${overriddenLPs.length} LPs.`)
   }
 
   // Maker step: hand the completed run to independent (Manager) review. Distinct from Run so the
@@ -949,9 +958,9 @@ export default function RunShadowBB() {
     { label: 'Agent Advance Rate',    value: fmtPct(result.summary.agentEar)                    },
     { label: 'EAR Delta',             value: fmtPct(result.summary.earDelta),         neg: result.summary.earDelta < 0 },
     { label: 'Excluded LPs',         value: result.summary.excludedCount,                         right: true },
-    { label: 'UBS Elig. Uncalled',   value: fmtFull(result.summary.totalUEC)                     },
-    { label: 'Conc. Excess (total)', value: fmtFull(result.summary.totalConcExcess),  neg: result.summary.totalConcExcess > 0 },
-    { label: 'Reclassified LPs',     value: result.summary.reclassCount,                          right: true },
+    { label: 'UBS Elig. Uncalled',   value: fmtFull(result.summary.totalUEC ?? 0)                },
+    { label: 'Conc. Excess (total)', value: fmtFull(result.summary.totalConcExcess ?? 0), neg: (result.summary.totalConcExcess ?? 0) > 0 },
+    { label: 'Reclassified LPs',     value: result.summary.reclassCount ?? 0,                     right: true },
   ] : []
 
   const selectedLp = submissionLPs.find(LPRecord => LPRecord._key === selectedKey) ?? null
@@ -991,7 +1000,7 @@ export default function RunShadowBB() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {unclassified > 0 && <button onClick={() => setUnclassifiedOnly(v => !v)} title={unclassifiedOnly ? 'Show all LPs' : 'Show only unclassified LPs'} style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, background: unclassifiedOnly ? 'color-mix(in srgb, var(--danger) 12%, transparent)' : 'none', border: 'none', padding: '3px 6px', borderRadius: 3, cursor: 'pointer', textDecoration: 'underline' }}>{unclassified} unclassified</button>}
                 <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)} disabled={running || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : undefined}>Abort Submission</Button>
-                <Button size="sm" onClick={run} disabled={running || !lpRatesLoaded || loadError != null || unclassified > 0 || !canEdit} title={!canEdit ? 'Read-only — take over the submission to edit it.' : unclassified > 0 ? `Resolve ${unclassified} unclassified LPRecord${unclassified !== 1 ? 's' : ''} before running` : undefined}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
+                <Button size="sm" onClick={run} disabled={isRunShadowBbDisabled(running, lpRatesLoaded, loadError != null, canEdit)} title={!canEdit ? 'Read-only — take over the submission to edit it.' : unclassified > 0 ? `${unclassified} unclassified LPRecord${unclassified !== 1 ? 's' : ''} will be treated as Excluded` : undefined}>{running ? 'Calculating…' : 'Run Shadow BB'}</Button>
               </div>
             }
           >

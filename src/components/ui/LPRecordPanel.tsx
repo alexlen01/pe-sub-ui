@@ -152,11 +152,13 @@ export interface LPRecordPanelProps {
   /** Facility-wide uncalled capital, used to turn edited concentration percentages into dollar caps. */
   totalUncalledM?: number
   enableReclassify?: boolean
+  /** Rank is facility-specific; show it only in facility-scoped and Shadow BB contexts. */
+  showRank?: boolean
 }
 
 export default function LPRecordPanel({
   LPRecord, open, onClose, onSave, onDelete, canEdit = true, running = false,
-  totalAgentBB, totalUbsBB, totalUncalledM, enableReclassify = false,
+  totalAgentBB, totalUbsBB, totalUncalledM, enableReclassify = false, showRank = false,
 }: LPRecordPanelProps) {
   const [subview,   setSubview]   = useState<null | 'reclassify'>(null)
   const [newCls,    setNewCls]    = useState('')
@@ -402,8 +404,8 @@ export default function LPRecordPanel({
     return (
       <div style={COLS}>
         {sec('Identification & Classification')}
-        {calc('Rank', LPRecord.rank ?? '—', { cols: 1 })}
-        {f('Investor Name', LPRecord.name, 'name', { cols: 5 })}
+        {showRank && calc('Rank', LPRecord.rank ?? '—', { cols: 1 })}
+        {f('Investor Name', LPRecord.name, 'name', { cols: showRank ? 5 : 6 })}
         {f('SPV?', LPRecord.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
         {f('Parent', LPRecord.parent, 'parent', { cols: 5 })}
         {f('Fund Sleeve', LPRecord.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
@@ -439,6 +441,9 @@ export default function LPRecordPanel({
         {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
         {sec('Borrowing Base Calculation')}
+        <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--muted)', marginTop: -4 }}>
+          Preview of unsaved edits — saved totals update on the next Shadow BB run.
+        </div>
         {f('Agent Advance Rate', LPRecord.agentRate, 'agentRate', { percentage: true, percentageStep: 5 })}
         {f('UBS Advance Rate', LPRecord.rate, 'rate', { percentage: true, percentageStep: 5 })}
         {f('Agent Concentration Limit', LPRecord.agentConc, 'agentConc', { percentage: true, percentageStep: 0.5 })}
@@ -544,7 +549,7 @@ export default function LPRecordPanel({
         ) : confirmDelete ? (
           <>
             <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>
-              Delete "{LPRecord.name}" from this facility's LP records? Ranks will be recomputed. This cannot be undone.
+              Delete "{LPRecord.name}" from this facility's LP records? This cannot be undone.
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>

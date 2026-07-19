@@ -48,6 +48,14 @@ navigated away.
 
 Screen names are defined in `src/config/screenConfig.ts`. Navigation goes through `navigate(name)` from `useApp()` — never mutate `screen` directly.
 
+### Rank display boundary
+
+`rank` is facility-specific. In LP Master, display Rank in both the records table and LP Record
+Entry panel when the user selects a facility first. Do not display Rank in either surface when the
+user chooses **All Facilities**, because that path mixes records from different facilities. Rank
+also remains visible in Shadow BB. Do not infer one global display rule from the presence of
+`rank` on `LPRecord`; the LP Master boundary is `facFilter` (selected facility versus all facilities).
+
 ---
 
 ## Test Coverage

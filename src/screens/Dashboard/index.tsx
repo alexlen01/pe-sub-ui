@@ -15,6 +15,7 @@ import type { FacilityRow, ActivityRow } from '../../services/facilityService'
 import type { BBSummary } from '../../types/bb'
 import { buildExecRowsFromSummary } from '../../utils/execSummary'
 import { lpCategoryColor } from '../../utils/lpCategoryPalette'
+import { sortLpCategoriesByRate } from '../../utils/lpCategoryOrder'
 import { useConfigCache } from '../../store/configStore'
 
 const FACILITY_STATUS_ITEMS = [
@@ -125,21 +126,19 @@ export default function Dashboard() {
     if (facilityLPs.length === 0) return null
     const total = facilityLPs.length
     const configuredOrder = (classCfg?.UBS_CLS_OPTS ?? []).filter(Boolean)
-    const orderByCls = new Map(configuredOrder.map((cls, index) => [cls, index]))
     const counts = new Map<string, number>()
     for (const LPRecord of facilityLPs) {
       const key = LPRecord.cls || ''
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
-    const segments = Array.from(counts.entries())
-      .sort(([a], [b]) => {
-        const ai = orderByCls.get(a) ?? Number.MAX_SAFE_INTEGER
-        const bi = orderByCls.get(b) ?? Number.MAX_SAFE_INTEGER
-        return ai === bi
-          ? a.localeCompare(b, undefined, { sensitivity: 'base' })
-          : ai - bi
-      })
-      .map(([cls, n]) => {
+    const orderedCategories = sortLpCategoriesByRate(
+      Array.from(counts.keys()),
+      classCfg?.UBS_CLS_DEFAULT_RATE,
+      configuredOrder,
+    )
+    const segments = orderedCategories
+      .map(cls => {
+        const n = counts.get(cls) ?? 0
         const rate = classCfg?.UBS_CLS_DEFAULT_RATE[cls]
         return {
           label: rate ? `${cls} (${rate})` : cls,
@@ -234,7 +233,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+        <div className="dashboard-summary-column">
           <Card
             title="LP Category"
             subtitle={
