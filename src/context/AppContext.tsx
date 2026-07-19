@@ -9,6 +9,7 @@ import { useAuth } from './AuthContext'
 import { getDevUser, setDevIdentity } from '../auth/session'
 import type { Role } from '../auth/roles'
 import type { LPRecord } from '../services/lpService'
+import { buildReclassificationNotifications, buildReviewNotifications, type ReviewNotification } from '../utils/reviewNotifications'
 
 export { SCREEN_MAP as SCREENS }
 
@@ -40,6 +41,9 @@ interface AppState {
   abortSubmission: (facility: string) => void
   targetFacility: string | null
   setTargetFacility: (f: string | null) => void
+  reviewNotifications: ReviewNotification[]
+  notificationsLoading: boolean
+  refreshReviewNotifications: () => Promise<void>
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -68,7 +72,7 @@ function toDisplayName(firstName: string, lastName: string, uuName: string): str
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { role, setRole, canSwitchRole } = useAuth()
+  const { role, setRole, canSwitchRole, can } = useAuth()
   const [screen,             setScreen]            = useState('dashboard')
   const [toasts,             setToasts]            = useState<ToastItem[]>([])
   const [lpData,             setLpData]            = useState<LPRecord[]>([])
@@ -80,6 +84,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [abortedFacilities,  setAbortedFacilities] = useState<string[]>([])
   const [targetFacility,     setTargetFacility]   = useState<string | null>(null)
   const [currentUser,        setCurrentUser]      = useState<User>(DEFAULT_USER)
+  const [reviewNotifications, setReviewNotifications] = useState<ReviewNotification[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(true)
   const toastSeq = useRef(0)
   const toastTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
 
@@ -123,7 +129,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         initials: initials(user.firstName, user.lastName, user.uuName),
         role: user.role,
         department: '',
-        notifications: DEFAULT_USER.notifications,
       }
     }
     api.users.me().then(user => setCurrentUser(toUiUser(user))).catch(() => {
@@ -175,7 +180,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (facility) setAbortedFacilities(prev => [...prev, facility])
   }, [])
 
-  useServerEvents(toast)
+  const refreshReviewNotifications = useCallback(async () => {
+    setNotificationsLoading(true)
+    try {
+      const [submissions, facilities] = await Promise.all([
+        api.submissions.list(),
+        api.facilities.list(),
+      ])
+      const reviewableFacilities = can('editLp')
+        ? facilities.filter(facility => ['Needs Review', 'Review', 'Pending Review'].includes(facility.status))
+        : []
+      const lpGroups = await Promise.all(reviewableFacilities.map(async facility => [
+        facility.id,
+        await api.lpRecords.list({ facilityId: facility.id }),
+      ] as const))
+      setReviewNotifications([
+        ...buildReviewNotifications(submissions, currentUser.uuName, can('reviewShadowBB')),
+        ...buildReclassificationNotifications(facilities, new Map(lpGroups)),
+      ])
+    } catch {
+      // A failed refresh must never leave a stale badge suggesting work that may no longer exist.
+      setReviewNotifications([])
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [can, currentUser.uuName])
+
+  useEffect(() => {
+    void refreshReviewNotifications()
+    const timer = setInterval(() => { void refreshReviewNotifications() }, 30_000)
+    return () => clearInterval(timer)
+  }, [refreshReviewNotifications])
+
+  const handleServerMessage = useCallback((message: string) => {
+    toast(message)
+    void refreshReviewNotifications()
+  }, [refreshReviewNotifications, toast])
+
+  useServerEvents(handleServerMessage)
 
   return (
     <AppContext.Provider value={{
@@ -189,6 +231,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeFacilityId, setActiveFacilityId,
       abortedFacilities, abortSubmission,
       targetFacility, setTargetFacility,
+      reviewNotifications, notificationsLoading, refreshReviewNotifications,
     }}>
       {children}
     </AppContext.Provider>

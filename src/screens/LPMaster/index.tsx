@@ -64,6 +64,7 @@ function lpClassificationRow(LPRecord: LPRecord, originalName?: string): LpClass
     ig:                LPRecord.ig,
     cls:               LPRecord.cls,
     agentCls:          LPRecord.agentCls ?? '',
+    agentClsSource:    LPRecord.agentClsSource,
     sp:                LPRecord.sp ?? '',
     mdy:               LPRecord.mdy ?? '',
     fitch:             LPRecord.fitch ?? '',
@@ -879,7 +880,7 @@ export default function LPMaster() {
                 {facFilter && <td className="num">{LPRecord.rank ?? '—'}</td>}
                 <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.name}</strong>
-                  {LPRecord.rcl && <span className="rcl-badge">R</span>}
+                  {LPRecord.rcl && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
                   {LPRecord.tf  && <span className="tf-badge">T</span>}
                 </td>
                 <td title={LPRecord.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{LPRecord.parent || '—'}</td>
@@ -952,7 +953,6 @@ export default function LPMaster() {
             onSave={handleSave}
             onDelete={canEdit ? handleDelete : undefined}
             canEdit={canEdit}
-            enableReclassify
             showRank={Boolean(facFilter)}
             totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uc) ?? 0) / 1_000_000), 0)}
           />

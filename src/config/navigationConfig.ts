@@ -9,13 +9,12 @@ export interface User {
   initials:      string
   role:          string
   department:    string
-  notifications: number
 }
 
 export const APP_TITLE    = 'PE Sub Platform'
 export const APP_SUBTITLE = 'Borrowing Base & Collateral Analysis'
 
-function user(uuName: string, firstName: string, lastName: string, email: string, role: string, notifications: number): User {
+function user(uuName: string, firstName: string, lastName: string, email: string, role: string): User {
   return {
     uuName,
     firstName,
@@ -25,14 +24,13 @@ function user(uuName: string, firstName: string, lastName: string, email: string
     initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
     role,
     department: 'PE Sub Finance',
-    notifications,
   }
 }
 
 export const USERS: User[] = [
-  user('js25029', 'J.', 'Smith',  'john.smith@ubs.com',  'Analyst', 3),
-  user('mc48102', 'M.', 'Chen',   'mary.chen@ubs.com',   'Analyst', 1),
-  user('lt09341', 'L.', 'Torres', 'lisa.torres@ubs.com', 'Account/Transaction Manager', 5),
+  user('js25029', 'J.', 'Smith',  'john.smith@ubs.com',  'Analyst'),
+  user('mc48102', 'M.', 'Chen',   'mary.chen@ubs.com',   'Analyst'),
+  user('lt09341', 'L.', 'Torres', 'lisa.torres@ubs.com', 'Account/Transaction Manager'),
 ]
 
 export const DEFAULT_USER: User = USERS[0]

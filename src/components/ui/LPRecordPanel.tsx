@@ -82,6 +82,9 @@ export function buildLpRecordFromForm(
     rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE?.[String(form.cls)] || classCfg.BUSA_RATE_MAP?.[String(form.cls)] || LPRecord.rate,
     clsTag: classCfg.CLS_TAG_MAP?.[String(form.cls)] ?? LPRecord.clsTag,
     hq: c.busaRate === 0.90,
+    rcl: LPRecord.rcl
+      || String(eff.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
+      || String(eff.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim(),
     calledCap: fmtM(calledCapM),
     pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
     abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
@@ -129,18 +132,14 @@ export interface LPRecordPanelProps {
   totalUbsBB?: number
   /** Facility-wide uncalled capital, used to turn edited concentration percentages into dollar caps. */
   totalUncalledM?: number
-  enableReclassify?: boolean
   /** Rank is facility-specific; show it only in facility-scoped and Shadow BB contexts. */
   showRank?: boolean
 }
 
 export default function LPRecordPanel({
   LPRecord, open, onClose, onSave, onDelete, canEdit = true, running = false,
-  totalAgentBB, totalUbsBB, totalUncalledM, enableReclassify = false, showRank = false,
+  totalAgentBB, totalUbsBB, totalUncalledM, showRank = false,
 }: LPRecordPanelProps) {
-  const [subview,   setSubview]   = useState<null | 'reclassify'>(null)
-  const [newCls,    setNewCls]    = useState('')
-  const [rationale, setRationale] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [form,      setForm]      = useState<Record<string, unknown>>({})
   const configCache = useConfigCache()
@@ -152,7 +151,6 @@ export default function LPRecordPanel({
   useEffect(() => {
     if (!LPRecord) return
     const lpSizeCriteria = inferLpSizeCriteria(LPRecord)
-    setSubview(null)
     setConfirmDelete(false)
     setForm({
       name: LPRecord.name ?? '', parent: LPRecord.parent ?? '', spv: LPRecord.spv, agentCls: LPRecord.agentCls ?? '',
@@ -220,18 +218,6 @@ export default function LPRecordPanel({
   const handleSave = () => {
     onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates, totalUncalledM))
     onClose()
-  }
-
-  const handleReclassify = () => {
-    onSave({
-      ...LPRecord,
-      cls: newCls as LPRecord['cls'],
-      rcl: true,
-      clsTag: classCfg.CLS_TAG_MAP[newCls] ?? LPRecord.clsTag,
-      rate: classCfg.UBS_CLS_DEFAULT_RATE[newCls] ?? classCfg.BUSA_RATE_MAP[newCls] ?? LPRecord.rate,
-      notes: (LPRecord.notes ? LPRecord.notes + '\n' : '') + `Reclassified to ${newCls}: ${rationale}`,
-    } as LPRecord)
-    setSubview(null)
   }
 
   const sec = (t: string) => (
@@ -324,7 +310,6 @@ export default function LPRecordPanel({
 
   const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '6px 16px' }
   const ubsClsOptions = busaClassificationOptions(classCfg)
-  const ubsClsRate = (cls: string) => classCfg.BUSA_RATE_MAP[cls] ?? classCfg.UBS_CLS_DEFAULT_RATE[cls] ?? '?'
 
   const renderDetail = () => {
     const eff = applyLpSizeToRecord(LPRecord, form)
@@ -450,38 +435,6 @@ export default function LPRecordPanel({
     )
   }
 
-  const renderReclassify = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560 }}>
-      <div className="form-group">
-        <label className="form-label">New Classification *</label>
-        <select style={{ width: '100%' }} value={newCls} onChange={e => setNewCls(e.target.value)}>
-          {ubsClsOptions.filter(Boolean).map(o => <option key={o} value={o}>{o} - {ubsClsRate(o)} UBS</option>)}
-        </select>
-      </div>
-      {newCls && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px' }}>
-          <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[newCls]}
-        </div>
-      )}
-      <div className="form-group">
-        <label className="form-label">Rationale / Supporting Evidence *</label>
-        <textarea
-          style={{ width: '100%', height: 80 }}
-          placeholder="Describe the basis for reclassification…"
-          value={rationale}
-          onChange={e => setRationale(e.target.value)}
-        />
-      </div>
-      {newCls !== LPRecord.cls && (
-        <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', borderRadius: 4, fontSize: 12 }}>
-          <strong style={{ color: 'var(--danger)' }}>Impact:</strong> Advance rate changes from <strong>{LPRecord.rate || classCfg.UBS_CLS_DEFAULT_RATE[LPRecord.cls] || classCfg.BUSA_RATE_MAP[LPRecord.cls]}</strong> to <strong>{ubsClsRate(newCls)}</strong>. Shadow BB will need to be recalculated.
-        </div>
-      )}
-    </div>
-  )
-
-  const subviewTitle = subview === 'reclassify' ? 'Reclassify' : null
-
   return (
     <div style={{ height: '100%', maxHeight: '100%', minHeight: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 1px 4px rgba(0,0,0,.05)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="LPRecord-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
@@ -489,7 +442,6 @@ export default function LPRecordPanel({
           <div style={{ minWidth: 0 }}>
             <div className="LPRecord-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={LPRecord.name}>
               {LPRecord.name}
-              {subviewTitle && <span style={{ fontWeight: 400, opacity: 0.65, fontSize: 12 }}> / {subviewTitle}</span>}
             </div>
             <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
               <Tag>{LPRecord.cls}</Tag>
@@ -504,20 +456,16 @@ export default function LPRecordPanel({
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 18px' }}>
-        {subview === 'reclassify'  ? renderReclassify() :
-         renderDetail()}
+        {LPRecord.rcl && (
+          <div role="status" style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--amber-lt)', border: '1px solid var(--amber)', borderRadius: 4, color: 'var(--text)', fontSize: 11 }}>
+            <strong>Reclassified record.</strong> Agent or UBS LP Classification changed during Save. Re-run Shadow BB and submit the updated result for Manager approval.
+          </div>
+        )}
+        {renderDetail()}
       </div>
 
       <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        {subview === 'reclassify' ? (
-          <>
-            <Button variant="secondary" onClick={() => setSubview(null)}>&#x2190; Back to LPRecord Record</Button>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button disabled={newCls === LPRecord.cls || !rationale.trim()} onClick={handleReclassify}>Apply Reclassification</Button>
-            </div>
-          </>
-        ) : confirmDelete ? (
+        {confirmDelete ? (
           <>
             <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>
               Delete "{LPRecord.name}" from this facility's LP records? This cannot be undone.
@@ -530,7 +478,6 @@ export default function LPRecordPanel({
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8 }}>
-              {enableReclassify && editable && <Button variant="secondary" onClick={() => { setNewCls(LPRecord.cls); setRationale(''); setSubview('reclassify') }}>Reclassify</Button>}
               {onDelete && editable && <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete</Button>}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>

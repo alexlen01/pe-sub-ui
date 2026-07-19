@@ -58,6 +58,24 @@ describe('buildShadowRows — snapshot ⋈ live join', () => {
     expect(saved[0].rate).toBe('75%')
   })
 
+  it('propagates a newly saved reclassified flag over an older snapshot value', () => {
+    const rows = buildShadowRows(
+      [snapRow({ rcl: false })],
+      [liveRow({ rcl: true })],
+    )
+
+    expect(rows[0].rcl).toBe(true)
+  })
+
+  it('uses the cleared live flag after approval instead of the historical snapshot flag', () => {
+    const rows = buildShadowRows(
+      [snapRow({ rcl: true })],
+      [liveRow({ rcl: false })],
+    )
+
+    expect(rows[0].rcl).toBe(false)
+  })
+
   it('joins by id first, then by investor name for legacy snapshots without ids', () => {
     const byName = buildShadowRows(
       [snapRow({ id: undefined as unknown as number, name: 'Alpha Pension' })],

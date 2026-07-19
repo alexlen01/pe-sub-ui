@@ -745,6 +745,17 @@ export default function ShadowBB() {
         notes:             draft.notes ?? '',
       }
       await api.lpRecords.saveClassification({ facilityId, rows: [row] })
+      const reclassified = Boolean(lpRecord?.rcl)
+        || (row.agentCls != null && String(row.agentCls).trim() !== String(lpRecord?.agentCls ?? '').trim())
+        || (row.cls != null && String(row.cls).trim() !== String(lpRecord?.cls ?? '').trim())
+      if (reclassified) {
+        setRawLPs(current => current.map(lp => {
+          const matches = lpRecord?.id != null
+            ? lp.id === lpRecord.id
+            : lp.name === (lpRecord?.name || lpRecord?._agentName)
+          return matches ? { ...lp, rcl: true } : lp
+        }))
+      }
       setSaveStatuses(s => ({ ...s, [selectedKey]: 'saved' }))
       clearTimeout(saveTimers.current[selectedKey])
       saveTimers.current[selectedKey] = setTimeout(() => {
@@ -919,6 +930,10 @@ export default function ShadowBB() {
     setReviewBusy(true)
     try {
       await api.submissions.accept(reviewSub.id)
+      if (facilityId != null) {
+        const refreshedLPs = await getLPsForFacility(facilityId)
+        setRawLPs(refreshedLPs)
+      }
       toast('Shadow BB accepted — facility activated.', 3200, 'success')
       loadReviewSub()
     } catch (e) {
@@ -1182,6 +1197,7 @@ export default function ShadowBB() {
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                {LPRecord.rcl && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
                                 {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {st === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {st === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}

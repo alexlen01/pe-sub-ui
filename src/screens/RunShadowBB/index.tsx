@@ -587,6 +587,18 @@ export default function RunShadowBB() {
         audit: true,
         rows: [row],
       })
+      const persistedLP = submissionLPs.find(lp => lp._key === key)
+      const reclassified = Boolean(persistedLP?.rcl)
+        || (row.agentCls != null && String(row.agentCls).trim() !== String(persistedLP?.agentCls ?? '').trim())
+        || (row.cls != null && String(row.cls).trim() !== String(persistedLP?.cls ?? '').trim())
+      if (reclassified) {
+        setFacilityLPs(current => current.map(lp => {
+          const matches = persistedLP?.id != null
+            ? lp.id === persistedLP.id
+            : lp.name === (persistedLP?.name || persistedLP?._agentName)
+          return matches ? { ...lp, rcl: true } : lp
+        }))
+      }
       if (activeSubmissionId != null) {
         // Pass the loaded version; the server rejects a stale write (409) and returns the fresh
         // submission (new version) which we keep so subsequent saves stay current.
@@ -1039,6 +1051,9 @@ export default function RunShadowBB() {
                             : ''
                         const agentClsAuto = !adjusted && ov.agentClsSource === 'DERIVED'
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
+                        const reclassified = LPRecord.rcl
+                          || String(ov.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
+                          || String(ov.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim()
                         const n = ov.name || LPRecord.name || LPRecord._agentName || '—'
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)}
@@ -1047,6 +1062,7 @@ export default function RunShadowBB() {
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
+                                {reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
                                 {LPRecord.tf && <span className="tf-badge">T</span>}
                                 {LPRecord._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
@@ -1199,6 +1215,9 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
   const calc = useMemo(() => calcRow(draft, totalCommitM, totalUncalledM), [draft, totalCommitM, totalUncalledM])
   const name = draft.name || LPRecord.name || LPRecord._agentName || '—'
   const dirty = JSON.stringify(draft) !== JSON.stringify(ov)
+  const reclassified = LPRecord.rcl
+    || String(draft.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
+    || String(draft.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim()
 
   if (!classCfg || !eligCfg) {
     return <div style={{ padding: 16, color: 'var(--muted)', fontSize: 12 }}>Loading LPRecord configuration...</div>
@@ -1330,12 +1349,18 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
         <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .92 }}>
           {draft.cls && <Tag>{draft.cls}</Tag>}
           <span style={{ fontSize: 11, opacity: .8 }}>{pctStr(draft.ubsAdvRatePct)} UBS · {pctStr(draft.agentRatePct)} Agent</span>
+          {reclassified && <span className="rcl-badge">Reclassified</span>}
           {LPRecord.tf && <span className="tf-badge">Transferee</span>}
           {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving...</span>}
           {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>Saved</span>}
           {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>Failed</span>}
         </div>
       </div>
+      {reclassified && (
+        <div role="status" style={{ margin: '10px 16px 0', padding: '8px 12px', background: 'var(--amber-lt)', border: '1px solid var(--amber)', borderRadius: 4, fontSize: 11 }}>
+          <strong>Reclassified record.</strong> Re-run Shadow BB and submit the updated result for Manager approval.
+        </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={COLS}>

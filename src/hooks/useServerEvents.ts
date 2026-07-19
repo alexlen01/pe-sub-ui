@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 const RECONNECT_DELAY_MS = 5_000
 
@@ -8,6 +8,9 @@ const RECONNECT_DELAY_MS = 5_000
  * Reconnects automatically after 5 s on disconnect.
  */
 export function useServerEvents(onMessage: (msg: string) => void): void {
+  const onMessageRef = useRef(onMessage)
+  onMessageRef.current = onMessage
+
   useEffect(() => {
     let es: EventSource | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -18,7 +21,7 @@ export function useServerEvents(onMessage: (msg: string) => void): void {
       es = new EventSource('/api/notifications/events')
 
       es.addEventListener('notification', (e: MessageEvent) => {
-        onMessage(e.data as string)
+        onMessageRef.current(e.data as string)
       })
 
       es.onerror = () => {

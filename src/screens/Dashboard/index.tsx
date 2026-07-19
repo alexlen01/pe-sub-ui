@@ -335,13 +335,16 @@ export default function Dashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {buildExecRowsFromSummary(execSummary).map((row, i) => (
-                            <tr key={i} style={{ background: row.delta ? 'var(--danger-lt)' : 'inherit' }}>
-                              <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: row.bold || row.delta ? 700 : 400, color: row.delta ? 'var(--danger)' : 'var(--navy)', borderBottom: '1px solid var(--border)' }}>{row.ubs}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>{row.agent}</td>
-                            </tr>
-                          ))}
+                          {buildExecRowsFromSummary(execSummary).map((row, i) => {
+                            const isPositiveDelta = row.delta && row.ubs.startsWith('+')
+                            return (
+                              <tr key={i} style={{ background: row.delta ? (isPositiveDelta ? 'var(--green-lt)' : 'var(--danger-lt)') : 'inherit' }}>
+                                <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{row.metric}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: row.bold || row.delta ? 700 : 400, color: row.delta ? (isPositiveDelta ? 'var(--green)' : 'var(--danger)') : 'var(--navy)', borderBottom: '1px solid var(--border)' }}>{row.ubs}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>{row.agent}</td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>

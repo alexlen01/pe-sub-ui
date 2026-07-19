@@ -618,11 +618,8 @@ describe('api.bb.run — LP commit', () => {
       if (url === '/api/bb/snapshots/1/latest' || url === '/api/bb/run/1') {
         return Promise.resolve(new Response(JSON.stringify(snapshot), { status: url.includes('snapshots') ? 200 : 201 }))
       }
-      if (String(url).startsWith('/api/submissions?')) {
-        return Promise.resolve(new Response(JSON.stringify([{ ...pendingSubmission, status: 'Processed' }]), { status: 200 }))
-      }
-      if (url === '/api/submissions/42/complete') {
-        return Promise.resolve(new Response(JSON.stringify(pendingSubmission), { status: 200 }))
+      if (url === '/api/submissions/facilities/1/rerun-for-review') {
+        return Promise.resolve(new Response(JSON.stringify({ snapshot, submission: pendingSubmission }), { status: 201 }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
     })
@@ -633,9 +630,7 @@ describe('api.bb.run — LP commit', () => {
     expect(result.submission?.status).toBe('Pending Review')
     expect(fetchSpy.mock.calls.map(call => call[0])).toEqual([
       '/api/bb/snapshots/1/latest',
-      '/api/submissions?facilityId=1',
-      '/api/bb/run/1',
-      '/api/submissions/42/complete',
+      '/api/submissions/facilities/1/rerun-for-review',
     ])
   })
 
@@ -649,17 +644,8 @@ describe('api.bb.run — LP commit', () => {
     }
     const fetchSpy = vi.fn((url: string, init?: RequestInit) => {
       void init
-      if (String(url).startsWith('/api/submissions?')) {
-        return Promise.resolve(new Response(JSON.stringify([
-          { ...pendingSubmission, id: 43, status: 'Aborted', wizardStep: 6 },
-          { ...pendingSubmission, status: 'Processed', wizardStep: 6 },
-        ]), { status: 200 }))
-      }
-      if (url === '/api/bb/run/1') {
-        return Promise.resolve(new Response(JSON.stringify(snapshot), { status: 201 }))
-      }
-      if (url === '/api/submissions/42/complete') {
-        return Promise.resolve(new Response(JSON.stringify(pendingSubmission), { status: 200 }))
+      if (url === '/api/submissions/facilities/1/rerun-for-review') {
+        return Promise.resolve(new Response(JSON.stringify({ snapshot, submission: pendingSubmission }), { status: 201 }))
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
     })
@@ -669,20 +655,21 @@ describe('api.bb.run — LP commit', () => {
 
     expect(result.snapshot.id).toBe(7)
     expect(result.submission.status).toBe('Pending Review')
-    expect(fetchSpy).toHaveBeenCalledTimes(3)
-    expect(fetchSpy.mock.calls[1][0]).toBe('/api/bb/run/1')
-    expect((fetchSpy.mock.calls[1][1] as RequestInit).body).toBeUndefined()
-    expect(fetchSpy.mock.calls[2][0]).toBe('/api/submissions/42/complete')
-    expect((fetchSpy.mock.calls[2][1] as RequestInit).method).toBe('POST')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy.mock.calls[0][0]).toBe('/api/submissions/facilities/1/rerun-for-review')
+    expect((fetchSpy.mock.calls[0][1] as RequestInit).method).toBe('POST')
   })
 
-  it('does not recalculate when no completed submission can enter approval', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify([
-      { status: 'Review', wizardStep: 4 },
-    ]), { status: 200 }))
+  it('allows a seeded facility with no completed submission to enter approval', async () => {
+    const pendingSubmission = { id: 42, status: 'Pending Review', wizardStep: 6 }
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      snapshot, submission: pendingSubmission,
+    }), { status: 201 }))
     vi.stubGlobal('fetch', fetchSpy)
 
-    await expect(api.bb.rerunForReview(1)).rejects.toThrow('No completed Shadow BB submission')
+    const result = await api.bb.rerunForReview(1)
+
+    expect(result.submission.status).toBe('Pending Review')
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 

@@ -247,10 +247,10 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
 
         {detail !== 'exec' && sections.reclass && reclassed.length > 0 && (
           <table className="cert-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th>Investor Name</th><th className="num">LP Category</th><th className="num">Uncalled Capital</th><th className="num">Agent BB</th><th className="num">UBS BB</th></tr></thead>
+            <thead><tr><th>Investor Name</th><th>Status</th><th className="num">LP Category</th><th className="num">Uncalled Capital</th><th className="num">Agent BB</th><th className="num">UBS BB</th></tr></thead>
             <tbody>
               {reclassed.map((LPRecord, i) => (
-                <tr key={i}><td>{LPRecord.name}</td><td className="num">{LPRecord.cls}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td></tr>
+                <tr key={i}><td>{LPRecord.name}</td><td><span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span></td><td className="num">{LPRecord.cls}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -272,7 +272,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             <tbody>
               {lps.map((LPRecord, i) => (
                 <tr key={i}>
-                  <td>{LPRecord.name}</td>
+                  <td>{LPRecord.name} {LPRecord.rcl && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}</td>
                   <td className="num">{LPRecord.cls}</td>
                   <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td>
                   <td className="num" style={isNegativeDisplayValue(LPRecord.rate) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{LPRecord.rate}</td>
@@ -502,7 +502,7 @@ export default function Reports() {
         adhocSort === 'name' ? a.name.localeCompare(b.name)
         : adhocSort === 'aum' ? parseM(b.aum) - parseM(a.aum)
         : parseM(b.uc) - parseM(a.uc))
-      const columns = ['Facility', 'Investor Name', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
+      const columns = ['Facility', 'Investor Name', 'Status', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
       const selectedFacilityLabel = facilityName(adhocFacilityId)
       const rows = sorted.map(LPRecord => [
         (() => {
@@ -515,6 +515,7 @@ export default function Reports() {
           return adhocFacilityId === 'all' ? '—' : selectedFacilityLabel
         })(),
         LPRecord.name,
+        LPRecord.rcl ? 'Reclassified' : '',
         LPRecord.cls,
         formatUsdAmount(LPRecord.uc),
         formatUsdAmount(LPRecord.aum),
@@ -548,7 +549,7 @@ export default function Reports() {
       sheets.push({
         name: 'LPs',
         rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.inc)).map(LPRecord => ({
-          'Investor Name': LPRecord.name, 'LP Category': LPRecord.cls, 'Uncalled Capital': formatUsdAmount(LPRecord.uc), 'Advance Rate': LPRecord.rate,
+          'Investor Name': LPRecord.name, Status: LPRecord.rcl ? 'Reclassified' : '', 'LP Category': LPRecord.cls, 'Uncalled Capital': formatUsdAmount(LPRecord.uc), 'Advance Rate': LPRecord.rate,
           'Agent BB': formatUsdAmount(LPRecord.abb), 'UBS BB': formatUsdAmount(LPRecord.ubb), Delta: formatSignedUsdMillions(LPRecord.deltaM),
         })),
       })

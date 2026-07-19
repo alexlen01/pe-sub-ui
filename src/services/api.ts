@@ -539,19 +539,12 @@ export const api = {
       }
       return api.bb.rerunForReview(facilityId)
     },
-    // Re-runs launched outside the submission wizard must enter the same maker/checker workflow
-    // as a completed Run Shadow BB. Resolve the latest eligible submission before calculating so
-    // a facility without a reviewable submission is not silently recalculated without approval.
+    // Re-runs launched outside the submission wizard enter maker/checker review in one server-side
+    // transaction. The server creates a review item for seeded facilities that have no upload-
+    // backed completed submission.
     rerunForReview: async (facilityId: number): Promise<{ snapshot: BBSnapshot; submission: Submission }> => {
-      const submissions = await get<Submission[]>(`/api/submissions${qs({ facilityId })}`)
-      const submission = submissions.find(candidate =>
-        candidate.status !== 'Aborted' && candidate.wizardStep >= 5)
-      if (!submission) {
-        throw new Error('No completed Shadow BB submission is available to submit for approval.')
-      }
-      const snapshot = await post<BBSnapshot>(`/api/bb/run/${facilityId}`)
-      const pendingSubmission = await post<Submission>(`/api/submissions/${submission.id}/complete`, {})
-      return { snapshot, submission: pendingSubmission }
+      return post<{ snapshot: BBSnapshot; submission: Submission }>(
+        `/api/submissions/facilities/${facilityId}/rerun-for-review`, {})
     },
     snapshots: (facilityId: number) =>
       get<BBSnapshot[]>(`/api/bb/snapshots/${facilityId}`),

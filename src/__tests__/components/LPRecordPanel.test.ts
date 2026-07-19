@@ -90,4 +90,24 @@ describe('buildLpRecordFromForm', () => {
 
     expect(saved.aum).toBe('$21 bn+ / reported tier')
   })
+
+  it.each([
+    ['Agent classification', { agentCls: 'Excluded' }],
+    ['UBS classification', { cls: 'Excluded' }],
+  ])('marks a record reclassified when %s changes during Save', (_label, edit) => {
+    const baseRecord = {
+      name: 'Changed LP', cls: 'Rated', agentCls: 'Included', inc: true, uc: '$10M', capCommit: '$10M',
+      rate: '90%', agentRate: '90%', parent: '', spv: false, hq: false,
+      instVsHnw: 'Institutional', region: 'North America', ig: false, clsTag: '',
+      sp: '', mdy: '', fitch: '', aum: '', nav: '', pension: '', pensionFunded: '',
+      pctCapCommit: '', calledCap: '', pctUncalled: '', pctCalled: '', agentConc: '', ubsConc: '',
+      abb: '$0', ubb: '$0', delta: '$0', uec: '$0', rcl: false, tf: false, notes: '',
+    } as LPRecord
+
+    const saved = buildLpRecordFromForm(baseRecord, edit, {
+      UBS_CLS_DEFAULT_RATE: {}, BUSA_RATE_MAP: {}, CLS_TAG_MAP: {},
+    }, {})
+
+    expect(saved.rcl).toBe(true)
+  })
 })
