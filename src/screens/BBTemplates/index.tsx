@@ -27,16 +27,6 @@ const LP_CLASSIFICATIONS = [
 
 const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 'Sum', 'Net Total']
 
-const SAMPLE_TEMPLATE_LINKS = [
-  ['KKR Ascendant', '/samples/bb-templates/BB-Template-Import-kkr-ascendant.xlsx'],
-  ['WF Blue Owl', '/samples/bb-templates/BB-Template-Import-wf-blue-owl.xlsx'],
-  ['Audax VII', '/samples/bb-templates/BB-Template-Import-audax-vii.xlsx'],
-  ['CCP VII Lev', '/samples/bb-templates/BB-Template-Import-ccp-vii-lev.xlsx'],
-  ['Carlyle CP VII', '/samples/bb-templates/BB-Template-Import-cp-vii.xlsx'],
-  ['AEP VII', '/samples/bb-templates/BB-Template-Import-aep-vii.xlsx'],
-  ['Petershill IV', '/samples/bb-templates/BB-Template-Import-petershill-iv.xlsx'],
-] as const
-
 const BB_TEMPLATE_TIP_ITEMS = [
   {
     label: 'What a template stores',
@@ -629,17 +619,8 @@ export default function BBTemplates() {
           </div>
         ) : (
           <>
-            <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--border)', background: 'var(--tbl)', fontSize: 11, color: 'var(--muted)' }}>
-              <span style={{ fontWeight: 600, color: 'var(--navy)', marginRight: 8 }}>Sample templates:</span>
-              {SAMPLE_TEMPLATE_LINKS.map(([label, href], i) => (
-                <React.Fragment key={href}>
-                  {i > 0 && <span style={{ margin: '0 6px', color: 'var(--border)' }}>|</span>}
-                  <a href={href} download style={{ color: 'var(--red)', fontWeight: 600, textDecoration: 'none' }}>{label}</a>
-                </React.Fragment>
-              ))}
-            </div>
             <div className="data-table-wrap" style={{ padding: '0 0 4px', scrollbarGutter: 'stable' }}>
-              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 1120 }}>
+              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 1260 }}>
                 <colgroup>
                   <col style={{ width: 150 }} />
                   <col style={{ width: 160 }} />
@@ -650,6 +631,7 @@ export default function BBTemplates() {
                   <col style={{ width: 70 }} />
                   <col style={{ width: 80 }} />
                   <col />
+                  <col style={{ width: 180 }} />
                   <col style={{ width: 150 }} />
                 </colgroup>
                 <thead>
@@ -663,6 +645,7 @@ export default function BBTemplates() {
                     <th style={{ textAlign: 'right' }}># Hdrs</th>
                     <th style={{ textAlign: 'right' }}>Groups</th>
                     <th>Notes</th>
+                    <th>Template File</th>
                     <th />
                   </tr>
                 </thead>
@@ -695,6 +678,21 @@ export default function BBTemplates() {
                           <td style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {firstNote(t)}
                           </td>
+                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.sourceFileName ? (
+                              <a
+                                href={api.bbTemplates.downloadUrl(t.id)}
+                                download={t.sourceFileName}
+                                onClick={e => e.stopPropagation()}
+                                title={`Download ${t.sourceFileName}`}
+                                style={{ color: 'var(--red)', fontWeight: 600, textDecoration: 'none' }}
+                              >
+                                ↓ {t.sourceFileName}
+                              </a>
+                            ) : (
+                              <span style={{ color: 'var(--muted)' }}>—</span>
+                            )}
+                          </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
                               <Button size="sm" variant="secondary" disabled={mutationDisabled} onClick={() => setEditTarget(t)}>Edit</Button>
@@ -705,7 +703,7 @@ export default function BBTemplates() {
 
                         {isOpen && (
                           <tr>
-                            <td colSpan={10} style={{ background: 'var(--hover)', padding: '10px 24px 14px 36px', borderBottom: '1px solid var(--border)' }}>
+                            <td colSpan={11} style={{ background: 'var(--hover)', padding: '10px 24px 14px 36px', borderBottom: '1px solid var(--border)' }}>
                               <TemplateDetail template={t} />
                             </td>
                           </tr>

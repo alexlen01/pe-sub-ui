@@ -73,6 +73,28 @@ describe('current user', () => {
   })
 })
 
+describe('api.bbTemplates', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns persisted workbook metadata and builds its database-backed download URL', async () => {
+    stubFetch({ '/api/bb-templates': [{
+      id: 17,
+      templateSlug: 'northbank-fund-v',
+      templateName: 'northbank-fund-v',
+      agentName: 'Northbank',
+      templateClass: 'A',
+      sourceFileName: 'BB-Template-Import-northbank-fund-v.xlsx',
+      sourceFileSize: 24_456,
+      tabs: [],
+    }] })
+
+    const templates = await api.bbTemplates.list()
+    expect(templates[0].sourceFileName).toBe('BB-Template-Import-northbank-fund-v.xlsx')
+    expect(templates[0].sourceFileSize).toBe(24_456)
+    expect(api.bbTemplates.downloadUrl(17)).toBe('/api/bb-templates/17/download')
+  })
+})
+
 describe('getFacilities — live', () => {
   afterEach(() => vi.unstubAllGlobals())
 

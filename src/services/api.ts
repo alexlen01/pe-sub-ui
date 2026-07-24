@@ -306,6 +306,7 @@ export interface BbTemplate {
   summaryRowsAboveHeader: number; summaryRowRange: string | null
   titleRow: number | null; titleText: string | null
   detectKeys: string[]; legend: TemplateLegendRule[]; notes: string[]
+  sourceFileName: string | null; sourceFileSize: number | null
   createdAt: string; updatedAt: string
   tabs: BbTemplateTab[]
 }
@@ -704,6 +705,8 @@ export const api = {
       form.append('file', file)
       return postForm<BbTemplate>('/api/bb-templates/import', form)
     },
+    downloadUrl: (id: number) =>
+      `${BASE}/api/bb-templates/${id}/download`,
   },
 
   // ── Config ────────────────────────────────────────────────────────────────────
