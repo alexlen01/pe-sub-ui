@@ -172,6 +172,11 @@ export async function getFacilities(): Promise<FacilityRow[]> {
     })
   return facilities.map(f => {
     const review = f.id != null ? latestReviewById.get(f.id) : undefined
+    // The participation rate is measured against the facility's Loan Amount — the column beside it,
+    // and the field the ingest actually populates; `facilitySize` stays as the fallback for rows
+    // carrying only it. Same precedence the facility editor uses, so the table and the edit panel
+    // never show different rates for one facility.
+    const participationBase = f.loanAmount ?? f.facilitySize
     return {
       name:                 f.name,
       agentBank:            f.agentBank,
@@ -179,8 +184,8 @@ export async function getFacilities(): Promise<FacilityRow[]> {
       lps:                  f.lpCount,
       facilitySize:         formatMoney(f.facilitySize),
       ubsParticipation:     formatMoney(f.ubsParticipation),
-      ubsParticipationRate: (f.facilitySize && f.ubsParticipation)
-                              ? formatPercentageFraction(f.ubsParticipation / f.facilitySize)
+      ubsParticipationRate: (participationBase && f.ubsParticipation)
+                              ? formatPercentageFraction(f.ubsParticipation / participationBase)
                               : '—',
       agentBB:              formatM(f.agentBB),
       ubsBB:                formatM(f.ubsBB),

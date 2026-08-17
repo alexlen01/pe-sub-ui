@@ -112,9 +112,17 @@ const LAST_RUN_BLUE = '#2e5f91'
 // Keys must match the sort keys below: SortableHeader hands its *sortKey* to onResizeStart, so a
 // width keyed differently would be resized under a name no column ever reads back.
 const FAC_COL_WIDTHS = {
-  edit: 34, facName: 260, facAgentBank: 150, facLps: 78, facAccount: 110,
-  facLoanAmount: 120, facUbsParticipation: 140, facUbsRate: 170,
-  facMaturity: 120, facCollateral: 132, facStatus: 132, facLastRun: 120,
+  facName:             260, 
+  facAgentBank:        150, 
+  facLps:              78, 
+  facAccount:          100,
+  facLoanAmount:       120, 
+  facUbsParticipation: 168, 
+  facUbsRate:          160,
+  facMaturity:         120, 
+  facCollateral:       120, 
+  facStatus:           132, 
+  facLastRun:          150,
 }
 
 // ── Facility detail / edit overlay ────────────────────────────────────────────
@@ -500,12 +508,11 @@ export default function LPMaster() {
   const { sort: facSort, sortedRows: facSortedRows, requestSort: requestFacSort } =
     useSortableRows(visibleFacilities, facSortColumns, { key: 'facName', direction: 'asc' })
   const facPage = usePagination(facSortedRows)
+  // Versioned key: useColumnResize merges stored widths over these defaults, so a returning user
+  // would otherwise keep the retired edit column and the old UBS Participation width forever.
   const { widths: facWidths, onResizeStart: onFacResizeStart, tableWidth: facTableWidth } =
-    useColumnResize('lp-master-facilities', FAC_COL_WIDTHS)
-  // The edit column exists only for editors, so its width comes off the table's minimum otherwise.
-  const facVisibleWidth = typeof facTableWidth !== 'number' || canEdit
-    ? facTableWidth
-    : facTableWidth - facWidths.edit
+    useColumnResize('lp-master-facilities-v2', FAC_COL_WIDTHS)
+  const facVisibleWidth = facTableWidth
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -770,7 +777,6 @@ export default function LPMaster() {
               <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: facVisibleWidth, width: '100%' }}>
                 <thead>
                   <tr>
-                    {canEdit && <th aria-label="Edit facility" style={{ width: facWidths.edit }} />}
                     <SortableHeader sortKey="facName"       sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facName }}          onResizeStart={onFacResizeStart}>Facility</SortableHeader>
                     <SortableHeader sortKey="facAgentBank"  sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facAgentBank }}     onResizeStart={onFacResizeStart}>Agent Bank</SortableHeader>
                     <SortableHeader sortKey="facLps"        sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facLps }} onResizeStart={onFacResizeStart}># LPs</SortableHeader>
@@ -788,18 +794,15 @@ export default function LPMaster() {
                   {facPage.pageItems.map(f => {
                     const color = STATUS_COLOR[f.status] ?? 'var(--muted)'
                     return (
-                      <tr key={f.id ?? f.name} onClick={() => openFacility(f)} style={{ cursor: 'pointer' }}>
-                        {canEdit && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={e => { e.stopPropagation(); setEditingFacility(f) }}
-                              title="Edit facility details"
-                              aria-label={`Edit ${f.name}`}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 12, lineHeight: 1, padding: 2 }}
-                            >&#9998;</button>
-                          </td>
-                        )}
-                        <td title={f.name} style={{ fontWeight: 700, color: 'var(--navy)' }}>{f.name}</td>
+                      // The row itself opens the facility detail overlay — it carries what the
+                      // retired edit icon used to. The name cell keeps the drill-down into the
+                      // facility's LP records; viewers have no overlay, so their row still drills.
+                      <tr key={f.id ?? f.name} onClick={() => (canEdit ? setEditingFacility(f) : openFacility(f))} style={{ cursor: 'pointer' }}>
+                        <td
+                          title={`Open LP records — ${f.name}`}
+                          onClick={e => { e.stopPropagation(); openFacility(f) }}
+                          style={{ fontWeight: 700, color: 'var(--navy)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                        >{f.name}</td>
                         <td title={f.agentBank}>{f.agentBank}</td>
                         <td className="num">{f.lps?.toLocaleString() ?? '—'}</td>
                         <td>{f.accountNumber}</td>

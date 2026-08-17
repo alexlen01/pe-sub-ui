@@ -38,14 +38,14 @@ const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 
 const BB_TEMPLATE_INITIAL_WIDTHS: ColWidths = {
   templateId:   12,
   agent:        13,
-  cls:           7,
+  cls:           8,
   tabs:          5,
-  tabLabel:     16,
+  tabLabel:     15,
   summaryRows:   9,
   summaryRange:  7,
   headerRow:     9,
   headerCount:   8,
-  groups:        25,
+  groups:        24,
 }
 
 const BB_TEMPLATE_TIP_ITEMS = [

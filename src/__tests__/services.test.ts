@@ -131,6 +131,20 @@ describe('getFacilities — live', () => {
     expect(rows[0].ubsParticipationRate).toBe('25%')
   })
 
+  // The live shape: the ingest fills loanAmount and leaves facilitySize null, so a rate derived
+  // off facilitySize alone left every row of the LP Master facility table at "—".
+  it('derives the participation rate off Loan Amount when facilitySize is unset', async () => {
+    stubFetch({
+      '/api/facilities':  [{ id: 3, name: 'AG ABC', agentBank: 'Societe Generale', status: 'Active', lpCount: 427,
+                             facilitySize: null, loanAmount: 75_000_000, ubsParticipation: 10_477_500, lastRunAt: null }],
+      '/api/submissions': [],
+    })
+    const rows = await getFacilities()
+    expect(rows[0].loanAmount).toBe('$75,000,000')
+    expect(rows[0].ubsParticipation).toBe('$10.5M')
+    expect(rows[0].ubsParticipationRate).toBe('14%')
+  })
+
   it('shows — for facility size / participation when unset', async () => {
     stubFetch({
       '/api/facilities':  [{ id: 2, name: 'New Fund', agentBank: 'Citi', status: 'Not Started', lpCount: 0,
