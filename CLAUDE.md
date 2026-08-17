@@ -1,8 +1,18 @@
 # pe-sub-ui — Project Rules
 
-React 18 / TypeScript 5 / Vite 6. Dev server: http://localhost:3000.
+React 18 / TypeScript 6 / Vite 8. Dev server: http://localhost:3000.
 
-State is managed via **React Context** (`src/context/AppContext.tsx`). There is no Redux store in this project.
+State is managed via **React Context** (`src/context/AppContext.tsx`, `AuthContext.tsx`) — screen,
+toasts, LP data, active submission, notifications, and identity all live there. Put new shared state
+in Context.
+
+**The one exception is configuration.** `src/store/configStore.ts` is a Redux Toolkit store holding
+the classification / eligibility / wizard config, consumed via `useConfigCache()`. It exists because
+that config is fetched once and read by nearly every screen; do not add further slices to it, and do
+not migrate Context state into it. Its `loadConfig` thunk **must** fetch through
+`getClassificationConfig()` rather than `api.config.classification()` — that wrapper merges live
+LP Master investor types into `INVESTOR_TYPE_OPTS`, and bypassing it makes the cached config
+silently narrower than what screens calling the service directly receive.
 
 ---
 
