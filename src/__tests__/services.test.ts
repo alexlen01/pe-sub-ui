@@ -76,22 +76,24 @@ describe('current user', () => {
 describe('api.bbTemplates', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns persisted workbook metadata and builds its database-backed download URL', async () => {
+  it('returns the persisted template profiles from the API', async () => {
     stubFetch({ '/api/bb-templates': [{
       id: 17,
       templateSlug: 'northbank-fund-v',
       templateName: 'northbank-fund-v',
       agentName: 'Northbank',
       templateClass: 'A',
-      sourceFileName: 'BB-Template-Import-northbank-fund-v.xlsx',
-      sourceFileSize: 24_456,
       tabs: [],
     }] })
 
     const templates = await api.bbTemplates.list()
-    expect(templates[0].sourceFileName).toBe('BB-Template-Import-northbank-fund-v.xlsx')
-    expect(templates[0].sourceFileSize).toBe(24_456)
-    expect(api.bbTemplates.downloadUrl(17)).toBe('/api/bb-templates/17/download')
+    expect(templates).toHaveLength(1)
+    expect(templates[0]).toMatchObject({
+      id: 17,
+      templateSlug: 'northbank-fund-v',
+      agentName: 'Northbank',
+      templateClass: 'A',
+    })
   })
 })
 
@@ -380,6 +382,31 @@ describe('api.lpMaster.remove', () => {
   })
 })
 
+// ── api.matching.discard (Review Matches — drop a badly parsed Agent BB row) ────
+
+describe('api.matching.discard', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('issues a DELETE to the match queue entry', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }))
+
+    await api.matching.discard(12)
+
+    expect(calls[0].url).toContain('/api/matching/queue/12')
+    expect(calls[0].init?.method).toBe('DELETE')
+  })
+
+  it('rejects when the queue entry is already gone (404)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, { status: 404 }))))
+
+    await expect(api.matching.discard(12)).rejects.toThrow('404')
+  })
+})
+
 // ── getSubmissions (live, mocked API) ─────────────────────────────────────────
 
 describe('getSubmissions — live', () => {
@@ -402,9 +429,9 @@ describe('getLPs / getLPByName / lookupLPsByName — live', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('getLPs returns the API LP list', async () => {
-    stubFetch({ '/api/lpRecords': [{ name: 'CalPERS' }, { name: 'CalSTRS' }] })
+    stubFetch({ '/api/lpRecords': [{ investorName: 'CalPERS' }, { investorName: 'CalSTRS' }] })
     const lps = await getLPs()
-    expect(lps.map(l => l.name)).toEqual(['CalPERS', 'CalSTRS'])
+    expect(lps.map(l => l.investorName)).toEqual(['CalPERS', 'CalSTRS'])
   })
 
   it('getLPs passes the facility-specific rank through from the API', async () => {
@@ -412,31 +439,31 @@ describe('getLPs / getLPByName / lookupLPsByName — live', () => {
     // (by uncalled capital, Excluded LPs included) on each LP record; a record not yet ranked
     // (no Shadow BB run since it was created) carries a null rank and renders as "—".
     stubFetch({ '/api/lpRecords': [
-      { name: 'CalPERS', rank: 1 },
-      { name: 'CalSTRS', rank: 2 },
-      { name: 'Tiny Fund LLC', rank: null },
+      { investorName: 'CalPERS', lpRank: 1 },
+      { investorName: 'CalSTRS', lpRank: 2 },
+      { investorName: 'Tiny Fund LLC', lpRank: null },
     ] })
     const lps = await getLPs()
-    expect(lps.map(l => l.rank)).toEqual([1, 2, null])
+    expect(lps.map(l => l.lpRank)).toEqual([1, 2, null])
   })
 
   it('getLPByName returns the exact match from lookup', async () => {
-    stubFetch({ '/api/lpRecords/lookup': [{ name: 'CalPERS' }, { name: 'CalPERS Trust' }] })
+    stubFetch({ '/api/lpRecords/lookup': [{ investorName: 'CalPERS' }, { investorName: 'CalPERS Trust' }] })
     const LPRecord = await getLPByName('CalPERS')
-    expect(LPRecord?.name).toBe('CalPERS')
+    expect(LPRecord?.investorName).toBe('CalPERS')
   })
 
   it('getLPByName returns null when no exact match', async () => {
-    stubFetch({ '/api/lpRecords/lookup': [{ name: 'CalPERS Trust' }] })
+    stubFetch({ '/api/lpRecords/lookup': [{ investorName: 'CalPERS Trust' }] })
     const LPRecord = await getLPByName('CalPERS')
     expect(LPRecord).toBeNull()
   })
 
   it('lookupLPsByName passes through API results', async () => {
-    stubFetch({ '/api/lpRecords/lookup': [{ name: 'Apollo Global' }] })
+    stubFetch({ '/api/lpRecords/lookup': [{ investorName: 'Apollo Global' }] })
     const rows = await lookupLPsByName('apollo')
     expect(rows).toHaveLength(1)
-    expect(rows[0].name).toBe('Apollo Global')
+    expect(rows[0].investorName).toBe('Apollo Global')
   })
 })
 
@@ -457,15 +484,15 @@ describe('getFacilityBBSnapshot — live mode', () => {
   it('passes through the per-LP engine results persisted with the snapshot', async () => {
     const summary = { totalUBB: 18.0, totalABB: 18.0 }
     const lps = [
-      { id: 51, name: 'Alpha Pension', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
-      { id: 52, name: 'Beta Endowment', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
+      { id: 51, investorName: 'Alpha Pension', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
+      { id: 52, investorName: 'Beta Endowment', ubbM: 9.0, abbM: 9.0, ucM: 10.0, agentExcessM: 2.0, pctAgentBB: 0.5, pctUbsBB: 0.5 },
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ facilityId: 1, result: { summary, lps } }), { status: 200 })
     ))
     const result = await getFacilityBBSnapshot(1)
     expect(result?.lps).toHaveLength(2)
-    expect(result?.lps[0].name).toBe('Alpha Pension')
+    expect(result?.lps[0].investorName).toBe('Alpha Pension')
     expect(result?.lps[0].pctAgentBB).toBeCloseTo(0.5)
     expect(result?.lps[1].agentExcessM).toBeCloseTo(2.0)
   })
@@ -540,15 +567,18 @@ describe('api.matching.decideBatch', () => {
 describe('api.bb.run — LP commit', () => {
   const snapshot = { id: 7, facilityId: 1, calculatedAt: '2026-06-12T21:00:00', result: { lps: [], summary: { totalUBB: 120.5 }, breaches: [] } }
 
+  // Mirrors CommitBbRequest.CommitLpRow: money pre-formatted, rates/ratios as fractions.
   const LPRecord: CommitLpRow = {
-    name: 'CalPERS', parent: null, spv: false, hq: true,
-    instVsHnw: 'Institutional', region: 'North America', ig: true, cls: 'Rated',
-    sp: 'AAA', mdy: 'Aaa', fitch: '',
-    aum: '$500.0B', nav: null, pension: null, pensionFunded: null,
-    capCommit: '$20.0M', pctCapCommit: null, calledCap: '$14.0M',
-    uc: '$20.0M', pctUncalled: null, pctCalled: null,
-    agentConc: '7.5%', ubsConc: '7.5%', ubsRate: '90%', agentRate: '95.0%',
-    inc: true, rcl: false, notes: null,
+    investorName: 'CalPERS', parent: null, spv: false, highQuality: true,
+    institutionalOrHnw: 'Institutional', regionLocation: 'North America',
+    investmentGrade: true, ubsLpCategory: 'Rated',
+    spRating: 'AAA', moodysRating: 'Aaa', fitchRating: '',
+    aum: '$500.0B', nav: null, pensionAssets: null, fundingRatio: null,
+    capitalCommitment: '$20.0M', pctOfFundCommitments: null, calledCapital: '$14.0M',
+    uncalledCapital: '$20.0M', pctOfFundUncalled: null, pctLpCalled: null,
+    agentConcentrationLimit: '7.5%', ubsConcentrationLimit: '7.5%',
+    ubsAdvanceRate: 0.9, agentAdvanceRate: 0.95,
+    included: true, reclassified: false, notes: null,
   }
 
   afterEach(() => vi.unstubAllGlobals())
@@ -565,15 +595,15 @@ describe('api.bb.run — LP commit', () => {
     expect(call[1].method).toBe('POST')
     const body = JSON.parse(call[1].body as string) as { lps: CommitLpRow[] }
     expect(body.lps).toHaveLength(1)
-    expect(body.lps[0].name).toBe('CalPERS')
-    expect(body.lps[0].ubsConc).toBe('7.5%')
+    expect(body.lps[0].investorName).toBe('CalPERS')
+    expect(body.lps[0].ubsConcentrationLimit).toBe('7.5%')
     // The resolved UBS advance rate must round-trip so it reaches LP Master (writeBack reads it).
-    expect(body.lps[0].ubsRate).toBe('90%')
+    expect(body.lps[0].ubsAdvanceRate).toBe(0.9)
     // Engine outputs are server-computed at run time — the commit payload must not carry them.
-    expect(body.lps[0]).not.toHaveProperty('abb')
-    expect(body.lps[0]).not.toHaveProperty('ubb')
-    expect(body.lps[0]).not.toHaveProperty('agentExcessConc')
-    expect(body.lps[0]).not.toHaveProperty('ubsExcessConc')
+    expect(body.lps[0]).not.toHaveProperty('agentBorrowingBase')
+    expect(body.lps[0]).not.toHaveProperty('ubsBorrowingBase')
+    expect(body.lps[0]).not.toHaveProperty('agentExcessConcentration')
+    expect(body.lps[0]).not.toHaveProperty('ubsExcessConcentration')
   })
 
   it('returns the config-driven breaches from the run response', async () => {
@@ -715,19 +745,20 @@ describe('api.lpRecords.saveClassification', () => {
       effectiveDate: '2026-06',
       rows: [
         {
-          name: 'CalPERS',
-          fundSleeve: 'Main Fund',
-          region: 'North America',
+          investorName: 'CalPERS',
+          regionLocation: 'North America',
           investorType: 'Public Pension',
-          instVsHnw: 'Institutional',
-          cls: 'Rated',
-          sp: 'AAA',
-          inc: true,
-          uc: '$20.0M',
-          ubsAdvRatePct: 90,
-          ubsConcLimitPct: 7.5,
+          institutionalOrHnw: 'Institutional',
+          ubsLpCategory: 'Rated',
+          spRating: 'AAA',
+          included: true,
+          uncalledCapital: '$20.0M',
+          // The four *Pct inputs stay percent-scaled on this payload, unlike the fractions
+          // everywhere else — the server record keeps the same distinction.
+          ubsAdvanceRatePct: 90,
+          ubsConcentrationLimitPct: 7.5,
         },
-        { name: 'Tiny Fund LLC', cls: 'Excluded', inc: false },
+        { investorName: 'Tiny Fund LLC', ubsLpCategory: 'Excluded', included: false },
       ],
     })
     expect(result.updated).toBe(2)
@@ -735,15 +766,15 @@ describe('api.lpRecords.saveClassification', () => {
     const call = fetchSpy.mock.calls[0] as [string, RequestInit]
     expect(call[0]).toBe('/api/lpRecords/classification')
     expect(call[1].method).toBe('PATCH')
-    const body = JSON.parse(call[1].body as string) as { facilityId: number; rows: Array<{ name: string }> }
+    const body = JSON.parse(call[1].body as string) as { facilityId: number; rows: Array<{ investorName: string }> }
     expect(body.facilityId).toBe(3)
     expect(body.rows).toHaveLength(2)
-    expect(body.rows[0].name).toBe('CalPERS')
+    expect(body.rows[0].investorName).toBe('CalPERS')
     expect(body.rows[0]).toMatchObject({
-      fundSleeve: 'Main Fund',
-      region: 'North America',
+      regionLocation: 'North America',
       investorType: 'Public Pension',
-      instVsHnw: 'Institutional',
+      institutionalOrHnw: 'Institutional',
+      ubsAdvanceRatePct: 90,
     })
   })
 

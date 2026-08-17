@@ -24,18 +24,18 @@ export default function Modal({ open, onClose, title, subtitle, children, footer
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose?.() }}>
       <div className="modal-box" style={boxStyle}>
-        {title && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: subtitle ? 4 : 16 }}>
+        {(title || subtitle) && (
+          <div className="modal-head">
             <div style={{ minWidth: 0 }}>
               {title && <div className="modal-title">{title}</div>}
+              {subtitle && <div className="modal-subtitle">{subtitle}</div>}
             </div>
             {onClose && (
-              <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1, color: 'var(--muted)', padding: '0 0 0 12px', flexShrink: 0, marginTop: -2 }} aria-label="Close">×</button>
+              <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
             )}
           </div>
         )}
-        {subtitle && <div className="modal-subtitle">{subtitle}</div>}
-        {children}
+        <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>

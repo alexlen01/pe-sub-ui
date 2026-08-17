@@ -11,7 +11,7 @@ export async function getLPs(): Promise<LPRecord[]> {
 
 export async function getLPByName(name: string): Promise<LPRecord | null> {
   const matches = await api.lpRecords.lookup(name)
-  return matches.find(LPRecord => LPRecord.name === name) ?? null
+  return matches.find(lp => lp.investorName === name) ?? null
 }
 
 export async function getLPsForFacility(facilityId: number): Promise<LPRecord[]> {

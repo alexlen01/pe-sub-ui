@@ -16,7 +16,7 @@ const matchingConfig: MatchingConfig = {
     retirementNormalize: true,
   },
   legalSuffixes: [
-    { abbr: 'LPRecord', full: 'Limited Partnership', strip: true },
+    { abbr: 'LP', full: 'Limited Partnership', strip: true },
   ],
   knownAbbreviations: [],
   abbrevRegexMap: {},
@@ -81,7 +81,7 @@ describe('normalisedAgentName', () => {
       .toBe('texas teachers retirement system')
   })
 
-  it('falls back to the client-side reconstruction in prototype mode', () => {
+  it('falls back to the caller-supplied value when the row carries no match_details', () => {
     expect(normalisedAgentName({ agentName: 'X', masterName: null }, 'reconstructed value'))
       .toBe('reconstructed value')
   })

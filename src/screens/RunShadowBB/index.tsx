@@ -33,15 +33,21 @@ import { formatPercentageText, formatPercentageValue } from '../../utils/percent
 const DEFAULT_CL_PCT = 7.5
 export const SHADOW_BB_TABLE_WIDTH = 3993
 
+/* Keys are the column's sortKey — `SortableHeader` reports resizes under that name, so a width
+   parked under any other key is dead: the header renders with no width at all and
+   `table-layout: fixed` hands it an even slice of whatever the sized columns left over.
+   Every width is also floored at its own header label's rendered width (11px bold Segoe UI in
+   `.data-table.dense`) plus the 18px side padding and the 13px sort indicator, so no label is
+   ever ellipsis-truncated at the default sizing. */
 export const SHADOW_BB_INITIAL_WIDTHS: ColWidths = {
   name: 220, parent: 160, spv: 54,
-  region: 140, investorType: 140, instVsHnw: 152, agentCls: 196, cls: 204,
-  included: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-  lpSizeBil: 184, lpSizeCriteria: 107, capCommit: 138, cmtPct: 157,
-  calledM: 106, ucM: 116, pctUncalled: 128, pctCalled: 104,
-  agentRatePct: 120, ubsAdvRatePct: 114, agentConcLimitPct: 158,
-  concLimitPct: 144, agentExcess: 164, ubsExcess: 154,
-  agentBBCalc: 138, pctAgentBB: 110, ubsBBCalc: 128, pctUbsBB: 110, notes: 180,
+  region: 140, investorType: 140, institutionalOrHnw: 152, agentLpCategory: 196, cls: 204,
+  included: 72, ig: 126, sp: 76, mdy: 84, fitch: 76,
+  lpSizeBil: 184, lpSizeCriteria: 107, capitalCommitment: 146, cmtPct: 172,
+  calledM: 106, ucM: 117, pctOfFundUncalled: 144, pctLpCalled: 107,
+  agentRatePct: 139, ubsAdvRatePct: 128, agentConcLimitPct: 171,
+  concLimitPct: 160, agentExcess: 177, ubsExcess: 167,
+  agentBBCalc: 149, pctAgentBB: 110, ubsBBCalc: 139, pctUbsBB: 110, notes: 180,
 }
 
 interface ShadowBBTableHeadProps {
@@ -61,8 +67,8 @@ export function ShadowBBTableHead({ sort, onSort, widths, onResizeStart }: Shado
         <SortableHeader sortKey="spv"               sort={sort} onSort={onSort} style={{ width: w('spv') }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
         <SortableHeader sortKey="region"            sort={sort} onSort={onSort} style={{ width: w('region') }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
         <SortableHeader sortKey="investorType"      sort={sort} onSort={onSort} style={{ width: w('investorType') }}                  onResizeStart={onResizeStart}>Investor Type</SortableHeader>
-        <SortableHeader sortKey="instVsHnw"         sort={sort} onSort={onSort} style={{ width: w('instVsHnw') }}                     onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
-        <SortableHeader sortKey="agentCls"          sort={sort} onSort={onSort} style={{ width: w('agentCls') }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
+        <SortableHeader sortKey="institutionalOrHnw"         sort={sort} onSort={onSort} style={{ width: w('institutionalOrHnw') }}                     onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
+        <SortableHeader sortKey="agentLpCategory"          sort={sort} onSort={onSort} style={{ width: w('agentLpCategory') }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
         <SortableHeader sortKey="cls"               sort={sort} onSort={onSort} style={{ width: w('cls') }}                           onResizeStart={onResizeStart}>UBS LP Classification</SortableHeader>
         <SortableHeader sortKey="included"          sort={sort} onSort={onSort} style={{ width: w('included'), textAlign: 'center' }} onResizeStart={onResizeStart}>Eligible</SortableHeader>
         <SortableHeader sortKey="ig"                sort={sort} onSort={onSort} style={{ width: w('ig') }}                            onResizeStart={onResizeStart}>Investment Grade</SortableHeader>
@@ -71,12 +77,12 @@ export function ShadowBBTableHead({ sort, onSort, widths, onResizeStart }: Shado
         <SortableHeader sortKey="fitch"             sort={sort} onSort={onSort} style={{ width: w('fitch') }}                         onResizeStart={onResizeStart}>Fitch</SortableHeader>
         <SortableHeader sortKey="lpSizeBil"         sort={sort} onSort={onSort} className="num" style={{ width: w('lpSizeBil') }}     onResizeStart={onResizeStart}>LP Size</SortableHeader>
         <SortableHeader sortKey="lpSizeCriteria"    sort={sort} onSort={onSort} style={{ width: w('lpSizeCriteria') }}                onResizeStart={onResizeStart}>Size Measure</SortableHeader>
-        <SortableHeader sortKey="capCommit"         sort={sort} onSort={onSort} className="num" style={{ width: w('capCommit') }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
+        <SortableHeader sortKey="capitalCommitment"         sort={sort} onSort={onSort} className="num" style={{ width: w('capitalCommitment') }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
         <SortableHeader sortKey="cmtPct"            sort={sort} onSort={onSort} className="num" style={{ width: w('cmtPct') }}        onResizeStart={onResizeStart}>% of Capital Commitments</SortableHeader>
         <SortableHeader sortKey="calledM"           sort={sort} onSort={onSort} className="num" style={{ width: w('calledM') }}       onResizeStart={onResizeStart}>Called Capital</SortableHeader>
         <SortableHeader sortKey="ucM"               sort={sort} onSort={onSort} className="num" style={{ width: w('ucM') }}           onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
-        <SortableHeader sortKey="pctUncalled"       sort={sort} onSort={onSort} className="num" style={{ width: w('pctUncalled') }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
-        <SortableHeader sortKey="pctCalled"         sort={sort} onSort={onSort} className="num" style={{ width: w('pctCalled') }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
+        <SortableHeader sortKey="pctOfFundUncalled"       sort={sort} onSort={onSort} className="num" style={{ width: w('pctOfFundUncalled') }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
+        <SortableHeader sortKey="pctLpCalled"         sort={sort} onSort={onSort} className="num" style={{ width: w('pctLpCalled') }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
         <SortableHeader sortKey="agentRatePct"      sort={sort} onSort={onSort} className="num" style={{ width: w('agentRatePct') }}  onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
         <SortableHeader sortKey="ubsAdvRatePct"     sort={sort} onSort={onSort} className="num" style={{ width: w('ubsAdvRatePct') }} onResizeStart={onResizeStart}>UBS Advance Rate</SortableHeader>
         <SortableHeader sortKey="agentConcLimitPct" sort={sort} onSort={onSort} className="num" style={{ width: w('agentConcLimitPct') }} onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
@@ -99,6 +105,12 @@ export function parsePct(str: string | undefined | null): number | '' {
   return Number.isFinite(n) ? n : ''
 }
 
+/** This screen's percent fields are percent-scaled (90 = 90%); LPRecord advance rates and
+ *  ratios are fractions (0.9). Converts the latter to the former, '' when absent. */
+export function pctFromFraction(value: number | null | undefined): number | '' {
+  return value == null || !Number.isFinite(value) ? '' : value * 100
+}
+
 export function isRunShadowBbDisabled(
   running: boolean,
   lpRatesLoaded: boolean,
@@ -106,6 +118,26 @@ export function isRunShadowBbDisabled(
   canEdit: boolean,
 ): boolean {
   return running || !lpRatesLoaded || hasLoadError || !canEdit
+}
+
+/**
+ * Whether a Save on this screen should mark the record reclassified. Mirrors the server's
+ * ReclassificationPolicy: the flag means "a Shadow BB is stale because a category moved", so
+ * during wizard steps 1–5 — before this submission has been run (`hasRun` false) — a category
+ * change is initial data entry and marks nothing. The flag is never cleared here; the server
+ * remains authoritative and keeps it sticky once set.
+ */
+export function marksReclassificationOnSave(
+  hasRun: boolean,
+  saved:  { agentLpCategory?: string | null; ubsLpCategory?: string | null },
+  stored: { agentLpCategory?: string | null; ubsLpCategory?: string | null; reclassified?: boolean },
+): boolean {
+  if (!hasRun) return false
+  const moved = (next: string | null | undefined, prev: string | null | undefined) =>
+    next != null && String(next).trim() !== String(prev ?? '').trim()
+  return Boolean(stored.reclassified)
+    || moved(saved.agentLpCategory, stored.agentLpCategory)
+    || moved(saved.ubsLpCategory, stored.ubsLpCategory)
 }
 
 export function parseMoneyM(str: string | undefined | null): number {
@@ -121,9 +153,9 @@ const num = (v: number | '' | undefined): number => (typeof v === 'number' ? v :
 
 function deriveAgentLpClassification(input: {
   investorType?: string
-  sp?: string
-  mdy?: string
-  fitch?: string
+  spRating?: string
+  moodysRating?: string
+  fitchRating?: string
   notes?: string
   spv?: boolean
 }): string {
@@ -132,7 +164,7 @@ function deriveAgentLpClassification(input: {
   if (input.spv || /\b(sanction|bad actor|kyc|erisa|side letter|non[-\s]?cooperative|ineligible|excluded|gp sleeve|sponsor affiliate|affiliate)\b/.test(`${type} ${notes}`)) {
     return 'Ineligible Investor'
   }
-  if (hasInvestmentGradeRating(input.sp, input.mdy, input.fitch)) return 'Rated Included'
+  if (hasInvestmentGradeRating(input.spRating, input.moodysRating, input.fitchRating)) return 'Rated Included'
   if (/(family office|hnw|high net worth)/.test(type)) return 'Ineligible Investor'
   if (/(institutional|endowment|foundation|insurance|sovereign|pension|corporate|healthcare|fund of funds|fof|investment consultant|hedge fund)/.test(type)) {
     return 'Non-Rated Included'
@@ -191,13 +223,13 @@ export function calcRow(ov: Override, totalCommitM: number, totalUncalledM: numb
   const ubsClPct = num(ov.concLimitPct) / 100
   const agClPct  = num(ov.agentConcLimitPct) / 100
   const uc       = parseMoneyM(ov.ucM)
-  const commitM  = parseMoneyM(ov.capCommit)
-  const included = !!ov.inc && !!ov.cls && ov.cls !== 'Excluded'
+  const commitM  = parseMoneyM(ov.capitalCommitment)
+  const included = !!ov.included && !!ov.ubsLpCategory && ov.ubsLpCategory !== 'Excluded'
 
   const cmtPct          = totalCommitM   > 0 ? commitM / totalCommitM : 0
   const calledM         = Math.max(commitM - uc, 0)
-  const pctUncalled     = totalUncalledM > 0 ? uc / totalUncalledM : 0
-  const pctCalled       = commitM > 0 ? calledM / commitM : 0
+  const pctOfFundUncalled     = totalUncalledM > 0 ? uc / totalUncalledM : 0
+  const pctLpCalled       = commitM > 0 ? calledM / commitM : 0
   const ubsEligUncalled = Math.min(uc, totalUncalledM * ubsClPct)
   const agentEligUncl   = agClPct > 0 ? Math.min(uc, totalUncalledM * agClPct) : uc
   const ubsBBCalc       = included ? ubsEligUncalled * advRate : 0
@@ -209,29 +241,29 @@ export function calcRow(ov: Override, totalCommitM: number, totalUncalledM: numb
   const bbDelta         = ubsBBCalc - agentBBCalc
 
   return {
-    cmtPct, commitM, calledM, pctUncalled, pctCalled,
+    cmtPct, commitM, calledM, pctOfFundUncalled, pctLpCalled,
     ubsEligUncalled, agentEligUncl, ubsBBCalc, agentBBCalc,
     ubsExcess, agentExcess, ubsIncluded, highQuality, included, bbDelta,
   }
 }
 
-function deriveInc(cls: string, isNew: boolean, masterInc: boolean | undefined): boolean {
-  if (!cls || cls === 'Excluded') return false
+function deriveInc(ubsLpCategory: string, isNew: boolean, masterInc: boolean | undefined): boolean {
+  if (!ubsLpCategory || ubsLpCategory === 'Excluded') return false
   return isNew ? true : !!(masterInc)
 }
 
 export type SubmissionLP = Partial<LPRecord> & { _key: string; _isNew: boolean; _agentName: string }
 export type Override = {
-  name: string
-  parent: string; spv: boolean; investorType: string; instVsHnw: string; ig: boolean
-  cls: string; agentCls: string; agentClsSource?: string
-  region?: string; fundSleeve?: string
-  sp: string; mdy: string; fitch: string
+  investorName: string
+  parent: string; spv: boolean; investorType: string; institutionalOrHnw: string; investmentGrade: boolean
+  ubsLpCategory: string; agentLpCategory: string; agentLpCategorySource?: string
+  regionLocation?: string
+  spRating: string; moodysRating: string; fitchRating: string
   lpSizeBil: string; lpSizeCriteria: string
-  capCommit: string; ucM: string
+  capitalCommitment: string; ucM: string
   ubsAdvRatePct: number | ''; agentRatePct: number | ''
   concLimitPct: number | ''; agentConcLimitPct: number | ''
-  inc: boolean; notes: string
+  included: boolean; notes: string
 }
 
 // Counts LPs whose UBS LP Classification was auto-populated on this screen:
@@ -239,8 +271,8 @@ export type Override = {
 // investor-profile / agent-rate fallback chain), "upgraded" when LP Master
 // data lifted a stored class to a higher tier (upgradeClsFromLpMasterData).
 export function countAutoPopulatedCls(
-  lps: Array<{ _key: string; cls?: string }>,
-  overrides: Record<string, { cls?: string } | undefined>,
+  lps: Array<{ _key: string; ubsLpCategory?: string }>,
+  overrides: Record<string, { ubsLpCategory?: string } | undefined>,
   ubsClsOpts: string[],
 ): { derived: number; upgraded: number } {
   let derived = 0, upgraded = 0
@@ -253,13 +285,13 @@ export function countAutoPopulatedCls(
 }
 
 export function getAutoPopulatedClsKind(
-  lp: { cls?: string },
-  override: { cls?: string } | undefined,
+  lp: { ubsLpCategory?: string },
+  override: { ubsLpCategory?: string } | undefined,
   ubsClsOpts: string[],
 ): 'derived' | 'upgraded' | '' {
-  const cls = override?.cls
+  const cls = override?.ubsLpCategory
   if (!cls) return ''
-  const stored = lp.cls ?? ''
+  const stored = lp.ubsLpCategory ?? ''
   if (cls === stored) return ''
   return stored && ubsClsOpts.includes(stored) ? 'upgraded' : 'derived'
 }
@@ -296,6 +328,7 @@ export default function RunShadowBB() {
   const [runBreaches, setRunBreaches] = useState<BBBreach[]>([])
   const [summaryHidden, setSummaryHidden] = useState(false)
   const [abortOpen, setAbortOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<SubmissionLP | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submissionDetails, setSubmissionDetails] = useState<Submission | null>(null)
   // A non-owner analyst is read-only until they take the submission over (concurrency guard).
@@ -337,6 +370,23 @@ export default function RunShadowBB() {
     setAbortOpen(false)
     toast('Submission aborted.')
     navigate('upload')
+  }
+
+  // Hard-deletes an LP record committed from a bad Agent BB row. Not optimistic: the row only
+  // leaves the table once the API confirms, since the API also recomputes the facility's ranks.
+  const handleDeleteRecord = async () => {
+    const lp = deleteConfirm
+    if (lp?.id == null) return
+    setDeleteConfirm(null)
+    try {
+      await api.lpRecords.remove(lp.id)
+    } catch (e) {
+      toast(`Delete failed — ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
+    setFacilityLPs(prev => prev.filter(r => r.id !== lp.id))
+    setSelectedKey(prev => prev === lp._key ? null : prev)
+    toast(`${lp.investorName || lp._agentName || 'LP record'} deleted — re-run Shadow BB to refresh the calculation.`, 4000)
   }
 
   useEffect(() => {
@@ -395,30 +445,30 @@ export default function RunShadowBB() {
   const submissionLPs = useMemo<SubmissionLP[]>(() => {
     return facilityLPs.map((LPRecord, index) => ({
       ...LPRecord,
-      _key: LPRecord.id != null ? `LPRecord-${LPRecord.id}` : `LPRecord-${index}-${LPRecord.name ?? ''}`,
+      _key: LPRecord.id != null ? `LPRecord-${LPRecord.id}` : `LPRecord-${index}-${LPRecord.investorName ?? ''}`,
       _isNew: false,
-      _agentName: LPRecord.name,
+      _agentName: LPRecord.investorName,
     }))
   }, [facilityLPs])
 
   const buildOverride = (LPRecord: SubmissionLP): Override => {
-    const ext  = extractedMap[(LPRecord._agentName || LPRecord.name || '').toLowerCase()]
-    const rate = lpRates.get((LPRecord.name || '').toLowerCase())
+    const ext  = extractedMap[(LPRecord._agentName || LPRecord.investorName || '').toLowerCase()]
+    const rate = lpRates.get((LPRecord.investorName || '').toLowerCase())
                ?? lpRates.get((LPRecord._agentName || '').toLowerCase())
     const toRating = (extracted: string | undefined, master: string | undefined) => {
       const v = extracted || master || ''
       return v !== 'NR' ? v : ''
     }
     const investorTypeText = ext?.investorType || LPRecord.investorType || ''
-    const spText = toRating(ext?.sp, LPRecord.sp)
-    const mdyText = toRating(ext?.moodys, LPRecord.mdy)
-    const fitchText = toRating(ext?.fitch, LPRecord.fitch)
-    const rawAgentClsText = ext?.agentClass || LPRecord.agentCls || ''
+    const spText = toRating(ext?.spRating, LPRecord.spRating)
+    const mdyText = toRating(ext?.moodys, LPRecord.moodysRating)
+    const fitchText = toRating(ext?.fitchRating, LPRecord.fitchRating)
+    const rawAgentClsText = ext?.agentClass || LPRecord.agentLpCategory || ''
     const derivedAgentClsText = rawAgentClsText ? '' : deriveAgentLpClassification({
       investorType: investorTypeText,
-      sp: spText,
-      mdy: mdyText,
-      fitch: fitchText,
+      spRating: spText,
+      moodysRating: mdyText,
+      fitchRating: fitchText,
       notes: LPRecord.notes ?? '',
       spv: !!LPRecord.spv,
     })
@@ -426,48 +476,49 @@ export default function RunShadowBB() {
     const agentMappedUbsCls = classCfg ? ubsClassFromAgentCls(classCfg, agentClsText) : ''
     const agentRateFromCls = eligCfg?.AGENT_TIERS.find(t => t.cls === agentClsText)?.rate ?? ''
     const agentConcFromCls = clsConcLimitPctForCls(eligCfg, agentMappedUbsCls)
-    const extractedAgentRatePct = parsePct(ext?.agentRate || LPRecord.agentRate)
-    const extractedAgentConcPct = parsePct(ext?.agentConc || LPRecord.agentConc)
+    const extractedAgentRatePct = ext?.agentAdvanceRate
+      ? parsePct(ext.agentAdvanceRate)
+      : pctFromFraction(LPRecord.agentAdvanceRate)
+    const extractedAgentConcPct = parsePct(ext?.agentConc || LPRecord.agentConcentrationLimit)
     const agentRatePct = extractedAgentRatePct !== '' ? extractedAgentRatePct : agentRateFromCls
     const agentConcLimitPct = extractedAgentConcPct !== '' ? extractedAgentConcPct : agentConcFromCls
-    const agentClsSource = ext?.agentClass
-      ? (ext.agentClsSource || 'EXTRACTED')
-      : LPRecord.agentCls
-        ? (LPRecord.agentClsSource || 'EXTRACTED')
+    const agentLpCategorySource = ext?.agentClass
+      ? (ext.agentLpCategorySource || 'EXTRACTED')
+      : LPRecord.agentLpCategory
+        ? (LPRecord.agentLpCategorySource || 'EXTRACTED')
         : derivedAgentClsText
           ? 'DERIVED'
           : undefined
     if (!classCfg) {
       return {
-        name: LPRecord.name ?? LPRecord._agentName ?? '',
+        investorName: LPRecord.investorName ?? LPRecord._agentName ?? '',
         parent: LPRecord.parent ?? '',
         spv: !!LPRecord.spv,
         investorType: investorTypeText,
-        instVsHnw: LPRecord.instVsHnw ?? 'Institutional',
-        ig: !!LPRecord.ig,
-        cls: '',
-        agentCls: agentClsText,
-        agentClsSource,
-        sp: spText,
-        mdy: mdyText,
-        fitch: fitchText,
-        lpSizeBil: ext?.lpSizeBil || LPRecord.aum || LPRecord.nav || LPRecord.pension || ext?.aum || ext?.nav || '',
-        lpSizeCriteria: ext?.lpSizeCriteria || (LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : ''),
-        capCommit: ext?.commit || LPRecord.capCommit || '',
-        ucM: ext?.uncalled || LPRecord.uc || '',
-        ubsAdvRatePct: parsePct(LPRecord.rate),
+        institutionalOrHnw: LPRecord.institutionalOrHnw ?? 'Institutional',
+        investmentGrade: !!LPRecord.investmentGrade,
+        ubsLpCategory: '',
+        agentLpCategory: agentClsText,
+        agentLpCategorySource,
+        spRating: spText,
+        moodysRating: mdyText,
+        fitchRating: fitchText,
+        lpSizeBil: ext?.lpSizeBil || LPRecord.aum || LPRecord.nav || LPRecord.pensionAssets || ext?.aum || ext?.nav || '',
+        lpSizeCriteria: ext?.lpSizeCriteria || (LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pensionAssets ? 'Assets' : ''),
+        capitalCommitment: ext?.commit || LPRecord.capitalCommitment || '',
+        ucM: ext?.uncalled || LPRecord.uncalledCapital || '',
+        ubsAdvRatePct: pctFromFraction(LPRecord.ubsAdvanceRate),
         agentRatePct,
-        concLimitPct: parsePct(LPRecord.ubsConc) || DEFAULT_CL_PCT,
+        concLimitPct: parsePct(LPRecord.ubsConcentrationLimit) || DEFAULT_CL_PCT,
         agentConcLimitPct,
-        inc: false,
+        included: false,
         notes: LPRecord.notes ?? '',
-        region: LPRecord.region ?? '',
-        fundSleeve: (LPRecord as LPRecord).fundSleeve ?? ext?.fundSleeve ?? '',
+        regionLocation: LPRecord.regionLocation ?? '',
       }
     }
-    const isUbsCls = Object.prototype.hasOwnProperty.call(classCfg.BUSA_RATE_MAP, LPRecord.cls ?? '')
+    const isUbsCls = Object.prototype.hasOwnProperty.call(classCfg.BUSA_RATE_MAP, LPRecord.ubsLpCategory ?? '')
     const baseCls = isUbsCls
-      ? (LPRecord.cls as string)
+      ? (LPRecord.ubsLpCategory as string)
       : (
           ubsClassFromAgentCls(classCfg, agentClsText)
           || ubsClassFromAgentRate(classCfg, agentRatePct)
@@ -480,44 +531,43 @@ export default function RunShadowBB() {
     // concentration limit — funded-split and rating-band aware (mirrors the API's BbCriteriaResolver).
     // No legacy flat-map fallback: a class the matrix does not carry keeps the LP's stored value.
     // Funded fraction = called ÷ commitment, with called = commitment − uncalled.
-    const commitFundedM = parseMoneyM(ext?.commit || LPRecord.capCommit)
-    const uncalledFundedM = parseMoneyM(ext?.uncalled || LPRecord.uc)
+    const commitFundedM = parseMoneyM(ext?.commit || LPRecord.capitalCommitment)
+    const uncalledFundedM = parseMoneyM(ext?.uncalled || LPRecord.uncalledCapital)
     const pctFunded = commitFundedM > 0 ? Math.max(0, commitFundedM - uncalledFundedM) / commitFundedM : 0
     const criteria = cls
-      ? resolveBbCriteria(eligCfg?.BB_CRITERIA_MATRIX, cls, { sp: spText, mdy: mdyText, fitch: fitchText }, pctFunded)
+      ? resolveBbCriteria(eligCfg?.BB_CRITERIA_MATRIX, cls, { spRating: spText, moodysRating: mdyText, fitchRating: fitchText }, pctFunded)
       : null
     const clsDefaultRatePct = criteria ? criteria.advanceRatePct : ''
     const clsDefaultConcPct = criteria ? criteria.concLimitPct : ''
     return {
-      name:              LPRecord.name ?? LPRecord._agentName ?? '',
+      investorName:      LPRecord.investorName ?? LPRecord._agentName ?? '',
       parent:            LPRecord.parent ?? '',
       spv:               !!LPRecord.spv,
       investorType:      investorTypeText,
-      instVsHnw:         LPRecord.instVsHnw ?? 'Institutional',
-      ig:                !!LPRecord.ig,
-      cls,
-      agentCls:          agentClsText,
-      agentClsSource,
-      sp:                spText,
-      mdy:               mdyText,
-      fitch:             fitchText,
-      lpSizeBil:         ext?.lpSizeBil || LPRecord.aum || LPRecord.nav || LPRecord.pension || ext?.aum || ext?.nav || '',
-      lpSizeCriteria:    ext?.lpSizeCriteria || (LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : ''),
-      capCommit:         ext?.commit || LPRecord.capCommit || '',
-      ucM:               ext?.uncalled || LPRecord.uc || '',
+      institutionalOrHnw:         LPRecord.institutionalOrHnw ?? 'Institutional',
+      investmentGrade:                !!LPRecord.investmentGrade,
+      ubsLpCategory:     cls,
+      agentLpCategory:          agentClsText,
+      agentLpCategorySource,
+      spRating:                spText,
+      moodysRating:               mdyText,
+      fitchRating:             fitchText,
+      lpSizeBil:         ext?.lpSizeBil || LPRecord.aum || LPRecord.nav || LPRecord.pensionAssets || ext?.aum || ext?.nav || '',
+      lpSizeCriteria:    ext?.lpSizeCriteria || (LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pensionAssets ? 'Assets' : ''),
+      capitalCommitment:         ext?.commit || LPRecord.capitalCommitment || '',
+      ucM:               ext?.uncalled || LPRecord.uncalledCapital || '',
       // UBS classification drives UBS rate/limit from Configuration.
       ubsAdvRatePct:     clsDefaultRatePct !== ''
                               ? clsDefaultRatePct
-                              : (rate ? rate.ubsAdvRatePct * 100 : parsePct(LPRecord.rate)),
+                              : (rate ? rate.ubsAdvRatePct * 100 : pctFromFraction(LPRecord.ubsAdvanceRate)),
       agentRatePct,
       concLimitPct:      clsDefaultConcPct !== ''
                               ? clsDefaultConcPct
-                              : (rate ? rate.ubsConcLimitPct * 100 : parsePct(LPRecord.ubsConc) || DEFAULT_CL_PCT),
+                              : (rate ? rate.ubsConcLimitPct * 100 : parsePct(LPRecord.ubsConcentrationLimit) || DEFAULT_CL_PCT),
       agentConcLimitPct,
-      inc:               deriveInc(cls, LPRecord._isNew, LPRecord.inc),
+      included:               deriveInc(cls, LPRecord._isNew, LPRecord.included),
       notes:             LPRecord.notes ?? '',
-      region:            LPRecord.region ?? '',
-      fundSleeve:        (LPRecord as LPRecord).fundSleeve ?? ext?.fundSleeve ?? '',
+      regionLocation:    LPRecord.regionLocation ?? '',
     }
   }
 
@@ -540,33 +590,32 @@ export default function RunShadowBB() {
   type ClassificationRow = LpClassificationRequest['rows'][number]
   const toRow = (key: string, ov: Override): ClassificationRow | null => {
     const LPRecord   = submissionLPs.find(l => l._key === key)
-    const name = ov.name || LPRecord?.name || LPRecord?._agentName || ''
+    const name = ov.investorName || LPRecord?.investorName || LPRecord?._agentName || ''
     if (!name) return null
     return {
       id:                LPRecord?.id,
-      name,
-      originalName:      LPRecord?.name || LPRecord?._agentName || undefined,
+      investorName:      name,
+      originalName:      LPRecord?.investorName || LPRecord?._agentName || undefined,
       parent:            ov.parent || undefined,
       spv:               ov.spv,
-      fundSleeve:        ov.fundSleeve || undefined,
       investorType:      ov.investorType || undefined,
-      instVsHnw:         ov.instVsHnw || undefined,
-      region:            ov.region || undefined,
-      ig:                ov.ig,
-      cls:               ov.cls || undefined,
-      agentCls:          ov.agentCls || undefined,
-      agentClsSource:    ov.agentClsSource || undefined,
-      sp:                ov.sp, mdy: ov.mdy, fitch: ov.fitch,
+      institutionalOrHnw:         ov.institutionalOrHnw || undefined,
+      regionLocation:    ov.regionLocation || undefined,
+      investmentGrade:                ov.investmentGrade,
+      ubsLpCategory:               ov.ubsLpCategory || undefined,
+      agentLpCategory:          ov.agentLpCategory || undefined,
+      agentLpCategorySource:    ov.agentLpCategorySource || undefined,
+      spRating:                ov.spRating, moodysRating: ov.moodysRating, fitchRating: ov.fitchRating,
       aum:               ov.lpSizeCriteria === 'AUM' ? ov.lpSizeBil || undefined : undefined,
       nav:               ov.lpSizeCriteria === 'NAV' ? ov.lpSizeBil || undefined : undefined,
-      pension:           ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil || undefined : undefined,
-      capCommit:         ov.capCommit || undefined,
-      uc:                ov.ucM || undefined,
-      ubsAdvRatePct:     typeof ov.ubsAdvRatePct     === 'number' ? ov.ubsAdvRatePct     : undefined,
-      agentRatePct:      typeof ov.agentRatePct      === 'number' ? ov.agentRatePct      : undefined,
-      ubsConcLimitPct:   typeof ov.concLimitPct      === 'number' ? ov.concLimitPct      : undefined,
-      agentConcLimitPct: typeof ov.agentConcLimitPct === 'number' ? ov.agentConcLimitPct : undefined,
-      inc:               ov.inc,
+      pensionAssets:           ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil || undefined : undefined,
+      capitalCommitment:         ov.capitalCommitment || undefined,
+      uncalledCapital:                ov.ucM || undefined,
+      ubsAdvanceRatePct:          typeof ov.ubsAdvRatePct     === 'number' ? ov.ubsAdvRatePct     : undefined,
+      agentAdvanceRatePct:        typeof ov.agentRatePct      === 'number' ? ov.agentRatePct      : undefined,
+      ubsConcentrationLimitPct:   typeof ov.concLimitPct      === 'number' ? ov.concLimitPct      : undefined,
+      agentConcentrationLimitPct: typeof ov.agentConcLimitPct === 'number' ? ov.agentConcLimitPct : undefined,
+      included:               ov.included,
       notes:             ov.notes ?? '',
     }
   }
@@ -588,15 +637,13 @@ export default function RunShadowBB() {
         rows: [row],
       })
       const persistedLP = submissionLPs.find(lp => lp._key === key)
-      const reclassified = Boolean(persistedLP?.rcl)
-        || (row.agentCls != null && String(row.agentCls).trim() !== String(persistedLP?.agentCls ?? '').trim())
-        || (row.cls != null && String(row.cls).trim() !== String(persistedLP?.cls ?? '').trim())
+      const reclassified = marksReclassificationOnSave(result != null, row, persistedLP ?? {})
       if (reclassified) {
         setFacilityLPs(current => current.map(lp => {
           const matches = persistedLP?.id != null
             ? lp.id === persistedLP.id
-            : lp.name === (persistedLP?.name || persistedLP?._agentName)
-          return matches ? { ...lp, rcl: true } : lp
+            : lp.investorName === (persistedLP?.investorName || persistedLP?._agentName)
+          return matches ? { ...lp, reclassified: true } : lp
         }))
       }
       if (activeSubmissionId != null) {
@@ -694,7 +741,7 @@ export default function RunShadowBB() {
     const rejectedCount = matchQueue.filter(mq => mq.decision === 'Rejected').length
     const noMatchCount  = matchQueue.filter(mq => mq.isNew || !mq.masterName).length
     const uncalledM = Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.ucM), 0)
-    const commitM   = Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capCommit), 0)
+    const commitM   = Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capitalCommitment), 0)
     const totalUncalled   = uncalledM > 0 ? `$${Math.round(uncalledM * 1_000_000).toLocaleString()}` : '—'
     const totalCommitment = commitM   > 0 ? `$${Math.round(commitM   * 1_000_000).toLocaleString()}` : '—'
     return [
@@ -709,7 +756,7 @@ export default function RunShadowBB() {
   }, [submissionDetails, activeSubmission, matchQueue, overrides, submissionLPs.length])
 
   const newLPs       = submissionLPs.filter(LPRecord => LPRecord._isNew)
-  const unclassified = submissionLPs.filter(LPRecord => !overrides[LPRecord._key]?.cls).length
+  const unclassified = submissionLPs.filter(LPRecord => !overrides[LPRecord._key]?.ubsLpCategory).length
   const currentUbsClsOptions = useMemo(
     () => classCfg ? busaClassificationOptions(classCfg).filter(Boolean) : [],
     [classCfg],
@@ -727,7 +774,7 @@ export default function RunShadowBB() {
   const agentAutoFilledCount = useMemo(
     () => submissionLPs.filter(LPRecord =>
       !manuallyAdjusted.has(LPRecord._key)
-      && overrides[LPRecord._key]?.agentClsSource === 'DERIVED'
+      && overrides[LPRecord._key]?.agentLpCategorySource === 'DERIVED'
     ).length,
     [submissionLPs, overrides, manuallyAdjusted],
   )
@@ -741,11 +788,11 @@ export default function RunShadowBB() {
   const displayLPs = useMemo(() => {
     if (!unclassifiedOnly || unclassified === 0) return submissionLPs
     return submissionLPs
-      .filter(LPRecord => !overrides[LPRecord._key]?.cls)
+      .filter(LPRecord => !overrides[LPRecord._key]?.ubsLpCategory)
   }, [submissionLPs, overrides, unclassifiedOnly, unclassified])
 
   const totalCommitM = useMemo(() =>
-    Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capCommit), 0)
+    Object.values(overrides).reduce((s, ov) => s + parseMoneyM(ov.capitalCommitment), 0)
   , [overrides])
 
   const totalUncalledM = useMemo(() =>
@@ -767,22 +814,21 @@ export default function RunShadowBB() {
       return ov ? calcRow(ov, totalCommitM, totalUncalledM) : null
     }
     return [
-      { key: 'name', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.name || LPRecord.name || LPRecord._agentName || '' },
-      { key: 'fundSleeve', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fundSleeve ?? '' },
+      { key: 'name', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.investorName || LPRecord.investorName || LPRecord._agentName || '' },
       { key: 'parent', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.parent ?? '' },
       { key: 'spv', getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.spv },
-      { key: 'region', getValue: (LPRecord: SubmissionLP) => formatRegion(getOverride(LPRecord)?.region ?? LPRecord.region ?? '') },
+      { key: 'region', getValue: (LPRecord: SubmissionLP) => formatRegion(getOverride(LPRecord)?.regionLocation ?? LPRecord.regionLocation ?? '') },
       { key: 'investorType', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.investorType ?? LPRecord.investorType ?? '' },
-      { key: 'cls', getValue: (LPRecord: SubmissionLP) => ubsClsSortOrder[getOverride(LPRecord)?.cls ?? ''] ?? Number.MAX_SAFE_INTEGER },
-      { key: 'instVsHnw', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.instVsHnw ?? '' },
-      { key: 'ig', getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.ig },
-      { key: 'agentCls', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentCls ?? '' },
-      { key: 'sp', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.sp ?? '' },
-      { key: 'mdy', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.mdy ?? '' },
-      { key: 'fitch', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fitch ?? '' },
+      { key: 'cls', getValue: (LPRecord: SubmissionLP) => ubsClsSortOrder[getOverride(LPRecord)?.ubsLpCategory ?? ''] ?? Number.MAX_SAFE_INTEGER },
+      { key: 'institutionalOrHnw', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.institutionalOrHnw ?? '' },
+      { key: 'ig', getValue: (LPRecord: SubmissionLP) => !!getOverride(LPRecord)?.investmentGrade },
+      { key: 'agentLpCategory', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentLpCategory ?? '' },
+      { key: 'sp', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.spRating ?? '' },
+      { key: 'mdy', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.moodysRating ?? '' },
+      { key: 'fitch', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.fitchRating ?? '' },
       { key: 'lpSizeBil', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.lpSizeBil ?? '' },
       { key: 'lpSizeCriteria', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.lpSizeCriteria ?? '' },
-      { key: 'capCommit', getValue: (LPRecord: SubmissionLP) => parseMoneyM(getOverride(LPRecord)?.capCommit) },
+      { key: 'capitalCommitment', getValue: (LPRecord: SubmissionLP) => parseMoneyM(getOverride(LPRecord)?.capitalCommitment) },
       { key: 'ucM', getValue: (LPRecord: SubmissionLP) => parseMoneyM(getOverride(LPRecord)?.ucM) },
       { key: 'ubsAdvRatePct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.ubsAdvRatePct ?? '' },
       { key: 'agentRatePct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentRatePct ?? '' },
@@ -790,8 +836,8 @@ export default function RunShadowBB() {
       { key: 'agentConcLimitPct', getValue: (LPRecord: SubmissionLP) => getOverride(LPRecord)?.agentConcLimitPct ?? '' },
       { key: 'cmtPct', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.cmtPct ?? '' },
       { key: 'calledM', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.calledM ?? '' },
-      { key: 'pctUncalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctUncalled ?? '' },
-      { key: 'pctCalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctCalled ?? '' },
+      { key: 'pctOfFundUncalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctOfFundUncalled ?? '' },
+      { key: 'pctLpCalled', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.pctLpCalled ?? '' },
       { key: 'agentExcess', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.agentExcess ?? '' },
       { key: 'ubsExcess', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.ubsExcess ?? '' },
       { key: 'agentBBCalc', getValue: (LPRecord: SubmissionLP) => getComputed(LPRecord)?.agentBBCalc ?? '' },
@@ -805,7 +851,7 @@ export default function RunShadowBB() {
 
   const { sort, sortedRows: sortedDisplayLPs, requestSort } = useSortableRows(displayLPs, sortColumns)
   const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedDisplayLPs)
-  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('run-shadow-bb', SHADOW_BB_INITIAL_WIDTHS)
+  const { widths: bbWidths, onResizeStart: bbResizeStart, tableWidth: bbTableWidth } = useColumnResize('run-shadow-bb-v2', SHADOW_BB_INITIAL_WIDTHS)
 
   // Deselect if the selected row leaves the current page or the BB result replaces the table.
   useEffect(() => {
@@ -848,26 +894,27 @@ export default function RunShadowBB() {
       const concLimitM = typeof ov.concLimitPct === 'number'
         ? (ov.concLimitPct / 100) * totalUncalledM
         : (DEFAULT_CL_PCT / 100) * totalUncalledM
-      const rate      = typeof ov.ubsAdvRatePct === 'number' ? formatPercentageValue(ov.ubsAdvRatePct) : formatPercentageText(LPRecord.rate, '0%')
-      const agentRate = typeof ov.agentRatePct  === 'number' ? formatPercentageValue(ov.agentRatePct) : formatPercentageText(LPRecord.agentRate, '')
-      const agentConc = typeof ov.agentConcLimitPct === 'number' ? formatPercentageValue(ov.agentConcLimitPct) : formatPercentageText(LPRecord.agentConc, '')
-      const ubsConc   = typeof ov.concLimitPct === 'number'
+      // Rates travel to the engine as fractions, matching lp_records and the commit payload.
+      const ubsAdvanceRate   = typeof ov.ubsAdvRatePct === 'number' ? ov.ubsAdvRatePct / 100 : LPRecord.ubsAdvanceRate ?? 0
+      const agentAdvanceRate = typeof ov.agentRatePct  === 'number' ? ov.agentRatePct / 100  : LPRecord.agentAdvanceRate ?? null
+      const agentConcentrationLimit = typeof ov.agentConcLimitPct === 'number' ? formatPercentageValue(ov.agentConcLimitPct) : formatPercentageText(LPRecord.agentConcentrationLimit, '')
+      const ubsConcentrationLimit   = typeof ov.concLimitPct === 'number'
         ? formatPercentageValue(ov.concLimitPct)
-        : formatPercentageText(LPRecord.ubsConc, formatPercentageValue(DEFAULT_CL_PCT))
+        : formatPercentageText(LPRecord.ubsConcentrationLimit, formatPercentageValue(DEFAULT_CL_PCT))
       const sizeAum = ov.lpSizeCriteria === 'AUM' ? ov.lpSizeBil : ''
       const sizeNav = ov.lpSizeCriteria === 'NAV' ? ov.lpSizeBil : ''
       const sizeAssets = ov.lpSizeCriteria === 'Assets' ? ov.lpSizeBil : ''
       return {
         ...LPRecord,
-        name: ov.name || LPRecord.name || LPRecord._agentName,
-        parent: ov.parent, spv: ov.spv, fundSleeve: ov.fundSleeve, investorType: ov.investorType, region: (ov.region || LPRecord.region || '') as LPRecord['region'], instVsHnw: ov.instVsHnw as LPRecord['instVsHnw'], ig: ov.ig,
-        cls: ov.cls || 'Excluded', agentCls: ov.agentCls,
-        agentClsSource: ov.agentClsSource,
-        sp: ov.sp ?? '', mdy: ov.mdy ?? '', fitch: ov.fitch ?? '',
-        aum: sizeAum, nav: sizeNav, pension: sizeAssets, pensionFunded: '',
-        capCommit: ov.capCommit, rate, agentRate, ucM, uc: `$${ucM.toFixed(1)}M`,
-        agentConc, ubsConc,
-        concLimitM, inc: ov.inc ?? false, notes: ov.notes,
+        investorName: ov.investorName || LPRecord.investorName || LPRecord._agentName,
+        parent: ov.parent, spv: ov.spv, investorType: ov.investorType, regionLocation: (ov.regionLocation || LPRecord.regionLocation || '') as LPRecord['regionLocation'], institutionalOrHnw: ov.institutionalOrHnw as LPRecord['institutionalOrHnw'], investmentGrade: ov.investmentGrade,
+        ubsLpCategory: ov.ubsLpCategory || 'Excluded', agentLpCategory: ov.agentLpCategory,
+        agentLpCategorySource: ov.agentLpCategorySource,
+        spRating: ov.spRating ?? '', moodysRating: ov.moodysRating ?? '', fitchRating: ov.fitchRating ?? '',
+        aum: sizeAum, nav: sizeNav, pensionAssets: sizeAssets, fundingRatio: null,
+        capitalCommitment: ov.capitalCommitment, ubsAdvanceRate, agentAdvanceRate, ucM, uncalledCapital: `$${ucM.toFixed(1)}M`,
+        agentConcentrationLimit, ubsConcentrationLimit,
+        concLimitM, included: ov.included ?? false, notes: ov.notes,
       }
     })
 
@@ -884,40 +931,39 @@ export default function RunShadowBB() {
       {
         try {
           const commitRows: CommitLpRow[] = overriddenLPs.map(LPRecord => ({
-            name:            LPRecord.name ?? '',
+            investorName:    LPRecord.investorName ?? '',
             parent:          LPRecord.parent ?? null,
             spv:             LPRecord.spv ?? false,
-            hq:              LPRecord.hq ?? true,
-            fundSleeve:      LPRecord.fundSleeve ?? null,
+            highQuality:              LPRecord.highQuality ?? true,
             investorType:    LPRecord.investorType ?? null,
-            instVsHnw:       LPRecord.instVsHnw ?? 'Institutional',
-            region:          LPRecord.region ?? '',
-            ig:              LPRecord.ig ?? false,
-            cls:             LPRecord.cls ?? 'Excluded',
-            agentCls:        LPRecord.agentCls || null,
-            agentClsSource:  LPRecord.agentClsSource || null,
-            sp:              LPRecord.sp ?? '',
-            mdy:             LPRecord.mdy ?? '',
-            fitch:           LPRecord.fitch ?? '',
+            institutionalOrHnw:       LPRecord.institutionalOrHnw ?? 'Institutional',
+            regionLocation:  LPRecord.regionLocation ?? '',
+            investmentGrade:              LPRecord.investmentGrade ?? false,
+            ubsLpCategory:             LPRecord.ubsLpCategory ?? 'Excluded',
+            agentLpCategory:        LPRecord.agentLpCategory || null,
+            agentLpCategorySource:  LPRecord.agentLpCategorySource || null,
+            spRating:              LPRecord.spRating ?? '',
+            moodysRating:             LPRecord.moodysRating ?? '',
+            fitchRating:           LPRecord.fitchRating ?? '',
             aum:             LPRecord.aum || null,
             nav:             LPRecord.nav || null,
-            pension:         LPRecord.pension || null,
-            pensionFunded:   LPRecord.pensionFunded || null,
-            capCommit:       LPRecord.capCommit || null,
-            pctCapCommit:    LPRecord.pctCapCommit || null,
-            calledCap:       LPRecord.calledCap || null,
-            uc:              LPRecord.uc || null,
-            pctUncalled:     LPRecord.pctUncalled || null,
-            pctCalled:       LPRecord.pctCalled || null,
-            agentConc:       LPRecord.agentConc || null,
-            ubsConc:         LPRecord.ubsConc || null,
+            pensionAssets:         LPRecord.pensionAssets || null,
+            fundingRatio:   LPRecord.fundingRatio ?? null,
+            capitalCommitment:       LPRecord.capitalCommitment || null,
+            pctOfFundCommitments:    LPRecord.pctOfFundCommitments ?? null,
+            calledCapital:       LPRecord.calledCapital || null,
+            uncalledCapital:              LPRecord.uncalledCapital || null,
+            pctOfFundUncalled:     LPRecord.pctOfFundUncalled ?? null,
+            pctLpCalled:       LPRecord.pctLpCalled ?? null,
+            agentConcentrationLimit:  LPRecord.agentConcentrationLimit || null,
+            ubsConcentrationLimit:    LPRecord.ubsConcentrationLimit || null,
             // Resolved UBS advance rate (matrix default or manual override) so it round-trips to
-            // LP Master; `rate` is formatted above from the same criteria.
-            ubsRate:         LPRecord.rate || null,
-            agentRate:       LPRecord.agentRate || null,
-            inc:             LPRecord.inc ?? false,
-            rcl:             LPRecord.rcl ?? false,
-            tf:              LPRecord.tf ?? false,
+            // LP Master.
+            ubsAdvanceRate:  LPRecord.ubsAdvanceRate ?? null,
+            agentAdvanceRate:       LPRecord.agentAdvanceRate ?? null,
+            included:             LPRecord.included ?? false,
+            reclassified:             LPRecord.reclassified ?? false,
+            transferee:              LPRecord.transferee ?? false,
             notes:           LPRecord.notes || null,
           }))
           const snap = await api.bb.run(facilityId, commitRows)
@@ -1038,7 +1084,7 @@ export default function RunShadowBB() {
                       {pageItems.map(LPRecord => {
                         const key      = LPRecord._key
                         const ov       = overrides[key] ?? {} as Override
-                        const missing  = !ov.cls
+                        const missing  = !ov.ubsLpCategory
                         const selected = key === selectedKey
                         // A manual edit+save makes the whole row user-owned: clear its
                         // auto-mapped highlight (UBS class/rate/conc + agent category cells).
@@ -1049,12 +1095,12 @@ export default function RunShadowBB() {
                           : autoClsKind === 'derived'
                             ? 'Auto-filled from Agent LP Category or Agent Advance Rate'
                             : ''
-                        const agentClsAuto = !adjusted && ov.agentClsSource === 'DERIVED'
+                        const agentClsAuto = !adjusted && ov.agentLpCategorySource === 'DERIVED'
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
-                        const reclassified = LPRecord.rcl
-                          || String(ov.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
-                          || String(ov.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim()
-                        const n = ov.name || LPRecord.name || LPRecord._agentName || '—'
+                        const reclassified = LPRecord.reclassified
+                          || String(ov.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
+                          || String(ov.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim()
+                        const n = ov.investorName || LPRecord.investorName || LPRecord._agentName || '—'
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)}
                             style={{ cursor: 'pointer',
@@ -1063,7 +1109,7 @@ export default function RunShadowBB() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
                                 {reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
-                                {LPRecord.tf && <span className="tf-badge">T</span>}
+                                {LPRecord.transferee && <span className="tf-badge">T</span>}
                                 {LPRecord._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
                                 {saveState[key] === 'saved'  && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', flexShrink: 0 }}>Saved</span>}
@@ -1072,28 +1118,28 @@ export default function RunShadowBB() {
                             </td>
                             <td title={ov.parent || '—'}>{ov.parent || '—'}</td>
                             <td>{ov.spv ? 'Yes' : 'No'}</td>
-                            <td>{formatRegion(ov.region || LPRecord.region) || '—'}</td>
+                            <td>{formatRegion(ov.regionLocation || LPRecord.regionLocation) || '—'}</td>
                             <td title={ov.investorType || LPRecord.investorType || '—'}>{ov.investorType || LPRecord.investorType || '—'}</td>
-                            <td>{ov.instVsHnw || '—'}</td>
-                            <td className={agentClsAuto ? 'auto-mapped-cell' : undefined} title={agentClsAuto ? `${ov.agentCls || '—'} - Auto-filled from Agent BB data` : (ov.agentCls || '—')}>
-                              <span className="auto-mapped-value"><span className="auto-mapped-text">{ov.agentCls || '—'}</span>{agentClsAuto && <span className="auto-mapped-badge">Auto</span>}</span>
+                            <td>{ov.institutionalOrHnw || '—'}</td>
+                            <td className={agentClsAuto ? 'auto-mapped-cell' : undefined} title={agentClsAuto ? `${ov.agentLpCategory || '—'} - Auto-filled from Agent BB data` : (ov.agentLpCategory || '—')}>
+                              <span className="auto-mapped-value"><span className="auto-mapped-text">{ov.agentLpCategory || '—'}</span>{agentClsAuto && <span className="auto-mapped-badge">Auto</span>}</span>
                             </td>
-                            <td className={autoClsKind ? 'auto-mapped-cell' : undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: ov.cls ? undefined : 'var(--danger)' }} title={autoClsTitle ? `${ov.cls || 'Unclassified'} - ${autoClsTitle}` : (ov.cls || 'Unclassified')}>
-                              <span className="auto-mapped-value"><span className="auto-mapped-text"><Tag>{ov.cls || 'Unclassified'}</Tag></span>{autoClsKind && <span className="auto-mapped-badge">Auto</span>}</span>
+                            <td className={autoClsKind ? 'auto-mapped-cell' : undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: ov.ubsLpCategory ? undefined : 'var(--danger)' }} title={autoClsTitle ? `${ov.ubsLpCategory || 'Unclassified'} - ${autoClsTitle}` : (ov.ubsLpCategory || 'Unclassified')}>
+                              <span className="auto-mapped-value"><span className="auto-mapped-text"><Tag>{ov.ubsLpCategory || 'Unclassified'}</Tag></span>{autoClsKind && <span className="auto-mapped-badge">Auto</span>}</span>
                             </td>
                             <td style={{ textAlign: 'center' }}><YesNo val={c.included} /></td>
-                            <td>{ov.ig ? 'Yes' : 'No'}</td>
-                            <td>{ov.sp || '—'}</td>
-                            <td>{ov.mdy || '—'}</td>
-                            <td>{ov.fitch || '—'}</td>
+                            <td>{ov.investmentGrade ? 'Yes' : 'No'}</td>
+                            <td>{ov.spRating || '—'}</td>
+                            <td>{ov.moodysRating || '—'}</td>
+                            <td>{ov.fitchRating || '—'}</td>
                             <td className="num" title={ov.lpSizeBil || '—'}>{lpSizeFormat(ov.lpSizeBil)}</td>
                             <td>{ov.lpSizeCriteria || '—'}</td>
-                            <td className="num">{ov.capCommit ? fmtFull(parseMoneyM(ov.capCommit)) : '—'}</td>
+                            <td className="num">{ov.capitalCommitment ? fmtFull(parseMoneyM(ov.capitalCommitment)) : '—'}</td>
                             <td className="num">{fmtPct(c.cmtPct)}</td>
                             <td className="num">{fmtFull(c.calledM)}</td>
                             <td className="num">{ov.ucM ? fmtFull(parseMoneyM(ov.ucM)) : '—'}</td>
-                            <td className="num">{fmtPct(c.pctUncalled)}</td>
-                            <td className="num">{fmtPct(c.pctCalled)}</td>
+                            <td className="num">{fmtPct(c.pctOfFundUncalled)}</td>
+                            <td className="num">{fmtPct(c.pctLpCalled)}</td>
                             <td className="num">{pctStr(ov.agentRatePct)}</td>
                             <td className={`num ${autoClsKind ? 'auto-mapped-cell' : ''}`} title={autoClsTitle ? `${pctStr(ov.ubsAdvRatePct)} - Auto-populated from UBS LP Classification schedule` : undefined}>{pctStr(ov.ubsAdvRatePct)}</td>
                             <td className="num">{pctStr(ov.agentConcLimitPct)}</td>
@@ -1129,6 +1175,7 @@ export default function RunShadowBB() {
                     totalUncalledM={totalUncalledM}
                     running={running || !lpRatesLoaded || loadError != null || !canEdit}
                     onDeselect={() => setSelectedKey(null)}
+                    onDelete={selectedLp.id != null ? () => setDeleteConfirm(selectedLp) : undefined}
                     onSave={saveDraft}
                     saveStatus={saveState[selectedKey]}
                   />
@@ -1181,6 +1228,10 @@ export default function RunShadowBB() {
       </div>
     </div>
 
+    <Modal open={deleteConfirm != null} onClose={() => setDeleteConfirm(null)} title="Delete LP Record?" subtitle={deleteConfirm?.investorName || deleteConfirm?._agentName || undefined}
+      footer={<><Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Button><Button variant="danger" onClick={handleDeleteRecord}>Delete Record</Button></>}>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The record is removed from the facility permanently and the remaining LPs are re-ranked. Re-run the Shadow BB so the calculation reflects the removal. To restore it, re-upload the Agent BB.</div>
+    </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={handleAbort}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting removes this submission from history. The LP records committed to LP Master remain — re-upload the Agent BB if you need to reprocess and update them.</div>
@@ -1192,13 +1243,14 @@ export default function RunShadowBB() {
 // ── LP record card — sectioned editable form; used as the right-side panel in Step 5.
 // Manual-Input columns are editable; Calculated columns are derived live by calcRow and read-only.
 // Layout and section structure match the LP Master and Shadow BB detail panels.
-export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSave, onDeselect, running, saveStatus }: {
+export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSave, onDeselect, onDelete, running, saveStatus }: {
   LPRecord: SubmissionLP
   ov: Override
   totalCommitM: number
   totalUncalledM: number
   onSave: (draft: Override) => Promise<void>
   onDeselect?: () => void
+  onDelete?: () => void
   running: boolean
   saveStatus?: 'saving' | 'saved' | 'error'
 }) {
@@ -1213,11 +1265,11 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
   }, [ov])
 
   const calc = useMemo(() => calcRow(draft, totalCommitM, totalUncalledM), [draft, totalCommitM, totalUncalledM])
-  const name = draft.name || LPRecord.name || LPRecord._agentName || '—'
+  const name = draft.investorName || LPRecord.investorName || LPRecord._agentName || '—'
   const dirty = JSON.stringify(draft) !== JSON.stringify(ov)
-  const reclassified = LPRecord.rcl
-    || String(draft.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
-    || String(draft.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim()
+  const reclassified = LPRecord.reclassified
+    || String(draft.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
+    || String(draft.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim()
 
   if (!classCfg || !eligCfg) {
     return <div style={{ padding: 16, color: 'var(--muted)', fontSize: 12 }}>Loading LPRecord configuration...</div>
@@ -1228,8 +1280,8 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
   const COLS: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px 16px', padding: '12px 16px' }
   const notesMax = 250
   const agentRateScheduleValues = eligCfg.AGENT_TIERS.map(({ cls }) => cls)
-  const agentClsOptions = draft.agentCls && !agentRateScheduleValues.includes(draft.agentCls)
-    ? ['', draft.agentCls, ...agentRateScheduleValues]
+  const agentClsOptions = draft.agentLpCategory && !agentRateScheduleValues.includes(draft.agentLpCategory)
+    ? ['', draft.agentLpCategory, ...agentRateScheduleValues]
     : ['', ...agentRateScheduleValues]
   // LP-Master-upgraded LPs carry legacy tier labels (Rated / Unrated >2bn / …) that
   const ubsClsOptions = busaClassificationOptions(classCfg)
@@ -1261,23 +1313,23 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
     setDraft(prev => {
       const nextValue = field === 'notes' && typeof value === 'string' ? value.slice(0, notesMax) : value
       const next = { ...prev, [field]: nextValue } as Override
-      if (field === 'cls') {
+      if (field === 'ubsLpCategory') {
         // Reseed the UBS rate/limit from the criteria matrix (funded-split + rating band), matching
         // the initial buildOverride seeding; fall back to the flat schedules off the matrix.
-        const commitM = parseMoneyM(next.capCommit)
+        const commitM = parseMoneyM(next.capitalCommitment)
         const ucM = parseMoneyM(next.ucM)
         const pctFunded = commitM > 0 ? Math.max(0, commitM - ucM) / commitM : 0
         const criteria = resolveBbCriteria(
           eligCfg?.BB_CRITERIA_MATRIX, value as string,
-          { sp: next.sp, mdy: next.mdy, fitch: next.fitch }, pctFunded)
+          { spRating: next.spRating, moodysRating: next.moodysRating, fitchRating: next.fitchRating }, pctFunded)
         if (criteria) {
           next.ubsAdvRatePct = criteria.advanceRatePct
           next.concLimitPct = criteria.concLimitPct
         }
         // No legacy flat-map fallback: a class outside the matrix leaves the stored rate/limit as-is.
       }
-      if (field === 'agentCls') {
-        next.agentClsSource = 'USER_EDITED'
+      if (field === 'agentLpCategory') {
+        next.agentLpCategorySource = 'USER_EDITED'
         const tier = eligCfg.AGENT_TIERS.find(t => t.cls === value)
         if (tier && next.agentRatePct === '') next.agentRatePct = tier.rate
         const mappedUbsCls = ubsClassFromAgentCls(classCfg, value as string)
@@ -1347,10 +1399,10 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
           {onDeselect && <button onClick={onDeselect} aria-label="Close" style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, opacity: .7, padding: 0, flexShrink: 0 }}>×</button>}
         </div>
         <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .92 }}>
-          {draft.cls && <Tag>{draft.cls}</Tag>}
+          {draft.ubsLpCategory && <Tag>{draft.ubsLpCategory}</Tag>}
           <span style={{ fontSize: 11, opacity: .8 }}>{pctStr(draft.ubsAdvRatePct)} UBS · {pctStr(draft.agentRatePct)} Agent</span>
           {reclassified && <span className="rcl-badge">Reclassified</span>}
-          {LPRecord.tf && <span className="tf-badge">Transferee</span>}
+          {LPRecord.transferee && <span className="tf-badge">Transferee</span>}
           {saveStatus === 'saving' && <span style={{ fontSize: 10 }}>Saving...</span>}
           {saveStatus === 'saved'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#9be8b6' }}>Saved</span>}
           {saveStatus === 'error'  && <span style={{ fontSize: 10, fontWeight: 700, color: '#ff9b9b' }}>Failed</span>}
@@ -1365,32 +1417,31 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={COLS}>
           {sec('Identification & Classification')}
-          {txt('Investor Name', 'name', 6)}
+          {txt('Investor Name', 'investorName', 6)}
           {chk('SPV?', 'spv', 1)}
           {txt('Parent', 'parent', 5)}
-          {txt('Fund Sleeve', 'fundSleeve', 3)}
-          {regionField('Region / Location', 'region', 3)}
+          {regionField('Region / Location', 'regionLocation', 3)}
           {/* INVESTOR_TYPE_OPTS already leads with an empty sentinel; TYPE_OPTS does not, so only it needs the '' prepend. */}
           {sel('Investor Type', 'investorType', classCfg.INVESTOR_TYPE_OPTS, 3)}
-          {sel('Institutional vs HNW', 'instVsHnw', ['', ...classCfg.TYPE_OPTS], 3)}
-          {sel('Agent LP Classification', 'agentCls', agentClsOptions)}
-          {sel('UBS LP Classification', 'cls', ubsClsOptions)}
-          {chk('Investment Grade?', 'ig')}
-          
+          {sel('Institutional vs HNW', 'institutionalOrHnw', ['', ...classCfg.TYPE_OPTS], 3)}
+          {sel('Agent LP Classification', 'agentLpCategory', agentClsOptions)}
+          {sel('UBS LP Classification', 'ubsLpCategory', ubsClsOptions)}
+          {chk('Investment Grade?', 'investmentGrade')}
+
           {sec('Credit Ratings')}
-          {sel('S&P', 'sp', classCfg.SP_RATING_OPTS, 2)}
-          {sel("Moody's", 'mdy', classCfg.MDY_RATING_OPTS, 2)}
-          {sel('Fitch', 'fitch', classCfg.FITCH_RATING_OPTS, 2)}
+          {sel('S&P', 'spRating', classCfg.SP_RATING_OPTS, 2)}
+          {sel("Moody's", 'moodysRating', classCfg.MDY_RATING_OPTS, 2)}
+          {sel('Fitch', 'fitchRating', classCfg.FITCH_RATING_OPTS, 2)}
 
           {sec('Capital Metrics')}
           {txt('LP Size ($ Bil)', 'lpSizeBil')}
           {sel('LP Size Criteria', 'lpSizeCriteria', classCfg.LP_SIZE_CRITERIA_OPTS)}
-          {amountTxt('Capital Commitment', 'capCommit')}
+          {amountTxt('Capital Commitment', 'capitalCommitment')}
           {amountTxt('Uncalled Capital', 'ucM')}
           {ro('% of Capital Commitments', fmtPct(calc.cmtPct), false, 'LP commitment ÷ total fund commitments')}
           {ro('Called Capital',           fmtFull(calc.calledM),  false, 'Capital Commitments − Uncalled Capital')}
-          {ro('% of Uncalled Capital', fmtPct(calc.pctUncalled), false, 'LP uncalled ÷ total fund uncalled')}
-          {ro('% of LP Called',        fmtPct(calc.pctCalled),   false, 'Called Capital ÷ Capital Commitments')}
+          {ro('% of Uncalled Capital', fmtPct(calc.pctOfFundUncalled), false, 'LP uncalled ÷ total fund uncalled')}
+          {ro('% of LP Called',        fmtPct(calc.pctLpCalled),   false, 'Called Capital ÷ Capital Commitments')}
 
           {sec('Borrowing Base Calculation')}
           {pctInput('Agent Advance Rate', 'agentRatePct', 5)}
@@ -1401,7 +1452,7 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
           {ro('UBS Excess Concentration', fmtFull(calc.ubsExcess), false, 'Uncalled above UBS concentration limit')}
           {ro('Agent Borrowing Base', fmtFull(calc.agentBBCalc), false, 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration')}
           {ro('UBS Borrowing Base', fmtFull(calc.ubsBBCalc), false, 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration')}
-          {chk('Included in BB?', 'inc', true, true)}
+          {chk('Included in BB?', 'included', true, true)}
 
           {sec('Additional Details')}
           {wrap(true, <>
@@ -1412,6 +1463,9 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
         </div>
       </div>
       <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8, background: '#fff' }}>
+        {/* Removal path for a record the Agent BB parsed badly — editing it cannot fix a row that
+            should not exist, and it would otherwise carry into the Shadow BB. */}
+        {onDelete && <Button variant="danger" style={{ marginRight: 'auto' }} onClick={onDelete} disabled={running || saving}>⊘ Delete Record</Button>}
         <Button variant="secondary" onClick={onDeselect} disabled={saving}>Cancel</Button>
         <Button onClick={commit} disabled={running || saving || !dirty}>{saving ? 'Saving...' : 'Save'}</Button>
       </div>

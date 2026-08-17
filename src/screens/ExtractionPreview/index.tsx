@@ -29,7 +29,7 @@ interface ExtractedRow {
   transferee?: boolean
   agentClass?: string
   commit?: string
-  calledCap?: string
+  calledCapital?: string
   uncalled?: string
   pctCalledFmt?: string
   pctUnfundedFmt?: string
@@ -45,7 +45,7 @@ interface ExtractedRow {
   sp?: string
   moodys?: string
   fitch?: string
-  agentRate?: string
+  agentAdvanceRate?: string
   agentConc?: string
   excessConcFmt?: string
   eligibleCommitmentFmt?: string
@@ -88,38 +88,42 @@ type CanonicalMeta = {
   strong?: boolean
 }
 
+/* Each width is floored at its own header label's rendered width (12px bold Segoe UI in
+   `.data-table`) plus the 36px side padding and the 13px sort indicator, so no label is ever
+   ellipsis-truncated at the default sizing. The grid already scrolls horizontally, so a column
+   that needs the room takes it rather than clipping its own name. */
 const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   'Investor Name':             { key: 'name', width: 255 },
   'LP Category':               { key: 'agentClass', width: 142 },
-  Transferee:                  { key: 'transferee', width: 84 },
+  Transferee:                  { key: 'transferee', width: 111 },
   'Parent / Sponsor':          { key: 'parent', width: 150 },
-  'Eligibility Flag':          { width: 104 },
-  'Capital Commitments':       { key: 'commit', width: 165, align: 'right', money: true },
-  '% of Capital Commitments':  { width: 132, align: 'right' },
-  'Called Capital':            { key: 'calledCap', width: 122, align: 'right', money: true },
-  'Recallable Distributions':  { width: 148, align: 'right', money: true },
-  'Uncalled Capital':          { key: 'uncalled', width: 140, align: 'right', money: true },
-  '% of Uncalled Capital':     { key: 'pctUnfundedFmt', width: 148, align: 'right' },
-  '% of LP Called':            { key: 'pctCalledFmt', width: 120, align: 'right' },
-  'Size Metric Type':          { key: 'sizeMetricType', width: 130 },
-  'Size Value / Tier':         { key: 'sizeValueTier', width: 120, align: 'right' },
+  'Eligibility Flag':          { width: 131 },
+  'Capital Commitments':       { key: 'commit', width: 174, align: 'right', money: true },
+  '% of Capital Commitments':  { width: 203, align: 'right' },
+  'Called Capital':            { key: 'calledCapital', width: 129, align: 'right', money: true },
+  'Recallable Distributions':  { width: 185, align: 'right', money: true },
+  'Uncalled Capital':          { key: 'uncalled', width: 143, align: 'right', money: true },
+  '% of Uncalled Capital':     { key: 'pctUnfundedFmt', width: 172, align: 'right' },
+  '% of LP Called':            { key: 'pctCalledFmt', width: 132, align: 'right' },
+  'Size Metric Type':          { key: 'sizeMetricType', width: 145 },
+  'Size Value / Tier':         { key: 'sizeValueTier', width: 142, align: 'right' },
   AUM:                         { key: 'aum', width: 110, align: 'right', money: true },
   NAV:                         { key: 'nav', width: 110, align: 'right', money: true },
   'Net Worth':                 { width: 120, align: 'right', money: true },
   'Pension Assets':            { width: 140, align: 'right', money: true },
-  'Pension Funded %':          { width: 130, align: 'right' },
-  'Advance Rate':              { key: 'agentRate', width: 110, align: 'right', strong: true },
-  'Eligible Commitment':       { key: 'eligibleCommitmentFmt', width: 158, align: 'right', money: true },
-  '% of Eligible Uncalled':    { key: 'pctEligibleUnfundedFmt', width: 157, align: 'right' },
-  '% of Borrowing Base':       { key: 'pctBBFmt', width: 148, align: 'right' },
-  'Borrowing Base':            { key: 'agentBBFmt', width: 135, align: 'right', money: true },
-  'Concentration Limit':       { key: 'agentConc', label: 'Concentration Limit (%)', width: 170, align: 'right' },
-  'Concentration (%)':         { width: 133, align: 'right' },
-  'Excess Concentration':      { key: 'excessConcFmt', width: 150, align: 'right', money: true },
-  'Excess Concentration (%)':  { width: 173, align: 'right' },
-  'S&P Rating':                { key: 'sp', width: 72, rating: true },
-  "Moody's Rating":            { key: 'moodys', width: 84, rating: true },
-  'Fitch Rating':              { key: 'fitch', width: 78, rating: true },
+  'Pension Funded %':          { width: 155, align: 'right' },
+  'Advance Rate':              { key: 'agentAdvanceRate', width: 129, align: 'right', strong: true },
+  'Eligible Commitment':       { key: 'eligibleCommitmentFmt', width: 170, align: 'right', money: true },
+  '% of Eligible Uncalled':    { key: 'pctEligibleUnfundedFmt', width: 174, align: 'right' },
+  '% of Borrowing Base':       { key: 'pctBBFmt', width: 169, align: 'right' },
+  'Borrowing Base':            { key: 'agentBBFmt', width: 140, align: 'right', money: true },
+  'Concentration Limit':       { key: 'agentConc', label: 'Concentration Limit (%)', width: 186, align: 'right' },
+  'Concentration (%)':         { width: 154, align: 'right' },
+  'Excess Concentration':      { key: 'excessConcFmt', width: 171, align: 'right', money: true },
+  'Excess Concentration (%)':  { width: 193, align: 'right' },
+  'S&P Rating':                { key: 'sp', width: 116, rating: true },
+  "Moody's Rating":            { key: 'moodys', width: 141, rating: true },
+  'Fitch Rating':              { key: 'fitch', width: 119, rating: true },
   // Aliases used by the standard grid layout
   'LP Size':                   { key: 'lpSize', width: 140, align: 'right' as const, money: true },
   'Fund Sleeve':               { key: 'fundSleeve', width: 140 },
@@ -127,17 +131,17 @@ const CANONICAL_GRID_META: Record<string, CanonicalMeta> = {
   'Parent':                    { key: 'parent', width: 165 },
   'Classification':            { key: 'agentClass', label: 'LP Classification', width: 170 },
   'S&P':                       { key: 'sp', width: 78, align: 'left' as const, rating: true },
-  "Moody's":                   { key: 'moodys', width: 90, align: 'left' as const, rating: true },
+  "Moody's":                   { key: 'moodys', width: 100, align: 'left' as const, rating: true },
   'Fitch':                     { key: 'fitch', width: 82, rating: true },
-  'Size Measure':              { key: 'sizeMetricType', width: 115 },
-  '% of Commitments':          { width: 145, align: 'right' as const },
-  'Pension Funded (%)':        { width: 145, align: 'right' as const },
+  'Size Measure':              { key: 'sizeMetricType', width: 125 },
+  '% of Commitments':          { width: 160, align: 'right' as const },
+  'Pension Funded (%)':        { width: 164, align: 'right' as const },
   'Notes':                     { key: 'notes', width: 175 },
 }
 
 const FALLBACK_GRID_COLUMNS: ExtractedGridColumn[] = [
   'Investor Name', 'Fund Sleeve', 'Parent', 'Investor Type', 'Classification',
-  'S&P', "Moody's", 'Fitch', 'Size Measure', 'LP Size',
+  'S&P', "Moody's", 'Fitch', 'LP Size', 'Size Measure',
   'Pension Assets', 'Pension Funded (%)', 'Capital Commitments', '% of Commitments',
   'Called Capital', 'Uncalled Capital', '% of Uncalled Capital', '% of LP Called',
   'Advance Rate', 'Eligible Commitment', '% of Eligible Uncalled',
@@ -163,7 +167,7 @@ const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' 
   'LP Size':                    { key: 'lpSize', money: true },
   'Size Metric Type':           { key: 'sizeMetricType' },
   'Size Value / Tier':          { key: 'sizeValueTier' },
-  'Advance Rate':               { key: 'agentRate' },
+  'Advance Rate':               { key: 'agentAdvanceRate' },
   'Eligible Commitment':        { key: 'eligibleCommitmentFmt', money: true },
   '% of Eligible Uncalled':     { key: 'pctEligibleUnfundedFmt' },
   '% of Borrowing Base':        { key: 'pctBBFmt' },
@@ -182,7 +186,7 @@ const DETAIL_FIELD_DEFS: Record<string, Omit<LPField, 'extracted' | 'canonical' 
   "Moody's":                    { key: 'moodys' },
   'Fitch':                      { key: 'fitch' },
   'Size Measure':               { key: 'sizeMetricType' },
-  'Called Capital':             { key: 'calledCap', money: true },
+  'Called Capital':             { key: 'calledCapital', money: true },
   'Notes':                      { key: 'notes' },
 }
 
@@ -619,7 +623,7 @@ export default function ExtractionPreview() {
     () => Object.fromEntries(Object.entries(CANONICAL_GRID_META).map(([k, v]) => [k, v.width ?? 120])),
     [],
   )
-  const { widths: epWidths, onResizeStart: epResizeStart } = useColumnResize('extraction-preview', epInitialWidths)
+  const { widths: epWidths, onResizeStart: epResizeStart } = useColumnResize('extraction-preview-v2', epInitialWidths)
   const gridMinWidth = useMemo(
     () => Math.max(1582, visibleGridColumns.reduce((sum, col) => sum + (epWidths[col.key] ?? col.width), 0)),
     [visibleGridColumns, epWidths],

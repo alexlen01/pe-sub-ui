@@ -1,7 +1,7 @@
 /**
  * Canonical Region / Location reference for LP Master.
  *
- * The LP Master `region_location` column is a single free-text varchar. To keep the
+ * The LP Master `regionLocation` column is a single free-text varchar. To keep the
  * borrowing-base and concentration logic reliable while still storing a single field, the
  * Region/Location typeahead resolves every selection to a stable, parseable token:
  *
@@ -174,7 +174,7 @@ const ENTRY_BY_TOKEN = new Map<string, RegionEntry>(
 )
 
 /**
- * Legacy free-text region strings (as historically stored in `region_location`) → region code.
+ * Legacy free-text region strings (as historically stored in `regionLocation`) → region code.
  * Lets `regionOf`/`formatRegion` keep working on un-backfilled rows.
  */
 const LEGACY_REGION_MAP: Record<string, RegionCode> = {
@@ -250,7 +250,7 @@ export function formatRegion(value: string | null | undefined): string {
  * Normalise any stored value to a token. A structured token is returned unchanged; a recognised
  * legacy free-text region resolves to a region-only token (`NAM||`); an unmappable value returns
  * '' so a backfill can flag it for analyst review rather than silently inventing a region.
- * Intended for a one-time `region_location` backfill and for on-save normalisation.
+ * Intended for a one-time `regionLocation` backfill and for on-save normalisation.
  */
 export function toRegionToken(value: string | null | undefined): string {
   const raw = String(value ?? '').trim()

@@ -30,24 +30,31 @@ export function fmtM(n: number): string {
 
 export function fmtPct(n: number): string { return formatPercentageFraction(n) }
 
-// Advance rate (as a fraction) for an LPRecord. An explicit per-LP rate — e.g. the UBS Advance Rate
-// assigned on the Run Shadow BB screen, "90%" — takes precedence; otherwise fall back to the
-// DB-backed BUSA schedule keyed by classification. This keeps the engine correct for both the legacy LPRecord
-// Master taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Category taxonomy
-// ('Rated Investor', …) the Shadow BB now seeds from the Agent Advance Rate.
-// `cls` is typed as string (not the legacy LPClassification union): at runtime it carries either
-// taxonomy: the legacy LP Master tiers or the UBS LP Category labels seeded at Step 5.
-// Mirrors the API's advanceRateFraction(LPRecord).
+/** An explicit advance rate as a fraction, or null when the LP carries none. The API serves
+ *  `ubsAdvanceRate` as a raw fraction (0.90), but unsaved edits from the Run Shadow BB and LP
+ *  record screens are still typed text ("90%", "90", "0.90"), so both forms are accepted.
+ *  An explicit zero is a real rate, not "missing" — only null/''/unparseable fall through. */
+function explicitAdvanceRate(raw: number | string | null | undefined): number | null {
+  if (raw == null) return null
+  const n = typeof raw === 'number' ? raw : parseFloat(raw.replace('%', '').trim())
+  if (!Number.isFinite(n)) return null
+  return n > 1 ? n / 100 : n
+}
+
+// Advance rate (as a fraction) for an LP. An explicit per-LP rate — the UBS Advance Rate assigned
+// on the Run Shadow BB screen — takes precedence; otherwise fall back to the DB-backed BUSA
+// schedule keyed by LP category. This keeps the engine correct for both the legacy LP Master
+// taxonomy ('Rated', 'Unrated >2bn', …) and the UBS LP Category taxonomy ('Rated Investor', …)
+// the Shadow BB seeds from the Agent Advance Rate.
+// `ubsLpCategory` is widened to string here: at runtime it carries either taxonomy.
+// Mirrors the API's advanceRateFraction(LpRecord).
 export function advanceRateFraction(
-  LPRecord: { rate?: string | null; cls?: string | null },
+  lp: { ubsAdvanceRate?: number | string | null; ubsLpCategory?: string | null },
   busaRates: Record<string, number>,
 ): number {
-  const raw = (LPRecord.rate ?? '').trim()
-  if (raw) {
-    const n = parseFloat(raw.replace('%', ''))
-    if (!Number.isNaN(n)) return n > 1 ? n / 100 : n   // "90%"/"90" → 0.90; "0.90" → 0.90
-  }
-  return busaRates[LPRecord.cls ?? ''] ?? 0
+  const explicit = explicitAdvanceRate(lp.ubsAdvanceRate)
+  if (explicit !== null) return explicit
+  return busaRates[lp.ubsLpCategory ?? ''] ?? 0
 }
 
 export const DEFAULT_FACILITY_PARAMS = { concLimitM: 25.0 }
@@ -59,7 +66,7 @@ export interface ComputedLPRecord extends LPRecord {
   ucM: number; abbM: number; uecM: number; ubbM: number; deltaM: number
   concExcessM: number; busaRate: number; highQuality: boolean; navAumRatio: string
   agentExcessM: number
-  uec: string; ubb: string; delta: string; rate: string; agentExcess: string
+  uncalledEligibleCapital: string; ubsBorrowingBase: string; delta: string; rate: string; agentExcess: string
 }
 
 export function computeLPRecord(
@@ -69,15 +76,15 @@ export function computeLPRecord(
 ): ComputedLPRecord {
   const concLimitM = (LPRecord as LPRecord & { concLimitM?: number }).concLimitM ?? params.concLimitM ?? 25.0
   const busaRate = advanceRateFraction(LPRecord, busaRates)
-  const ucM  = (LPRecord as LPRecord & { ucM?: number }).ucM != null ? (LPRecord as LPRecord & { ucM?: number }).ucM! : parseM(LPRecord.uc)
-  const abbM = parseM(LPRecord.abb)
+  const ucM  = (LPRecord as LPRecord & { ucM?: number }).ucM != null ? (LPRecord as LPRecord & { ucM?: number }).ucM! : parseM(LPRecord.uncalledCapital)
+  const abbM = parseM(LPRecord.agentBorrowingBase)
   const navM = parseM(LPRecord.nav)
   const aumM = parseM(LPRecord.aum)
   // High Quality tracks the advance rate (UBS Advance Rate = 0.90), not a fixed class list, so
   // it holds across both classification taxonomies.
   const highQuality = Math.abs(busaRate - 0.9) < 1e-9
   const navAumRatio = navM > 0 && aumM > 0 ? (navM / aumM).toFixed(2) : ''
-  const excluded = !LPRecord.inc || LPRecord.cls === 'Excluded'
+  const excluded = !LPRecord.included || LPRecord.ubsLpCategory === 'Excluded'
   const uecM = excluded ? 0 : Math.min(ucM, concLimitM)
   const concExcessM = Math.max(0, ucM - uecM)
   const ubbM = uecM * busaRate
@@ -85,11 +92,11 @@ export function computeLPRecord(
   return {
     ...LPRecord, ucM, abbM, uecM, ubbM, deltaM, concExcessM, busaRate, highQuality, navAumRatio,
     agentExcessM: 0, agentExcess: '—',
-    uec:   excluded ? '$0' : fmtM(uecM),
-    ubb:   fmtM(ubbM),
+    uncalledEligibleCapital:   excluded ? '$0' : fmtM(uecM),
+    ubsBorrowingBase:   fmtM(ubbM),
     delta: fmtM(deltaM),
     rate:  formatPercentageFraction(busaRate),
-    abb:   LPRecord.abb ?? '$0',
+    agentBorrowingBase:   LPRecord.agentBorrowingBase ?? '$0',
   }
 }
 

@@ -29,16 +29,24 @@ const FACILITY_STATUS_ITEMS = [
 // Agent Bank Summary layout (mirrors the prototype's Agent Bank Summary report) with "# LPs"
 // added after Borrower. Account Number / Loan Amount / Maturity Date / Collateral Date are facility-edit inputs;
 // Facility Status reflects the internal workflow status.
+// Shares of the table width, not pixels. Rebalanced against DASHBOARD_MIN_TABLE_PX so that even at
+// the floor every column clears its own header label — the widest of the eight, "Collateral Date",
+// needs 121px (12px bold Segoe UI, plus the 12px side padding and the 13px sort indicator). Borrower
+// keeps the largest share, so the leftover on a wide window still lands on the long names.
 const DASHBOARD_INITIAL_WIDTHS = {
-  agentBank: 17,
-  name: 20,
+  agentBank: 11,
+  name: 16,
   lps: 8,
-  accountNumber: 10,
-  loanAmount: 12,
-  maturityDate: 11,
-  collateralDate: 11,
-  status: 11,
+  accountNumber: 11,
+  loanAmount: 13,
+  maturityDate: 13,
+  collateralDate: 14,
+  status: 14,
 }
+
+// Below this the shares would resolve to less than the header labels need, so the wrapper scrolls
+// sideways instead of clipping every header into an ellipsis.
+const DASHBOARD_MIN_TABLE_PX = 930
 
 const FACILITY_COLS = [
   {
@@ -80,7 +88,7 @@ export default function Dashboard() {
   const [statusFilter,     setStatusFilter]     = useState('All')
   const [activityFeed,     setActivityFeed]     = useState<ActivityRow[]>([])
   const [loading,          setLoading]          = useState(false)
-  const [facilityLPs,      setFacilityLPs]      = useState<{ cls?: string }[]>([])
+  const [facilityLPs,      setFacilityLPs]      = useState<{ ubsLpCategory?: string }[]>([])
   const [execSummary,      setExecSummary]      = useState<BBSummary | null>(null)
   const [error,            setError]            = useState<string | null>(null)
   const classCfg = useConfigCache().classification
@@ -90,7 +98,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!selectedFacilityId) { setFacilityLPs([]); return }
     getLPsForFacility(selectedFacilityId)
-      .then(lps => setFacilityLPs(lps as { cls?: string }[]))
+      .then(lps => setFacilityLPs(lps))
       .catch(e => setError(String(e)))
   }, [selectedFacilityId])
 
@@ -133,7 +141,7 @@ export default function Dashboard() {
     const configuredOrder = (classCfg?.UBS_CLS_OPTS ?? []).filter(Boolean)
     const counts = new Map<string, number>()
     for (const LPRecord of facilityLPs) {
-      const key = LPRecord.cls || ''
+      const key = LPRecord.ubsLpCategory || ''
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
     }
     const orderedCategories = sortLpCategoriesByRate(
@@ -231,9 +239,10 @@ export default function Dashboard() {
               selectedRow={selectedFacility}
               keyboardNavigation
               tableLayout="auto"
-              resizableStorageKey="dashboard-facilities"
+              resizableStorageKey="dashboard-facilities-v2"
               initialWidths={DASHBOARD_INITIAL_WIDTHS}
               widthUnit="%"
+              minTableWidth={DASHBOARD_MIN_TABLE_PX}
             />
           </div>
         </Card>

@@ -1,15 +1,15 @@
-// Dev-only: transparently attach the selected role's identity headers to every same-origin /api
-// request, so a locally GATEWAY-mode pe-sub-api authorizes the SPA as the chosen role. Installed
-// once at startup. A no-op in production builds — there the SSO proxy is the identity source and
-// injecting client headers would be both pointless (stripped by the proxy) and a spoof vector.
+// Dev-only: transparently attach the signed-in identity's headers to every same-origin /api
+// request, so a locally GATEWAY-mode pe-sub-api authorizes the SPA as that user. Installed once at
+// startup. A no-op in production builds — there the SSO proxy is the identity source and injecting
+// client headers would be both pointless (stripped by the proxy) and a spoof vector.
 //
 // A global fetch wrapper is used deliberately: it covers every call site (api.ts, the service
 // modules, and the RTK config store) without threading auth through each one.
 
-import { DEV_ROLE_SWITCHER, getAuthHeaders } from './session'
+import { DEV_SIGN_IN, getAuthHeaders } from './session'
 
 export function installDevAuth(): void {
-  if (!DEV_ROLE_SWITCHER || typeof window === 'undefined') return
+  if (!DEV_SIGN_IN || typeof window === 'undefined') return
 
   const original = window.fetch.bind(window)
 

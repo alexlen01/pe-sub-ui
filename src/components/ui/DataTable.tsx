@@ -27,9 +27,16 @@ interface DataTableProps<T> {
   keyboardNavigation?: boolean
   tableLayout?: 'fixed' | 'auto'
   widthUnit?: 'px' | '%'
+  /**
+   * Pixel floor for the whole table, for `widthUnit="%"` tables. A share-based column shrinks with
+   * its container, so on a narrow window every header ends up narrower than its own label and gets
+   * ellipsis-truncated. Below this width the wrapper scrolls horizontally instead. It has to be an
+   * inline style rather than a CSS rule, because the table's own width/minWidth are inline.
+   */
+  minTableWidth?: number
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed', widthUnit = 'px' }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed', widthUnit = 'px', minTableWidth }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(15)
   const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
@@ -83,7 +90,7 @@ export default function DataTable<T>({ columns, rows, onRowClick, footer, select
 
   return (
     <div className="data-table-wrap">
-      <table className="data-table" style={{ tableLayout, ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}) }}>
+      <table className="data-table" style={{ tableLayout, ...(resizable ? { width: tableWidth, minWidth: tableWidth } : {}), ...(minTableWidth != null ? { minWidth: minTableWidth } : {}) }}>
         <thead>
           <tr>
             {columns.map(col => (

@@ -77,9 +77,9 @@ export function buildReclassificationNotifications(
   return facilities
     .filter(facility => RECLASSIFICATION_REVIEW_STATUSES.has(facility.status))
     .flatMap((facility): ReviewNotification[] => {
-      const reclassified = (recordsByFacility.get(facility.id) ?? []).filter(record => record.rcl)
+      const reclassified = (recordsByFacility.get(facility.id) ?? []).filter(record => record.reclassified)
       if (reclassified.length === 0) return []
-      const sample = reclassified.slice(0, 2).map(record => record.name).join(', ')
+      const sample = reclassified.slice(0, 2).map(record => record.investorName).join(', ')
       const remainder = reclassified.length - 2
       return [{
         id: `reclassified-${facility.id}`,

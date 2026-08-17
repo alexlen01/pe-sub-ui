@@ -16,23 +16,57 @@ their own `loadError` state — they must **not** silently fall back to canned d
 The prototype lives entirely in the **separate `pe-sub-platform` app on `http://localhost:5173`**.
 The two applications are fully separate; nothing in `pe-sub-ui` imports prototype data.
 
-### Live badge (TopBar)
+### API status badge (TopBar)
 
-`TopBar.tsx` shows a **single `● Live` badge, rendered only while the app is Live** (the API is
-reachable). It polls `/api/ping` through the same-origin `/api` proxy every 15s with a 2s-timeout
-`fetch`. "Live" means the API is *working* — i.e. it answers at all. A non-2xx response (API up
-but erroring) still counts as reachable; only the `fetch` itself rejecting (network failure /
-connection refused / timeout) is treated as not-live.
+`TopBar.tsx` shows a **read-only** `● Live` / `● Offline` badge. It polls `/api/ping` through the
+same-origin `/api` proxy every 15s with a 2s-timeout `fetch`. "Live" means the API is *working* —
+i.e. it answers at all. A non-2xx response (API up but erroring) still counts as reachable; only the
+`fetch` itself rejecting (network failure / connection refused / timeout) is treated as not-live.
 
 | API reachable | Behaviour |
 |---|---|
-| `up` | Green `#e6f4ea`/`#1e7e34` `● Live` pill; **clickable** |
-| `down` / `checking` | Badge is **not rendered** |
+| `up` | Green `.api-status-up` `● Live` pill |
+| `down` | Red `.api-status-down` `● Offline` pill |
+| `checking` | Badge is **not rendered** (first probe only) |
 
-Clicking the Live badge switches to the prototype: it sets `window.location.href` to
-`http://localhost:5173`, reloading the **same window** onto the prototype app (re-launching it in
-place — not a new tab). It does not toggle `pe-sub-ui`'s own data source; the UI stays Live until
-navigated away.
+**The badge is an indicator, never a control.** It is a `<span>`, not a button: no click handler, no
+navigation, no data-source toggle. Do not re-add a link to the prototype from it — the prototype app
+is reached only by opening `http://localhost:5173` directly, and `VITE_PROTOTYPE_URL` no longer
+exists.
+
+---
+
+## Identity — SSO-shaped, no in-app user switcher
+
+Identity always arrives the way SSO delivers it: established **before** the app renders, fixed for
+the session, and carried to the API as `X-Auth-*` headers. There is **no user or role dropdown in
+the app chrome** — do not add one back.
+
+- **Production**: the trusted UBS SSO proxy authenticates and injects the headers. `AuthContext`
+  resolves the role from `GET /api/users/me`; the TopBar avatar opens a **display-only** account
+  panel. The proxy strips client-supplied auth headers, so the SPA never sets them.
+- **Local dev**: `components/auth/DevSignIn.tsx` gates the whole app until an identity from `USERS`
+  (`config/navigationConfig.ts`) is signed in. **The gate is the default entry point of a browser
+  session — no user is ever auto-selected.** `auth/session.ts` then holds that identity in a
+  **session cookie** (`pe-sub-dev-session`), standing in for the cookie the SSO proxy sets after
+  sign-on: it survives reloads and new tabs, and the browser drops it when the session ends.
+  `auth/installDevAuth.ts` attaches its headers to every `/api` fetch. Switching user means
+  **Sign out** → reload → gate, never an in-place toggle.
+
+  Persist the session **only** with a cookie carrying no `Max-Age`/`Expires`. `localStorage` (the
+  retired role switcher's `pe-sub-dev-user`) and `sessionStorage` outlive or fragment the browser
+  session, which is how the gate silently stopped appearing and every run reopened as J. Smith.
+
+**The capability role is derived from the identity, never selected separately.** `roleFromLabel` in
+`auth/roles.ts` maps a display-role label to a `Role` token, and unknown labels collapse to `VIEWER`.
+A `USERS` entry's `role` string must therefore match a `RoleMeta.label` exactly — if it drifts, that
+user silently becomes read-only. `devSignIn.test.ts` pins this; keep it passing when touching either
+file.
+
+Nothing below the gate may assume an identity is absent: `AppProvider` mounts only once a user
+exists locally, so no screen should defend against a missing `currentUser`.
+
+---
 
 ### Service contract
 

@@ -9,6 +9,7 @@ import {
   type ReportHistoryEntry,
 } from './api'
 import { fmtDeltaPct, fmtPct } from '../utils/execSummary'
+import { formatPercentageFraction } from '../utils/percentage'
 import type { BBBreach, BreachType } from '../types/bb'
 
 const USD0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -86,20 +87,20 @@ export function buildCertRows(r: CollateralReport): CertRow[] {
 }
 
 export interface CertClassRow {
-  cls:  string
-  n:    number
-  uc:   string
-  ubb:  string
-  rate: string
+  ubsLpCategory:     string
+  n:                 number
+  uncalledCapital:   string
+  ubsBorrowingBase:  string
+  ubsAdvanceRate:    string
 }
 
 export function buildCertClassRows(r: CollateralReport): CertClassRow[] {
   return r.classBreakdown.map(row => ({
-    cls:  row.cls,
-    n:    row.count,
-    uc:   row.uncalledM > 0 ? formatUsdMillions(row.uncalledM) : '-',
-    ubb:  row.ubbM > 0 ? formatUsdMillions(row.ubbM) : '-',
-    rate: row.rate,
+    ubsLpCategory:     row.ubsLpCategory,
+    n:                 row.count,
+    uncalledCapital:   row.uncalledM > 0 ? formatUsdMillions(row.uncalledM) : '-',
+    ubsBorrowingBase:  row.ubbM > 0 ? formatUsdMillions(row.ubbM) : '-',
+    ubsAdvanceRate:    formatPercentageFraction(row.ubsAdvanceRate),
   }))
 }
 

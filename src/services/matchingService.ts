@@ -1,12 +1,19 @@
 import { api } from './api'
 
+/**
+ * Rows for the Review Matches screen.
+ *
+ * `agentParent` and `masterParent` come from the API's parent/child routing: the sponsor the agent
+ * document named, and the ultimate entity the proposed match resolves to. `masterParent` being
+ * empty means the match is itself the ultimate entity — rendered as "Self", not as missing data.
+ */
 export async function getMatchQueue(submissionId: number) {
   const items = await api.matching.queue(submissionId)
   return items.map(item => ({
     ...item,
     facility:     item.facilityName ?? '—',
-    agentParent:  '',
-    masterParent: '',
+    agentParent:  item.agentParent ?? '',
+    masterParent: item.masterParent ?? '',
   }))
 }
 

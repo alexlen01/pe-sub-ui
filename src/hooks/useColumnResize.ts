@@ -6,7 +6,12 @@ export type ColWidths = Record<string, number>
 const MIN_COL_WIDTH_PX = 40
 const MIN_COL_WIDTH_PCT = 6
 
-export function useColumnResize(storageKey: string, initial: ColWidths, widthUnit: 'px' | '%' = 'px') {
+/**
+ * `reservedPx` ('%' mode only): width already taken by fixed pixel columns in the same table. When
+ * percentage widths describe a share of the space *left over* by those columns, the drag delta has
+ * to be measured against that leftover space, otherwise the column trails behind the cursor.
+ */
+export function useColumnResize(storageKey: string, initial: ColWidths, widthUnit: 'px' | '%' = 'px', reservedPx = 0) {
   const [widths, setWidths] = useState<ColWidths>(() => {
     try {
       const stored = localStorage.getItem(`col-resize:${storageKey}`)
@@ -24,7 +29,8 @@ export function useColumnResize(storageKey: string, initial: ColWidths, widthUni
     e.stopPropagation()
     const startX = e.clientX
     const startW = widthsRef.current[col] ?? 100
-    const containerWidth = (e.currentTarget as HTMLElement | null)?.closest('.data-table-wrap')?.getBoundingClientRect().width ?? window.innerWidth
+    const wrapWidth = (e.currentTarget as HTMLElement | null)?.closest('.data-table-wrap')?.getBoundingClientRect().width ?? window.innerWidth
+    const containerWidth = Math.max(1, wrapWidth - reservedPx)
 
     const onMouseMove = (ev: globalThis.MouseEvent) => {
       const delta = widthUnit === '%'
@@ -45,7 +51,7 @@ export function useColumnResize(storageKey: string, initial: ColWidths, widthUni
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [])
+  }, [widthUnit, reservedPx])
 
   useEffect(() => {
     try { localStorage.setItem(`col-resize:${storageKey}`, JSON.stringify(widths)) } catch { /* ignore */ }

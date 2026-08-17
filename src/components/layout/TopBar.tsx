@@ -1,15 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { ROLES, roleFromLabel } from '../../auth/roles'
 import { useApp, SCREENS } from '../../context/AppContext'
 import { useAuth } from '../../context/AuthContext'
 
-const ROLE_COLOR: Record<string, string> = {
-  'Analyst':                     'var(--navy)',
-  'Account/Transaction Manager': 'var(--amber)',
-  'Admin':                       'var(--blue)',
-}
-
-const PROTOTYPE_URL = import.meta.env.VITE_PROTOTYPE_URL
 type Reachability = 'checking' | 'up' | 'down'
+
+// Closes a popover on outside click or Escape while it is open.
+function useDismissOnOutside(
+  ref: RefObject<HTMLElement | null>,
+  open: boolean,
+  setOpen: Dispatch<SetStateAction<boolean>>,
+) {
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [ref, open, setOpen])
+}
 
 function useApiReachable(): Reachability {
   const [state, setState] = useState<Reachability>('checking')
@@ -32,31 +49,21 @@ function useApiReachable(): Reachability {
 
 export default function TopBar() {
   const {
-    screen, currentUser, setCurrentUser, users, navigate,
+    screen, currentUser, navigate,
     setTargetFacility, setActiveSubmission, setActiveSubmissionId, setActiveFacilityId,
     reviewNotifications, notificationsLoading,
   } = useApp()
-  const { canSwitchRole } = useAuth()
+  const { devSignIn, signOut } = useAuth()
   const info = SCREENS[screen] ?? { title: screen, sub: '' }
   const apiState = useApiReachable()
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const notificationRef = useRef<HTMLDivElement>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const roleColor = ROLES[roleFromLabel(currentUser.role)].color
 
-  useEffect(() => {
-    if (!notificationsOpen) return
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!notificationRef.current?.contains(event.target as Node)) setNotificationsOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setNotificationsOpen(false)
-    }
-    document.addEventListener('mousedown', closeOnOutsideClick)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [notificationsOpen])
+  useDismissOnOutside(notificationRef, notificationsOpen, setNotificationsOpen)
+  useDismissOnOutside(userMenuRef, userMenuOpen, setUserMenuOpen)
 
   const openNotification = (index: number) => {
     const notification = reviewNotifications[index]
@@ -83,45 +90,63 @@ export default function TopBar() {
       </div>
       <div className="topbar-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {apiState === 'up' && PROTOTYPE_URL && (
-            <button
-              type="button"
-              title={`Live — pe-sub-api is responding. Click to switch to the prototype (reloads this window at ${PROTOTYPE_URL}).`}
-              onClick={() => { window.location.href = PROTOTYPE_URL }}
-              style={{
-                fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 10,
-                background: '#e6f4ea', color: '#1e7e34', letterSpacing: '0.03em',
-                whiteSpace: 'nowrap', border: 'none', cursor: 'pointer',
-              }}
+          {apiState !== 'checking' && (
+            <span
+              className={`api-status api-status-${apiState}`}
+              title={apiState === 'up'
+                ? 'Live — pe-sub-api is responding.'
+                : 'Offline — pe-sub-api is not responding. Screens will show their own load errors.'}
             >
-              ● Live
-            </button>
+              ● {apiState === 'up' ? 'Live' : 'Offline'}
+            </span>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{currentUser.name}</div>
-              <div style={{ fontSize: 10, color: ROLE_COLOR[currentUser.role] ?? 'var(--muted)', fontWeight: 600 }}>{currentUser.role}</div>
+              <div style={{ fontSize: 10, color: roleColor, fontWeight: 600 }}>{currentUser.role}</div>
             </div>
-            <div style={{ position: 'relative' }}>
-              {canSwitchRole && (
-                <select
-                  aria-label="Switch user"
-                  value={currentUser.name}
-                  onChange={event => setCurrentUser(users.find(user => user.name === event.target.value))}
-                  style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
-                >
-                  {users.map(user => (
-                    <option key={user.name} value={user.name}>{user.initials} · {user.name} ({user.role})</option>
-                  ))}
-                </select>
-              )}
-              <div
-                className="avatar"
-                title={canSwitchRole ? `Switch user — ${currentUser.role}` : currentUser.role}
-                style={{ background: ROLE_COLOR[currentUser.role] ?? 'var(--navy)', cursor: canSwitchRole ? 'pointer' : 'default', userSelect: 'none' }}
+            {/* The account menu is informational in production — only the local dev session, whose
+                identity came from the sign-in gate rather than SSO, can be ended from here. */}
+            <div className="user-menu" ref={userMenuRef}>
+              <button
+                type="button"
+                className="avatar user-menu-trigger"
+                aria-label={`Account — ${currentUser.name}, ${currentUser.role}`}
+                aria-expanded={userMenuOpen}
+                aria-haspopup="dialog"
+                onClick={() => setUserMenuOpen(open => !open)}
+                style={{ background: roleColor }}
               >
                 {currentUser.initials}
-              </div>
+              </button>
+              {userMenuOpen && (
+                <section className="user-panel" role="dialog" aria-label="Account">
+                  <div className="user-panel-id">
+                    <div className="avatar" style={{ background: roleColor }}>{currentUser.initials}</div>
+                    <div>
+                      <strong>{currentUser.name}</strong>
+                      <span>{currentUser.email}</span>
+                    </div>
+                  </div>
+                  <dl className="user-panel-meta">
+                    <div><dt>User ID</dt><dd>{currentUser.uuName}</dd></div>
+                    <div><dt>Role</dt><dd>{currentUser.role}</dd></div>
+                    <div><dt>Department</dt><dd>{currentUser.department || '—'}</dd></div>
+                  </dl>
+                  {devSignIn ? (
+                    <div className="user-panel-actions">
+                      <button type="button" className="user-panel-signout" onClick={signOut}>
+                        Sign out
+                      </button>
+                      <p>Local development session. Identity is sent as <code>X-Auth-*</code> headers; in production it comes from UBS SSO.</p>
+                    </div>
+                  ) : (
+                    <div className="user-panel-actions">
+                      <p>Signed in through UBS SSO. Sign out from your UBS session to change user.</p>
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
             <div className="notification-center" ref={notificationRef}>
               <button

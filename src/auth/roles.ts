@@ -5,7 +5,7 @@
 // decision; it never *is* the decision. See pe-sub-docs/RBAC_ROLES.md.
 //
 // The Spring role tokens (ANALYST / MANAGER / VIEWER) match what the API's SecurityConfig checks and
-// what the dev switcher sends in X-Auth-Roles. The external Intra ID App Roles map to them:
+// what the dev sign-in gate sends in X-Auth-Roles. The external Intra ID App Roles map to them:
 // APP_ANALYST → ANALYST, APP_MANAGER → MANAGER, APP_VIEWER → VIEWER.
 
 export type Role = 'ANALYST' | 'MANAGER' | 'VIEWER'
@@ -19,28 +19,38 @@ export type Capability =
   | 'delete'          // delete records
   | 'download'        // export / download reports
 
+// Presentation metadata only. The identity signed in at the dev gate and sent as X-Auth-* comes
+// from USERS in navigationConfig (uuName-keyed, e.g. js25029) via session.ts — not from here.
+// `label` is the join key between the two: see roleFromLabel below.
 export interface RoleMeta {
   role:       Role
   label:      string   // presentation label shown in the UI
   initials:   string
   department: string
-  devUser:    string   // identity sent as X-Auth-User by the dev role switcher (local only)
   color:      string   // CSS var for the avatar / role badge
 }
 
 export const ROLES: Record<Role, RoleMeta> = {
   ANALYST: {
     role: 'ANALYST', label: 'Analyst', initials: 'JS',
-    department: 'PE Sub Finance', devUser: 'J.Smith', color: 'var(--navy)',
+    department: 'PE Sub Finance', color: 'var(--navy)',
   },
   MANAGER: {
     role: 'MANAGER', label: 'Account/Transaction Manager', initials: 'LT',
-    department: 'PE Sub Finance', devUser: 'L.Tores', color: 'var(--amber)',
+    department: 'PE Sub Finance', color: 'var(--amber)',
   },
   VIEWER: {
     role: 'VIEWER', label: 'IT — Read Only', initials: 'AL',
-    department: 'IT Support', devUser: 'A.Len', color: 'var(--muted)',
+    department: 'IT Support', color: 'var(--muted)',
   },
+}
+
+// Maps a display-role string back to a Role token — used for both the server's
+// CurrentUserService.displayRole and the role on the dev USERS entries, so the two can never drift
+// apart. Anything unrecognised (Service, unknown) collapses to the least-privileged VIEWER so the
+// UI never grants operator affordances it can't justify.
+export function roleFromLabel(label: string): Role {
+  return (Object.keys(ROLES) as Role[]).find(role => ROLES[role].label === label) ?? 'VIEWER'
 }
 
 // Capability grants per role, mirroring the RBAC_ROLES.md permission matrix:

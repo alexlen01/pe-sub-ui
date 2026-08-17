@@ -35,8 +35,8 @@ const MATRIX: BbCriteriaMatrix = {
 const LT40 = 0.0
 const GTE40 = 0.4
 
-const rated = (sp = '', mdy = '', fitch = '', funded = LT40) =>
-  resolveBbCriteria(MATRIX, 'Rated Investor', { sp, mdy, fitch }, funded)!
+const rated = (spRating = '', moodysRating = '', fitchRating = '', funded = LT40) =>
+  resolveBbCriteria(MATRIX, 'Rated Investor', { spRating, moodysRating, fitchRating }, funded)!
 const cls = (c: string, funded = LT40) => resolveBbCriteria(MATRIX, c, {}, funded)!
 
 describe('resolveBbCriteria — rated bands', () => {
@@ -106,7 +106,7 @@ describe('resolveBbCriteria — boundary & fallthrough', () => {
   })
   it('unknown class or absent matrix → null', () => {
     expect(resolveBbCriteria(MATRIX, 'Legacy Institutional', {}, LT40)).toBeNull()
-    expect(resolveBbCriteria(null, 'Rated Investor', { sp: 'AAA' }, LT40)).toBeNull()
+    expect(resolveBbCriteria(null, 'Rated Investor', { spRating: 'AAA' }, LT40)).toBeNull()
     expect(resolveBbCriteria(MATRIX, '', {}, LT40)).toBeNull()
   })
 })

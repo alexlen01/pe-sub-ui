@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { useColumnResize } from '../../hooks/useColumnResize'
@@ -12,12 +12,12 @@ import InfoTip     from '../../components/ui/InfoTip'
 import DraggablePanel  from '../../components/ui/DraggablePanel'
 import LPRecordPanel   from '../../components/ui/LPRecordPanel'
 import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
-import { formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
+import { formatFullDate, formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
 import { api, type LpClassificationRequest } from '../../services/api'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
-import { formatPercentageFraction, formatPercentageText } from '../../utils/percentage'
+import { formatPercentageFraction } from '../../utils/percentage'
 import { lpSizeFormat } from '../../utils/lpSize'
 
 function formatMoneyText(value: unknown): string {
@@ -43,6 +43,8 @@ function tableMoney(value: unknown): string {
   return s ? formatMoneyText(s) : '—'
 }
 
+/** Percent-scaled (90.0) value for the classification payload's *Pct fields, from the
+ *  percent-or-dollars limit strings ("7.5%"). Dollar-denominated limits carry no percent. */
 function pctNumber(value: unknown): number | undefined {
   const s = String(value ?? '').trim()
   if (!s || s === '—') return undefined
@@ -50,40 +52,44 @@ function pctNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined
 }
 
+/** Same payload scale, from an LPRecord advance rate already held as a fraction (0.9 → 90). */
+function pctFromFraction(value: number | null | undefined): number | undefined {
+  return value == null || !Number.isFinite(value) ? undefined : value * 100
+}
+
 function lpClassificationRow(LPRecord: LPRecord, originalName?: string): LpClassificationRequest['rows'][number] {
   return {
-    id:                LPRecord.id,
-    name:              LPRecord.name,
+    id:                         LPRecord.id,
+    investorName:               LPRecord.investorName,
     originalName,
-    parent:            LPRecord.parent ?? '',
-    spv:               LPRecord.spv,
-    fundSleeve:        LPRecord.fundSleeve ?? '',
-    investorType:      LPRecord.investorType ?? '',
-    instVsHnw:         LPRecord.instVsHnw,
-    region:            LPRecord.region ?? '',
-    ig:                LPRecord.ig,
-    cls:               LPRecord.cls,
-    agentCls:          LPRecord.agentCls ?? '',
-    agentClsSource:    LPRecord.agentClsSource,
-    sp:                LPRecord.sp ?? '',
-    mdy:               LPRecord.mdy ?? '',
-    fitch:             LPRecord.fitch ?? '',
-    aum:               LPRecord.aum ?? '',
-    nav:               LPRecord.nav ?? '',
-    pension:           LPRecord.pension ?? '',
-    pensionFunded:     LPRecord.pensionFunded ?? '',
-    capCommit:         LPRecord.capCommit ?? '',
-    uc:                LPRecord.uc ?? '',
-    ubsAdvRatePct:     pctNumber(LPRecord.rate),
-    agentRatePct:      pctNumber(LPRecord.agentRate),
-    ubsConcLimitPct:   pctNumber(LPRecord.ubsConc),
-    agentConcLimitPct: pctNumber(LPRecord.agentConc),
-    inc:               LPRecord.inc,
-    notes:             LPRecord.notes ?? '',
+    parent:                     LPRecord.parent ?? '',
+    spv:                        LPRecord.spv,
+    investorType:               LPRecord.investorType ?? '',
+    institutionalOrHnw:         LPRecord.institutionalOrHnw,
+    regionLocation:             LPRecord.regionLocation ?? '',
+    investmentGrade:            LPRecord.investmentGrade,
+    ubsLpCategory:              LPRecord.ubsLpCategory,
+    agentLpCategory:            LPRecord.agentLpCategory ?? '',
+    agentLpCategorySource:      LPRecord.agentLpCategorySource,
+    spRating:                   LPRecord.spRating ?? '',
+    moodysRating:               LPRecord.moodysRating ?? '',
+    fitchRating:                LPRecord.fitchRating ?? '',
+    aum:                        LPRecord.aum ?? '',
+    nav:                        LPRecord.nav ?? '',
+    pensionAssets:              LPRecord.pensionAssets ?? '',
+    fundingRatio:               LPRecord.fundingRatio ?? undefined,
+    capitalCommitment:          LPRecord.capitalCommitment ?? '',
+    uncalledCapital:            LPRecord.uncalledCapital ?? '',
+    ubsAdvanceRatePct:          pctFromFraction(LPRecord.ubsAdvanceRate),
+    agentAdvanceRatePct:        pctFromFraction(LPRecord.agentAdvanceRate),
+    ubsConcentrationLimitPct:   pctNumber(LPRecord.ubsConcentrationLimit),
+    agentConcentrationLimitPct: pctNumber(LPRecord.agentConcentrationLimit),
+    included:                   LPRecord.included,
+    notes:                      LPRecord.notes ?? '',
   }
 }
 
-// Status colour mapping for facility cards
+// Status colour mapping for the facility table's status dot
 const STATUS_COLOR: Record<string, string> = {
   'Active':        'var(--green)',
   'In Progress':   'var(--red)',
@@ -94,53 +100,21 @@ const STATUS_COLOR: Record<string, string> = {
   'Inactive':      '#9e9e9e',
 }
 
-// ── Facility grid card ────────────────────────────────────────────────────────
-function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: FacilityRow; onClick: () => void; onEdit: (f: FacilityRow) => void; canEdit: boolean }) {
-  const color = STATUS_COLOR[facility.status] ?? 'var(--muted)'
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
-        borderLeft: `4px solid ${color}`,
-        position: 'relative',
-        padding: '14px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6,
-        transition: 'box-shadow .15s',
-      }}
-      onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(0,0,0,.10)'}
-      onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'}
-    >
-      <div style={{ paddingRight: canEdit ? 24 : 0, minWidth: 0 }}>
-        <div title={facility.name} style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {facility.name}
-        </div>
-        {canEdit && (
-          <button
-            onClick={e => { e.stopPropagation(); onEdit(facility) }}
-            title="Edit facility details"
-            style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 13, lineHeight: 1, padding: 2 }}
-          >&#9998;</button>
-        )}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{facility.agentBank}</div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
-            {facility.lps?.toLocaleString() ?? '—'}
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginLeft: 4 }}>LPs</span>
-          </span>
-          {facility.hasShadowBB && (
-            <span
-              aria-label="Existing Shadow BB"
-              title={`Existing Shadow BB${facility.lastRun !== '—' ? ` · last run ${facility.lastRun}` : ''}`}
-              style={{ flex: '0 0 auto', padding: '2px 5px', borderRadius: 8, background: '#e8f1fb', color: '#2e5f91', fontSize: 9, fontWeight: 700, letterSpacing: '.03em', lineHeight: 1.3 }}
-            >◆ BB</span>
-          )}
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 600, color }}>● {facility.status}</span>
-      </div>
-    </div>
-  )
+// The blue the Last BB Run column is accented in — already this cell's colour on the "◆ BB" badge,
+// and dark enough to stay legible at the dense type scale (--sky is a hairline above 3:1 on white).
+const LAST_RUN_BLUE = '#2e5f91'
+
+// Default facility-table column widths. Each is sized to hold its own header label on a single
+// line *including* the sort indicator the header always reserves (~31px of padding + gap +
+// glyph at the dense 11px type scale), so no header ever wraps or ellipsis-truncates at the
+// default layout. The summed width is the table's minimum, so a narrow viewport scrolls
+// horizontally rather than squeezing the columns.
+// Keys must match the sort keys below: SortableHeader hands its *sortKey* to onResizeStart, so a
+// width keyed differently would be resized under a name no column ever reads back.
+const FAC_COL_WIDTHS = {
+  edit: 34, facName: 260, facAgentBank: 150, facLps: 78, facAccount: 110,
+  facLoanAmount: 120, facUbsParticipation: 140, facUbsRate: 170,
+  facMaturity: 120, facCollateral: 132, facStatus: 132, facLastRun: 120,
 }
 
 // ── Facility detail / edit overlay ────────────────────────────────────────────
@@ -151,6 +125,12 @@ function FacilityCard({ facility, onClick, onEdit, canEdit }: { facility: Facili
 const toISODate = (display: string) => {
   const d = new Date(display)
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+
+// "10.0%" → 10, so the rate column sorts numerically; the "—" placeholder sorts as absent.
+const percentToNumber = (display: string) => {
+  const n = parseFloat(display)
+  return Number.isNaN(n) ? null : n
 }
 
 const moneyForFacilityEdit = (display: string) => {
@@ -437,13 +417,19 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LPMaster() {
-  const { toast, lpData, setLpData, currentUser, setActiveFacilityId, setTargetFacility } = useApp()
+  const { toast, navigate, lpData, setLpData, currentUser, setActiveFacilityId, setTargetFacility } = useApp()
   const canEdit = currentUser?.role === 'Analyst' || currentUser?.role === 'Account/Transaction Manager'
 
   const [facilities, setFacilities] = useState<FacilityRow[]>([])
   const [classCfg,   setClassCfg]   = useState<ClassificationConfig | null>(null)
+  // Bank-wide LP Master row count, for the entry button's label. Null until it resolves, so the
+  // button reads "View Master LP Records →" rather than flashing a placeholder count.
+  const [lpMasterCount, setLpMasterCount] = useState<number | null>(null)
   useEffect(() => {
     getFacilities().then(setFacilities).catch(() => {})
+  }, [])
+  useEffect(() => {
+    api.lpMaster.count().then(r => setLpMasterCount(r.count)).catch(() => {})
   }, [])
   useEffect(() => {
     getClassificationConfig().then(setClassCfg).catch(() => {})
@@ -496,13 +482,38 @@ export default function LPMaster() {
     return q ? facilities.filter(f => f.name.toLowerCase().includes(q) || f.agentBank.toLowerCase().includes(q)) : facilities
   }, [facilities, facSearch])
 
+  // Facility table: sorted on the underlying values, not the display strings — dates sort
+  // chronologically off their ISO form rather than alphabetically off "Jun 1, 2026".
+  const facSortColumns = useMemo(() => [
+    { key: 'facName',        getValue: (f: FacilityRow) => f.name },
+    { key: 'facAgentBank',   getValue: (f: FacilityRow) => f.agentBank },
+    { key: 'facLps',         getValue: (f: FacilityRow) => f.lps ?? null },
+    { key: 'facAccount',     getValue: (f: FacilityRow) => f.accountNumber },
+    { key: 'facLoanAmount',  getValue: (f: FacilityRow) => f.loanAmount },
+    { key: 'facUbsParticipation', getValue: (f: FacilityRow) => parseMoneyToNumber(f.ubsParticipation) },
+    { key: 'facUbsRate',     getValue: (f: FacilityRow) => percentToNumber(f.ubsParticipationRate) },
+    { key: 'facMaturity',    getValue: (f: FacilityRow) => toISODate(f.maturityDate) },
+    { key: 'facCollateral',  getValue: (f: FacilityRow) => toISODate(f.collateralDate) },
+    { key: 'facStatus',      getValue: (f: FacilityRow) => f.status },
+    { key: 'facLastRun',     getValue: (f: FacilityRow) => f.lastRunAt ?? null },
+  ], [])
+  const { sort: facSort, sortedRows: facSortedRows, requestSort: requestFacSort } =
+    useSortableRows(visibleFacilities, facSortColumns, { key: 'facName', direction: 'asc' })
+  const facPage = usePagination(facSortedRows)
+  const { widths: facWidths, onResizeStart: onFacResizeStart, tableWidth: facTableWidth } =
+    useColumnResize('lp-master-facilities', FAC_COL_WIDTHS)
+  // The edit column exists only for editors, so its width comes off the table's minimum otherwise.
+  const facVisibleWidth = typeof facTableWidth !== 'number' || canEdit
+    ? facTableWidth
+    : facTableWidth - facWidths.edit
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return lpData.filter(LPRecord => {
-      const matchQ    = !q || (LPRecord.name ?? '').toLowerCase().includes(q) || (LPRecord.parent ?? '').toLowerCase().includes(q)
-      const matchCls  = !clsFilter  || LPRecord.cls === clsFilter
+      const matchQ    = !q || (LPRecord.investorName ?? '').toLowerCase().includes(q) || (LPRecord.parent ?? '').toLowerCase().includes(q)
+      const matchCls  = !clsFilter  || LPRecord.ubsLpCategory === clsFilter
       const matchType = !typeFilter || (LPRecord.investorType ?? '') === typeFilter
-      const matchInc  = !incFilter  || (incFilter === 'Y' ? LPRecord.inc : !LPRecord.inc)
+      const matchInc  = !incFilter  || (incFilter === 'Y' ? LPRecord.included : !LPRecord.included)
       return matchQ && matchCls && matchType && matchInc
     })
   }, [lpData, search, clsFilter, typeFilter, incFilter])
@@ -513,66 +524,82 @@ export default function LPMaster() {
       desc: classCfg.CLS_CRITERIA[cls] ?? '',
     }))
   }, [classCfg])
+  // "All Facilities" mixes records from every facility, so each row names its own facility.
+  // The API sends only facilityId on an LP record; the name comes from the loaded facility list.
+  const facilityNameById = useMemo(() => {
+    const byId = new Map<number, string>()
+    facilities.forEach(f => { if (f.id != null) byId.set(f.id, f.name) })
+    return byId
+  }, [facilities])
+  const facilityLabel = useCallback((LPRecord: LPRecord) => (
+    LPRecord.facilityId != null ? facilityNameById.get(LPRecord.facilityId) ?? '—' : '—'
+  ), [facilityNameById])
   const sortColumns = useMemo(() => [
-    { key: 'rank',         getValue: (LPRecord: LPRecord) => LPRecord.rank ?? null },
-    { key: 'name',         getValue: (LPRecord: LPRecord) => LPRecord.name },
-    { key: 'fundSleeve',   getValue: (LPRecord: LPRecord) => LPRecord.fundSleeve ?? '' },
+    { key: 'rank',         getValue: (LPRecord: LPRecord) => LPRecord.lpRank ?? null },
+    { key: 'facility',     getValue: (LPRecord: LPRecord) => facilityLabel(LPRecord) },
+    { key: 'name',         getValue: (LPRecord: LPRecord) => LPRecord.investorName },
     { key: 'parent',       getValue: (LPRecord: LPRecord) => LPRecord.parent ?? '' },
     { key: 'spv',          getValue: (LPRecord: LPRecord) => LPRecord.spv ? 'Yes' : 'No' },
-    { key: 'region',       getValue: (LPRecord: LPRecord) => formatRegion(LPRecord.region) },
+    { key: 'region',       getValue: (LPRecord: LPRecord) => formatRegion(LPRecord.regionLocation) },
     { key: 'investorType', getValue: (LPRecord: LPRecord) => LPRecord.investorType ?? '' },
-    { key: 'instHnw',      getValue: (LPRecord: LPRecord) => LPRecord.instVsHnw === 'HNW' ? 'HNW' : 'Institutional' },
-    { key: 'agentCls',     getValue: (LPRecord: LPRecord) => LPRecord.agentCls ?? '' },
-    { key: 'cls',          getValue: (LPRecord: LPRecord) => `${LPRecord.cls ?? ''}\u0000${LPRecord.name ?? ''}` },
-    { key: 'inc',          getValue: (LPRecord: LPRecord) => LPRecord.inc ? 'Yes' : 'No' },
-    { key: 'ig',           getValue: (LPRecord: LPRecord) => LPRecord.ig ? 'Yes' : 'No' },
-    { key: 'sp',           getValue: (LPRecord: LPRecord) => LPRecord.sp ?? '' },
-    { key: 'mdy',          getValue: (LPRecord: LPRecord) => LPRecord.mdy ?? '' },
-    { key: 'fitch',        getValue: (LPRecord: LPRecord) => LPRecord.fitch ?? '' },
-    { key: 'lpSize',       getValue: (LPRecord: LPRecord) => LPRecord.aum || LPRecord.nav || LPRecord.pension || '' },
-    { key: 'sizeMeasure',  getValue: (LPRecord: LPRecord) => LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '' },
-    { key: 'capCommit',    getValue: (LPRecord: LPRecord) => LPRecord.capCommit ?? '' },
-    { key: 'pctCapCommit', getValue: (LPRecord: LPRecord) => LPRecord.pctCapCommit ?? '' },
-    { key: 'calledCap',    getValue: (LPRecord: LPRecord) => LPRecord.calledCap ?? '' },
-    { key: 'uc',           getValue: (LPRecord: LPRecord) => LPRecord.uc ?? '' },
-    { key: 'pctUncalled',  getValue: (LPRecord: LPRecord) => LPRecord.pctUncalled ?? '' },
-    { key: 'pctCalled',    getValue: (LPRecord: LPRecord) => LPRecord.pctCalled ?? '' },
-    { key: 'agentRate',    getValue: (LPRecord: LPRecord) => LPRecord.agentRate ?? '' },
-    { key: 'rate',         getValue: (LPRecord: LPRecord) => LPRecord.rate ?? '' },
-    { key: 'agentConc',    getValue: (LPRecord: LPRecord) => LPRecord.agentConc ?? '' },
-    { key: 'ubsConc',      getValue: (LPRecord: LPRecord) => LPRecord.ubsConc ?? '' },
-    { key: 'agentExcess',  getValue: (LPRecord: LPRecord) => LPRecord.agentExcessConc ?? '' },
-    { key: 'ubsExcess',    getValue: (LPRecord: LPRecord) => LPRecord.ubsExcessConc ?? '' },
-    { key: 'abb',          getValue: (LPRecord: LPRecord) => LPRecord.abb ?? '' },
-    { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubb ?? '' },
+    { key: 'instHnw',      getValue: (LPRecord: LPRecord) => LPRecord.institutionalOrHnw === 'HNW' ? 'HNW' : 'Institutional' },
+    { key: 'agentLpCategory',     getValue: (LPRecord: LPRecord) => LPRecord.agentLpCategory ?? '' },
+    { key: 'cls',          getValue: (LPRecord: LPRecord) => `${LPRecord.ubsLpCategory ?? ''}\u0000${LPRecord.investorName ?? ''}` },
+    { key: 'inc',          getValue: (LPRecord: LPRecord) => LPRecord.included ? 'Yes' : 'No' },
+    { key: 'ig',           getValue: (LPRecord: LPRecord) => LPRecord.investmentGrade ? 'Yes' : 'No' },
+    { key: 'sp',           getValue: (LPRecord: LPRecord) => LPRecord.spRating ?? '' },
+    { key: 'mdy',          getValue: (LPRecord: LPRecord) => LPRecord.moodysRating ?? '' },
+    { key: 'fitch',        getValue: (LPRecord: LPRecord) => LPRecord.fitchRating ?? '' },
+    { key: 'lpSize',       getValue: (LPRecord: LPRecord) => LPRecord.aum || LPRecord.nav || LPRecord.pensionAssets || '' },
+    { key: 'sizeMeasure',  getValue: (LPRecord: LPRecord) => LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pensionAssets ? 'Assets' : '' },
+    { key: 'capitalCommitment',    getValue: (LPRecord: LPRecord) => LPRecord.capitalCommitment ?? '' },
+    { key: 'pctOfFundCommitments', getValue: (LPRecord: LPRecord) => LPRecord.pctOfFundCommitments ?? '' },
+    { key: 'calledCapital',    getValue: (LPRecord: LPRecord) => LPRecord.calledCapital ?? '' },
+    { key: 'uc',           getValue: (LPRecord: LPRecord) => LPRecord.uncalledCapital ?? '' },
+    { key: 'pctOfFundUncalled',  getValue: (LPRecord: LPRecord) => LPRecord.pctOfFundUncalled ?? '' },
+    { key: 'pctLpCalled',    getValue: (LPRecord: LPRecord) => LPRecord.pctLpCalled ?? '' },
+    { key: 'agentAdvanceRate',    getValue: (LPRecord: LPRecord) => LPRecord.agentAdvanceRate ?? '' },
+    { key: 'rate',         getValue: (LPRecord: LPRecord) => LPRecord.ubsAdvanceRate ?? '' },
+    { key: 'agentConcentrationLimit', getValue: (LPRecord: LPRecord) => LPRecord.agentConcentrationLimit ?? '' },
+    { key: 'ubsConcentrationLimit',   getValue: (LPRecord: LPRecord) => LPRecord.ubsConcentrationLimit ?? '' },
+    { key: 'agentExcess',  getValue: (LPRecord: LPRecord) => LPRecord.agentExcessConcentration ?? '' },
+    { key: 'ubsExcess',    getValue: (LPRecord: LPRecord) => LPRecord.ubsExcessConcentration ?? '' },
+    { key: 'abb',          getValue: (LPRecord: LPRecord) => LPRecord.agentBorrowingBase ?? '' },
+    { key: 'ubb',          getValue: (LPRecord: LPRecord) => LPRecord.ubsBorrowingBase ?? '' },
     { key: 'notes',        getValue: (LPRecord: LPRecord) => LPRecord.notes ?? '' },
-  ], [])
+  ], [facilityLabel])
   const { sort, setSort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns, { key: 'name', direction: 'asc' })
   useEffect(() => {
     setSort({ key: facFilter ? 'rank' : 'name', direction: 'asc' })
   }, [facFilter, setSort])
   const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
-  const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master', {
-    rank: 64,
-    name: 220, parent: 160, spv: 54,
-    region: 140, investorType: 140, instHnw: 122, agentCls: 166, cls: 174,
-    inc: 72, ig: 114, sp: 76, mdy: 84, fitch: 76,
-    lpSize: 194, sizeMeasure: 117, capCommit: 138, pctCapCommit: 132,
-    calledCap: 116, uc: 126, pctUncalled: 128, pctCalled: 104,
-    agentRate: 120, rate: 114, agentConc: 158, ubsConc: 144,
-    agentExcess: 174, ubsExcess: 154, abb: 133, ubb: 123, notes: 180,
+  // Keys are the column's sortKey — `SortableHeader` reports resizes under that name, so a width
+  // parked under any other key can never be dragged. Every width is also floored at its own header
+  // label's rendered width (11px bold Segoe UI in `.data-table.dense`) plus the 18px side padding
+  // and the 13px sort indicator, so no label is ever ellipsis-truncated at the default sizing.
+  const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master-v2', {
+    rank: 64, facility: 180,
+    name: 170, parent: 160, spv: 54,
+    region: 125, investorType: 130, instHnw: 142, agentLpCategory: 151, cls: 144,
+    inc: 71, ig: 126, sp: 70, mdy: 78, fitch: 70,
+    lpSize: 134, sizeMeasure: 101, capitalCommitment: 146, pctOfFundCommitments: 133,
+    calledCapital: 104, uc: 117, pctOfFundUncalled: 144, pctLpCalled: 107,
+    agentAdvanceRate: 139, rate: 128, agentConcentrationLimit: 171, ubsConcentrationLimit: 160,
+    agentExcess: 177, ubsExcess: 167, abb: 149, ubb: 139, notes: 150,
   })
-  const visibleTableWidth = facFilter || typeof tableWidth !== 'number'
+  // Rank and Facility are mutually exclusive: Rank only under a selected facility, Facility only
+  // under "All Facilities". Whichever is hidden must come off the summed table width.
+  const visibleTableWidth = typeof tableWidth !== 'number'
     ? tableWidth
-    : tableWidth - widths.rank
+    : tableWidth - (facFilter ? widths.facility : widths.rank)
   const handleSave = async (updated: LPRecord) => {
     const originalId = selected?.id
-    const originalName = selected?.name
+    const originalName = selected?.investorName
     setLpData(lpData.map(LPRecord => {
       if (originalId != null && LPRecord.id != null) {
         return LPRecord.id === originalId ? updated : LPRecord
       }
-      return LPRecord.name === originalName ? updated : LPRecord
+      return LPRecord.investorName === originalName ? updated : LPRecord
     }))
     setSelected(updated)
     if (facFilter?.id != null) {
@@ -587,7 +614,7 @@ export default function LPMaster() {
         return
       }
     }
-    toast(`LP record updated — ${updated.name}.`)
+    toast(`LP record updated — ${updated.investorName}.`)
   }
 
   // Persist every editable facility field (Identity + Agent Bank Summary) via PATCH, then reflect
@@ -673,7 +700,7 @@ export default function LPMaster() {
     } catch {
       setLpData(lpData.filter(LPRecord => LPRecord.id !== target.id))
     }
-    toast(`LP record deleted — ${target.name}.`)
+    toast(`LP record deleted — ${target.investorName}.`)
   }
 
   const handleRerunShadowBB = async () => {
@@ -686,7 +713,7 @@ export default function LPMaster() {
       if (selected) {
         const refreshedSelected = selected.id != null
           ? refreshedLPs.find(lp => lp.id === selected.id) ?? null
-          : refreshedLPs.find(lp => lp.name === selected.name) ?? null
+          : refreshedLPs.find(lp => lp.investorName === selected.investorName) ?? null
         setSelected(refreshedSelected)
       }
       const refreshedFacilities = await getFacilities()
@@ -726,21 +753,106 @@ export default function LPMaster() {
             <Button variant="secondary" size="sm" onClick={openAll}>
               View All {facilities.reduce((s, f) => s + (f.lps ?? 0), 0).toLocaleString()} LPs →
             </Button>
+            {/* The bank-wide curated store, distinct from the per-facility records above it: these
+                are the profiles matching applies to an upload, not the output of one. */}
+            <Button variant="secondary" size="sm" onClick={() => navigate('lp-master-records')}>
+              View Master {lpMasterCount != null ? lpMasterCount.toLocaleString() : ''} LP Records →
+            </Button>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
               {visibleFacilities.length} of {facilities.length} facilities
             </span>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 18px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              {visibleFacilities.map(f => (
-                <FacilityCard key={f.name} facility={f} canEdit={canEdit} onClick={() => openFacility(f)} onEdit={setEditingFacility} />
-              ))}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <div className="data-table-wrap">
+              {/* Fills the card: the summed column widths are only the floor, and any space left
+                  over on a wider viewport is shared out across the columns instead of trailing
+                  off as blank card. Below the floor the wrapper scrolls sideways. */}
+              <table className="data-table dense" style={{ tableLayout: 'fixed', minWidth: facVisibleWidth, width: '100%' }}>
+                <thead>
+                  <tr>
+                    {canEdit && <th aria-label="Edit facility" style={{ width: facWidths.edit }} />}
+                    <SortableHeader sortKey="facName"       sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facName }}          onResizeStart={onFacResizeStart}>Facility</SortableHeader>
+                    <SortableHeader sortKey="facAgentBank"  sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facAgentBank }}     onResizeStart={onFacResizeStart}>Agent Bank</SortableHeader>
+                    <SortableHeader sortKey="facLps"        sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facLps }} onResizeStart={onFacResizeStart}># LPs</SortableHeader>
+                    <SortableHeader sortKey="facAccount"    sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facAccount }}       onResizeStart={onFacResizeStart}>Account #</SortableHeader>
+                    <SortableHeader sortKey="facLoanAmount" sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facLoanAmount }} onResizeStart={onFacResizeStart}>Loan Amount</SortableHeader>
+                    <SortableHeader sortKey="facUbsParticipation" sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facUbsParticipation }} onResizeStart={onFacResizeStart}>UBS Participation</SortableHeader>
+                    <SortableHeader sortKey="facUbsRate"    sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facUbsRate }} onResizeStart={onFacResizeStart}>UBS Participation Rate</SortableHeader>
+                    <SortableHeader sortKey="facMaturity"   sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facMaturity }}      onResizeStart={onFacResizeStart}>Maturity Date</SortableHeader>
+                    <SortableHeader sortKey="facCollateral" sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facCollateral }}    onResizeStart={onFacResizeStart}>Collateral Date</SortableHeader>
+                    <SortableHeader sortKey="facStatus"     sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facStatus }}        onResizeStart={onFacResizeStart}>Facility Status</SortableHeader>
+                    <SortableHeader sortKey="facLastRun"    sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facLastRun }}       onResizeStart={onFacResizeStart}>Last BB Run</SortableHeader>
+                  </tr>
+                </thead>
+                <tbody>
+                  {facPage.pageItems.map(f => {
+                    const color = STATUS_COLOR[f.status] ?? 'var(--muted)'
+                    return (
+                      <tr key={f.id ?? f.name} onClick={() => openFacility(f)} style={{ cursor: 'pointer' }}>
+                        {canEdit && (
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setEditingFacility(f) }}
+                              title="Edit facility details"
+                              aria-label={`Edit ${f.name}`}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 12, lineHeight: 1, padding: 2 }}
+                            >&#9998;</button>
+                          </td>
+                        )}
+                        <td title={f.name} style={{ fontWeight: 700, color: 'var(--navy)' }}>{f.name}</td>
+                        <td title={f.agentBank}>{f.agentBank}</td>
+                        <td className="num">{f.lps?.toLocaleString() ?? '—'}</td>
+                        <td>{f.accountNumber}</td>
+                        <td className="num">{f.loanAmount}</td>
+                        <td className="num">{f.ubsParticipation}</td>
+                        <td className="num">{f.ubsParticipationRate}</td>
+                        <td>{f.maturityDate}</td>
+                        <td>{f.collateralDate}</td>
+                        <td><span style={{ fontWeight: 600, color }}>● {f.status}</span></td>
+                        {/* An explicit run date, with the relative form ("2d ago") kept on hover. A
+                            facility can carry BB figures without a run timestamp — mark those rather
+                            than showing a bare dash that reads as "never run". */}
+                        <td title={f.lastRunAt ? `Last run ${f.lastRun}` : undefined}>
+                          {f.lastRunAt
+                            // Accented like a KPI tile's value — the run date is what the row is read for.
+                            // The dash stays plain: there is no value to accent when nothing has run.
+                            ? <span style={{ fontWeight: 700, color: LAST_RUN_BLUE }}>{formatFullDate(f.lastRunAt)}</span>
+                            : f.hasShadowBB
+                              ? <span title="Existing Shadow BB — no run date recorded" style={{ padding: '2px 5px', borderRadius: 8, background: '#e8f1fb', color: LAST_RUN_BLUE, fontSize: 9, fontWeight: 700, letterSpacing: '.03em' }}>◆ BB</span>
+                              : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
             {visibleFacilities.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '60px 0', fontSize: 13 }}>
                 No facilities match "{facSearch}"
               </div>
             )}
+          </div>
+          <div className="tbl-footer">
+            <span>Showing {facPage.from}–{facPage.to} of {facPage.total}</span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {facPage.total > 15 && (
+                <select
+                  value={facPage.pageSize}
+                  onChange={e => facPage.setPageSize(Number(e.target.value))}
+                  style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}
+                >
+                  {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
+                </select>
+              )}
+              {facPage.totalPages > 1 && (
+                <>
+                  <Button variant="secondary" size="sm" disabled={facPage.page === 1} onClick={() => facPage.setPage(facPage.page - 1)}>&#x2039; Prev</Button>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {facPage.page} of {facPage.totalPages}</span>
+                  <Button size="sm" disabled={facPage.page === facPage.totalPages} onClick={() => facPage.setPage(facPage.page + 1)}>Next &#x203A;</Button>
+                </>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -828,13 +940,16 @@ export default function LPMaster() {
               {facFilter && (
                 <SortableHeader sortKey="rank" sort={sort} onSort={requestSort} className="num" style={{ width: widths.rank }} onResizeStart={onResizeStart}>Rank</SortableHeader>
               )}
+              {!facFilter && (
+                <SortableHeader sortKey="facility" sort={sort} onSort={requestSort} style={{ width: widths.facility }} onResizeStart={onResizeStart}>Facility</SortableHeader>
+              )}
               <SortableHeader sortKey="name"           sort={sort} onSort={requestSort} style={{ width: widths.name }}                          onResizeStart={onResizeStart}>Investor Name</SortableHeader>
               <SortableHeader sortKey="parent"         sort={sort} onSort={requestSort} style={{ width: widths.parent }}                        onResizeStart={onResizeStart}>Parent</SortableHeader>
               <SortableHeader sortKey="spv"            sort={sort} onSort={requestSort} style={{ width: widths.spv }}                           onResizeStart={onResizeStart}>SPV</SortableHeader>
               <SortableHeader sortKey="region"         sort={sort} onSort={requestSort} style={{ width: widths.region }}                        onResizeStart={onResizeStart}>Region / Location</SortableHeader>
               <SortableHeader sortKey="investorType"   sort={sort} onSort={requestSort} style={{ width: widths.investorType }}                  onResizeStart={onResizeStart}>Investor Type</SortableHeader>
               <SortableHeader sortKey="instHnw"        sort={sort} onSort={requestSort} style={{ width: widths.instHnw }}                       onResizeStart={onResizeStart}>Institutional vs HNW</SortableHeader>
-              <SortableHeader sortKey="agentCls"       sort={sort} onSort={requestSort} style={{ width: widths.agentCls }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
+              <SortableHeader sortKey="agentLpCategory"       sort={sort} onSort={requestSort} style={{ width: widths.agentLpCategory }}                      onResizeStart={onResizeStart}>Agent LP Classification</SortableHeader>
               <SortableHeader sortKey="cls"            sort={sort} onSort={requestSort} style={{ width: widths.cls }}                           onResizeStart={onResizeStart}>UBS LP Classification</SortableHeader>
               <SortableHeader sortKey="inc"            sort={sort} onSort={requestSort} style={{ width: widths.inc, textAlign: 'center' }}      onResizeStart={onResizeStart}>Eligible</SortableHeader>
               <SortableHeader sortKey="ig"             sort={sort} onSort={requestSort} style={{ width: widths.ig }}                            onResizeStart={onResizeStart}>Investment Grade</SortableHeader>
@@ -843,16 +958,16 @@ export default function LPMaster() {
               <SortableHeader sortKey="fitch"          sort={sort} onSort={requestSort} style={{ width: widths.fitch }}                         onResizeStart={onResizeStart}>Fitch</SortableHeader>
               <SortableHeader sortKey="lpSize"         sort={sort} onSort={requestSort} className="num" style={{ width: widths.lpSize }}        onResizeStart={onResizeStart}>LP Size</SortableHeader>
               <SortableHeader sortKey="sizeMeasure"    sort={sort} onSort={requestSort} style={{ width: widths.sizeMeasure }}                   onResizeStart={onResizeStart}>Size Measure</SortableHeader>
-              <SortableHeader sortKey="capCommit"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.capCommit }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
-              <SortableHeader sortKey="pctCapCommit"   sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctCapCommit }}  onResizeStart={onResizeStart}>% of Commitments</SortableHeader>
-              <SortableHeader sortKey="calledCap"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.calledCap }}     onResizeStart={onResizeStart}>Called Capital</SortableHeader>
+              <SortableHeader sortKey="capitalCommitment"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.capitalCommitment }}     onResizeStart={onResizeStart}>Capital Commitments</SortableHeader>
+              <SortableHeader sortKey="pctOfFundCommitments"   sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctOfFundCommitments }}  onResizeStart={onResizeStart}>% of Commitments</SortableHeader>
+              <SortableHeader sortKey="calledCapital"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.calledCapital }}     onResizeStart={onResizeStart}>Called Capital</SortableHeader>
               <SortableHeader sortKey="uc"             sort={sort} onSort={requestSort} className="num" style={{ width: widths.uc }}            onResizeStart={onResizeStart}>Uncalled Capital</SortableHeader>
-              <SortableHeader sortKey="pctUncalled"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctUncalled }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
-              <SortableHeader sortKey="pctCalled"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctCalled }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
-              <SortableHeader sortKey="agentRate"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentRate }}     onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
+              <SortableHeader sortKey="pctOfFundUncalled"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctOfFundUncalled }}   onResizeStart={onResizeStart}>% of Uncalled Capital</SortableHeader>
+              <SortableHeader sortKey="pctLpCalled"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.pctLpCalled }}     onResizeStart={onResizeStart}>% of LP Called</SortableHeader>
+              <SortableHeader sortKey="agentAdvanceRate"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentAdvanceRate }}     onResizeStart={onResizeStart}>Agent Advance Rate</SortableHeader>
               <SortableHeader sortKey="rate"           sort={sort} onSort={requestSort} className="num" style={{ width: widths.rate }}          onResizeStart={onResizeStart}>UBS Advance Rate</SortableHeader>
-              <SortableHeader sortKey="agentConc"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentConc }}     onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
-              <SortableHeader sortKey="ubsConc"        sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsConc }}       onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
+              <SortableHeader sortKey="agentConcentrationLimit" sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentConcentrationLimit }} onResizeStart={onResizeStart}>Agent Concentration Limit</SortableHeader>
+              <SortableHeader sortKey="ubsConcentrationLimit"   sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsConcentrationLimit }}   onResizeStart={onResizeStart}>UBS Concentration Limit</SortableHeader>
               <SortableHeader sortKey="agentExcess"    sort={sort} onSort={requestSort} className="num" style={{ width: widths.agentExcess }}   onResizeStart={onResizeStart}>Agent Excess Concentration</SortableHeader>
               <SortableHeader sortKey="ubsExcess"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.ubsExcess }}     onResizeStart={onResizeStart}>UBS Excess Concentration</SortableHeader>
               <SortableHeader sortKey="abb"            sort={sort} onSort={requestSort} className="num" style={{ width: widths.abb }}           onResizeStart={onResizeStart}>Agent Borrowing Base</SortableHeader>
@@ -862,55 +977,57 @@ export default function LPMaster() {
           </thead>
           <tbody>
             {pageItems.map((LPRecord, i) => {
-              const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pension ? 'Assets' : '—'
-              const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pension || '—'
-              const instHnw     = (LPRecord.instVsHnw === 'HNW' ? 'HNW' : LPRecord.instVsHnw ? 'Institutional' : '—')
+              const sizeMeasure = LPRecord.aum ? 'AUM' : LPRecord.nav ? 'NAV' : LPRecord.pensionAssets ? 'Assets' : '—'
+              const lpSizeVal   = LPRecord.aum || LPRecord.nav || LPRecord.pensionAssets || '—'
+              const instHnw     = (LPRecord.institutionalOrHnw === 'HNW' ? 'HNW' : LPRecord.institutionalOrHnw ? 'Institutional' : '—')
               const rowKey = LPRecord.id != null
                 ? `lp-${LPRecord.id}`
                 : [
-                    LPRecord.name ?? 'LPRecord',
+                    LPRecord.investorName ?? 'LPRecord',
                     LPRecord.parent ?? '',
-                    LPRecord.region ?? '',
-                    LPRecord.cls ?? '',
-                    LPRecord.fundSleeve ?? '',
+                    LPRecord.regionLocation ?? '',
+                    LPRecord.ubsLpCategory ?? '',
                     i,
                   ].join('|')
               return (
               <tr key={rowKey} className={selected === LPRecord ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
-                {facFilter && <td className="num">{LPRecord.rank ?? '—'}</td>}
-                <td title={LPRecord.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <strong>{LPRecord.name}</strong>
-                  {LPRecord.rcl && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
-                  {LPRecord.tf  && <span className="tf-badge">T</span>}
+                {facFilter && <td className="num">{LPRecord.lpRank ?? '—'}</td>}
+                {!facFilter && (
+                  <td title={facilityLabel(LPRecord)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{facilityLabel(LPRecord)}</td>
+                )}
+                <td title={LPRecord.investorName} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <strong>{LPRecord.investorName}</strong>
+                  {LPRecord.reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
+                  {LPRecord.transferee  && <span className="tf-badge">T</span>}
                 </td>
                 <td title={LPRecord.parent} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--muted)' }}>{LPRecord.parent || '—'}</td>
                 <td>{LPRecord.spv ? 'Yes' : 'No'}</td>
-                <td>{formatRegion(LPRecord.region) || '—'}</td>
+                <td>{formatRegion(LPRecord.regionLocation) || '—'}</td>
                 <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LPRecord.investorType || '—'}</td>
                 <td>{instHnw}</td>
-                <td title={LPRecord.agentCls || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{LPRecord.agentCls || '—'}</td>
-                <td><Tag>{LPRecord.cls}</Tag></td>
-                <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: LPRecord.inc ? '#e6f4ea' : 'var(--tbl)', color: LPRecord.inc ? 'var(--green)' : 'var(--muted)' }}>{LPRecord.inc ? 'Yes' : 'No'}</span></td>
-                <td>{LPRecord.ig ? 'Yes' : 'No'}</td>
-                <td>{LPRecord.sp || '—'}</td>
-                <td>{LPRecord.mdy || '—'}</td>
-                <td>{LPRecord.fitch || '—'}</td>
+                <td title={LPRecord.agentLpCategory || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{LPRecord.agentLpCategory || '—'}</td>
+                <td><Tag>{LPRecord.ubsLpCategory}</Tag></td>
+                <td style={{ textAlign: 'center' }}><span style={{ fontWeight: 600, fontSize: 11, padding: '2px 7px', borderRadius: 10, background: LPRecord.included ? '#e6f4ea' : 'var(--tbl)', color: LPRecord.included ? 'var(--green)' : 'var(--muted)' }}>{LPRecord.included ? 'Yes' : 'No'}</span></td>
+                <td>{LPRecord.investmentGrade ? 'Yes' : 'No'}</td>
+                <td>{LPRecord.spRating || '—'}</td>
+                <td>{LPRecord.moodysRating || '—'}</td>
+                <td>{LPRecord.fitchRating || '—'}</td>
                 <td className="num">{lpSizeFormat(lpSizeVal)}</td>
                 <td>{sizeMeasure}</td>
-                <td className="num">{tableMoney(LPRecord.capCommit)}</td>
-                <td className="num">{formatPercentageText(LPRecord.pctCapCommit)}</td>
-                <td className="num">{tableMoney(LPRecord.calledCap)}</td>
-                <td className="num">{tableMoney(LPRecord.uc)}</td>
-                <td className="num">{formatPercentageText(LPRecord.pctUncalled)}</td>
-                <td className="num">{formatPercentageText(LPRecord.pctCalled)}</td>
-                <td className="num">{formatPercentageText(LPRecord.agentRate)}</td>
-                <td className="num">{formatPercentageText(LPRecord.rate)}</td>
-                <td className="num">{LPRecord.agentConc || '—'}</td>
-                <td className="num">{LPRecord.ubsConc || '—'}</td>
-                <td className="num">{tableMoney(LPRecord.agentExcessConc)}</td>
-                <td className="num">{tableMoney(LPRecord.ubsExcessConc)}</td>
-                <td className={`num ${!LPRecord.abb || LPRecord.abb === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.abb)}</td>
-                <td className={`num ${LPRecord.ubb === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.ubb)}</td>
+                <td className="num">{tableMoney(LPRecord.capitalCommitment)}</td>
+                <td className="num">{formatPercentageFraction(LPRecord.pctOfFundCommitments ?? NaN)}</td>
+                <td className="num">{tableMoney(LPRecord.calledCapital)}</td>
+                <td className="num">{tableMoney(LPRecord.uncalledCapital)}</td>
+                <td className="num">{formatPercentageFraction(LPRecord.pctOfFundUncalled ?? NaN)}</td>
+                <td className="num">{formatPercentageFraction(LPRecord.pctLpCalled ?? NaN)}</td>
+                <td className="num">{formatPercentageFraction(LPRecord.agentAdvanceRate ?? NaN)}</td>
+                <td className="num">{formatPercentageFraction(LPRecord.ubsAdvanceRate ?? NaN)}</td>
+                <td className="num">{LPRecord.agentConcentrationLimit || '—'}</td>
+                <td className="num">{LPRecord.ubsConcentrationLimit || '—'}</td>
+                <td className="num">{tableMoney(LPRecord.agentExcessConcentration)}</td>
+                <td className="num">{tableMoney(LPRecord.ubsExcessConcentration)}</td>
+                <td className={`num ${!LPRecord.agentBorrowingBase || LPRecord.agentBorrowingBase === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.agentBorrowingBase)}</td>
+                <td className={`num ${LPRecord.ubsBorrowingBase === '$0' ? 'zero' : ''}`}>{tableMoney(LPRecord.ubsBorrowingBase)}</td>
                 <td title={LPRecord.notes || '—'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{LPRecord.notes || '—'}</td>
               </tr>
               )
@@ -954,7 +1071,7 @@ export default function LPMaster() {
             onDelete={canEdit ? handleDelete : undefined}
             canEdit={canEdit}
             showRank={Boolean(facFilter)}
-            totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uc) ?? 0) / 1_000_000), 0)}
+            totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uncalledCapital) ?? 0) / 1_000_000), 0)}
           />
         </DraggablePanel>
       )}

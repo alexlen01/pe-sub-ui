@@ -19,7 +19,7 @@ function formatPct(n: number): string {
 
 function enrichBBFields(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   const withRaw: Array<Record<string, unknown> & { agentBBRaw: number; eligibleCommitmentRaw: number }> = rows.map(r => {
-    const rate = parseFloat((r.agentRate as string || '').replace('%', '')) / 100 || 0
+    const rate = parseFloat((r.agentAdvanceRate as string || '').replace('%', '')) / 100 || 0
     const agentBBRaw =
       typeof r.agentBBRaw === 'number'
         ? r.agentBBRaw

@@ -17,7 +17,7 @@ export function formatLastRun(date: Date | string | null | undefined): string {
 // "May 27, 2026" style — used for Agent Bank Summary date fields that need the year.
 // Date-only strings ("2029-03-15") are anchored to local midnight so the day isn't shifted
 // back by the UTC offset; full datetimes pass through unchanged.
-function formatFullDate(date: Date | string | null | undefined): string {
+export function formatFullDate(date: Date | string | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
     ? new Date(date + 'T00:00:00')

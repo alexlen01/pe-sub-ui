@@ -1,6 +1,7 @@
 import { Suspense, lazy, type JSX } from 'react'
 import { AppProvider, useApp } from './context/AppContext'
 import { AuthProvider } from './context/AuthContext'
+import DevSignInGate from './components/auth/DevSignIn'
 import Sidebar from './components/layout/Sidebar'
 import TopBar  from './components/layout/TopBar'
 import Toast   from './components/ui/Toast'
@@ -8,6 +9,7 @@ import Toast   from './components/ui/Toast'
 const Dashboard          = lazy(() => import('./screens/Dashboard'))
 const Upload             = lazy(() => import('./screens/Upload'))
 const LPMaster           = lazy(() => import('./screens/LPMaster'))
+const LPMasterRecords    = lazy(() => import('./screens/LPMasterRecords'))
 const ShadowBB           = lazy(() => import('./screens/ShadowBB'))
 const Reports            = lazy(() => import('./screens/Reports'))
 const Configuration      = lazy(() => import('./screens/Configuration'))
@@ -23,6 +25,7 @@ const SCREEN_MAP: Record<string, JSX.Element> = {
   dashboard:            <Dashboard />,
   upload:               <Upload />,
   'lp-master':          <LPMaster />,
+  'lp-master-records':  <LPMasterRecords />,
   'shadow-bb':          <ShadowBB />,
   reports:              <Reports />,
   configuration:        <Configuration />,
@@ -48,18 +51,22 @@ function ScreenRouter() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppProvider>
-        <div className="shell">
-          <Sidebar />
-          <div className="main">
-            <TopBar />
-            <div className="content">
-              <ScreenRouter />
+      {/* Locally, nothing below renders until an identity is signed in — no screen mounts (and no
+          API call fires) without one, matching an SSO-protected app. Transparent in production. */}
+      <DevSignInGate>
+        <AppProvider>
+          <div className="shell">
+            <Sidebar />
+            <div className="main">
+              <TopBar />
+              <div className="content">
+                <ScreenRouter />
+              </div>
             </div>
           </div>
-        </div>
-        <Toast />
-      </AppProvider>
+          <Toast />
+        </AppProvider>
+      </DevSignInGate>
     </AuthProvider>
   )
 }

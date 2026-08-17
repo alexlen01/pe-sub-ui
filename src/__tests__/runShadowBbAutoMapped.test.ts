@@ -13,33 +13,33 @@ const UBS_CLS = ['Rated', 'Unrated >2bn', 'Unrated 1-2bn', 'Unrated <1bn', 'Excl
 
 describe('getAutoPopulatedClsKind', () => {
   it('returns "" when the override matches the stored class (nothing auto-mapped)', () => {
-    expect(getAutoPopulatedClsKind({ cls: 'Rated' }, { cls: 'Rated' }, UBS_CLS)).toBe('')
+    expect(getAutoPopulatedClsKind({ ubsLpCategory: 'Rated' }, { ubsLpCategory: 'Rated' }, UBS_CLS)).toBe('')
   })
 
   it('returns "" when the override has no class', () => {
-    expect(getAutoPopulatedClsKind({ cls: 'Rated' }, { cls: '' }, UBS_CLS)).toBe('')
-    expect(getAutoPopulatedClsKind({ cls: 'Rated' }, undefined, UBS_CLS)).toBe('')
+    expect(getAutoPopulatedClsKind({ ubsLpCategory: 'Rated' }, { ubsLpCategory: '' }, UBS_CLS)).toBe('')
+    expect(getAutoPopulatedClsKind({ ubsLpCategory: 'Rated' }, undefined, UBS_CLS)).toBe('')
   })
 
   it('returns "derived" when a blank stored class was filled in', () => {
-    expect(getAutoPopulatedClsKind({ cls: '' }, { cls: 'Unrated <1bn' }, UBS_CLS)).toBe('derived')
+    expect(getAutoPopulatedClsKind({ ubsLpCategory: '' }, { ubsLpCategory: 'Unrated <1bn' }, UBS_CLS)).toBe('derived')
   })
 
   it('returns "upgraded" when a stored UBS class was lifted to another tier', () => {
-    expect(getAutoPopulatedClsKind({ cls: 'Unrated <1bn' }, { cls: 'Rated' }, UBS_CLS)).toBe('upgraded')
+    expect(getAutoPopulatedClsKind({ ubsLpCategory: 'Unrated <1bn' }, { ubsLpCategory: 'Rated' }, UBS_CLS)).toBe('upgraded')
   })
 })
 
 describe('countAutoPopulatedCls', () => {
   const lps = [
-    { _key: 'a', cls: '' },              // derived
-    { _key: 'b', cls: 'Unrated <1bn' },  // upgraded
-    { _key: 'c', cls: 'Rated' },         // unchanged
+    { _key: 'a', ubsLpCategory: '' },              // derived
+    { _key: 'b', ubsLpCategory: 'Unrated <1bn' },  // upgraded
+    { _key: 'c', ubsLpCategory: 'Rated' },         // unchanged
   ]
   const overrides = {
-    a: { cls: 'Unrated <1bn' },
-    b: { cls: 'Rated' },
-    c: { cls: 'Rated' },
+    a: { ubsLpCategory: 'Unrated <1bn' },
+    b: { ubsLpCategory: 'Rated' },
+    c: { ubsLpCategory: 'Rated' },
   }
 
   it('tallies derived and upgraded auto-populations', () => {

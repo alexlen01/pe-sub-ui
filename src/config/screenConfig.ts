@@ -10,6 +10,7 @@ export const SCREENS: Record<string, ScreenMeta> = {
   dashboard:           { title: 'Dashboard',                sub: 'PE Sub Borrowing Base Platform'                                                                   },
   upload:              { title: 'Upload Agent BB',          sub: 'Ingest agent borrowing base document for a facility'                                              },
   'lp-master':         { title: 'LP Master Database',       sub: 'Single LP identity across all facilities'                                                         },
+  'lp-master-records': { title: 'LP Master Records',        sub: 'Bank-wide curated LP profiles and parent/child hierarchy applied to matched Agent BB rows'        },
   'shadow-bb':         { title: 'Shadow BB',                sub: 'Borrowing base calculation and LP classification'                                                 },
   reports:             { title: 'Reports',                  sub: 'Generate, schedule, and export borrowing base and collateral analysis reports'                    },
   configuration:       { title: 'Configuration',            sub: 'Eligibility rules, advance rates, and classification tiers'                                       },

@@ -29,7 +29,7 @@ export default function Sidebar() {
         {/* Real authenticated identity from /api/users/me; the role label falls back to the
             capability role's label when the server role string is empty. */}
         <div className="sidebar-user">{currentUser.name}</div>
-        <div className="sidebar-role">{roleLabel} · PE Sub Finance</div>
+        <div className="sidebar-role">{roleLabel}{currentUser.department && ` · ${currentUser.department}`}</div>
       </div>
     </aside>
   )

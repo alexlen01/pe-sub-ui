@@ -100,7 +100,9 @@ export function SortableHeader({ sortKey, sort, onSort, children, className, sty
     <th
       className={['sortable-th', active ? 'sortable-th-active' : '', className ?? ''].filter(Boolean).join(' ')}
       style={{ position: 'relative', ...style }}
-      title={title}
+      // A narrow column now ellipsis-truncates its label, so fall back to the label itself as the
+      // hover tooltip — otherwise a clipped header has no way to reveal its full text.
+      title={title ?? (typeof children === 'string' ? children : undefined)}
       aria-sort={ariaSort}
       tabIndex={0}
       onClick={() => onSort(sortKey)}

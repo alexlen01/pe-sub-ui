@@ -15,6 +15,7 @@ import {
   type ReportHistoryRow, type XlsxSheet,
 } from '../../services/reportService'
 import { parseM } from '../../utils/execSummary'
+import { formatPercentageFraction } from '../../utils/percentage'
 import type { BBSnapshot, ComputedLP } from '../../types/bb'
 import { useConfigCache } from '../../store/configStore'
 
@@ -150,17 +151,17 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
   const certRows  = buildCertRows(report)
   const classRows = buildCertClassRows(report)
   const allLps: ComputedLP[] = snapshot?.result?.lps ?? []
-  const lps = includeLps === 'all' ? allLps : allLps.filter(LPRecord => LPRecord.inc)
+  const lps = includeLps === 'all' ? allLps : allLps.filter(LPRecord => LPRecord.included)
   const breaches = snapshot?.result?.breaches ?? []
-  const reclassed = allLps.filter(LPRecord => LPRecord.rcl)
+  const reclassed = allLps.filter(LPRecord => LPRecord.reclassified)
   const trendRows = buildEarTrendRows(
     snapshots
       .filter(s => s.result?.summary)
       .map(s => ({ calculatedAt: s.calculatedAt, ear: s.result.summary.ear,
                    agentEar: s.result.summary.agentEar, earDelta: s.result.summary.earDelta }))
   )
-  const hqUncalledM    = allLps.filter(LPRecord => LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uc), 0)
-  const otherUncalledM = allLps.filter(LPRecord => !LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uc), 0)
+  const hqUncalledM    = allLps.filter(LPRecord => LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uncalledCapital), 0)
+  const otherUncalledM = allLps.filter(LPRecord => !LPRecord.highQuality).reduce((s, LPRecord) => s + parseM(LPRecord.uncalledCapital), 0)
 
   return (
     <div>
@@ -207,11 +208,11 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             <tbody>
               {classRows.map((r, i) => (
                 <tr key={i}>
-                  <td>{r.cls}</td>
+                  <td>{r.ubsLpCategory}</td>
                   <td className="num">{r.n}</td>
-                  <td className="num">{r.uc}</td>
-                  <td className="num">{r.ubb}</td>
-                  <td className="num">{r.rate}</td>
+                  <td className="num">{r.uncalledCapital}</td>
+                  <td className="num">{r.ubsBorrowingBase}</td>
+                  <td className="num">{r.ubsAdvanceRate}</td>
                 </tr>
               ))}
             </tbody>
@@ -250,7 +251,7 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             <thead><tr><th>Investor Name</th><th>Status</th><th className="num">LP Category</th><th className="num">Uncalled Capital</th><th className="num">Agent BB</th><th className="num">UBS BB</th></tr></thead>
             <tbody>
               {reclassed.map((LPRecord, i) => (
-                <tr key={i}><td>{LPRecord.name}</td><td><span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span></td><td className="num">{LPRecord.cls}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td></tr>
+                <tr key={i}><td>{LPRecord.investorName}</td><td><span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span></td><td className="num">{LPRecord.ubsLpCategory}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uncalledCapital)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uncalledCapital)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.agentBorrowingBase)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.agentBorrowingBase)}</td><td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubsBorrowingBase)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubsBorrowingBase)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -272,12 +273,12 @@ function CertPreview({ report, snapshot, snapshots, watermark, detail, includeLp
             <tbody>
               {lps.map((LPRecord, i) => (
                 <tr key={i}>
-                  <td>{LPRecord.name} {LPRecord.rcl && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}</td>
-                  <td className="num">{LPRecord.cls}</td>
-                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uc)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uc)}</td>
-                  <td className="num" style={isNegativeDisplayValue(LPRecord.rate) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{LPRecord.rate}</td>
-                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.abb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.abb)}</td>
-                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubb)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubb)}</td>
+                  <td>{LPRecord.investorName} {LPRecord.reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}</td>
+                  <td className="num">{LPRecord.ubsLpCategory}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.uncalledCapital)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.uncalledCapital)}</td>
+                  <td className="num">{formatPercentageFraction(LPRecord.ubsAdvanceRate ?? NaN)}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.agentBorrowingBase)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.agentBorrowingBase)}</td>
+                  <td className="num" style={isNegativeDisplayValue(formatUsdAmount(LPRecord.ubsBorrowingBase)) ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{formatUsdAmount(LPRecord.ubsBorrowingBase)}</td>
                   <td className="num" style={LPRecord.deltaM < 0 ? { color: 'var(--danger)', fontWeight: 700 } : LPRecord.deltaM > 0 ? { color: 'var(--success)', fontWeight: 700 } : undefined}>{formatSignedUsdMillions(LPRecord.deltaM)}</td>
                 </tr>
               ))}
@@ -499,9 +500,9 @@ export default function Reports() {
         cls: adhocCls === 'All' ? undefined : adhocCls,
       })
       const sorted = [...lps].sort((a, b) =>
-        adhocSort === 'name' ? a.name.localeCompare(b.name)
+        adhocSort === 'name' ? a.investorName.localeCompare(b.investorName)
         : adhocSort === 'aum' ? parseM(b.aum) - parseM(a.aum)
-        : parseM(b.uc) - parseM(a.uc))
+        : parseM(b.uncalledCapital) - parseM(a.uncalledCapital))
       const columns = ['Facility', 'Investor Name', 'Status', 'UBS LP Category', 'Uncalled Capital', 'AUM', 'Region', 'Included']
       const selectedFacilityLabel = facilityName(adhocFacilityId)
       const rows = sorted.map(LPRecord => [
@@ -514,13 +515,13 @@ export default function Reports() {
           }
           return adhocFacilityId === 'all' ? '—' : selectedFacilityLabel
         })(),
-        LPRecord.name,
-        LPRecord.rcl ? 'Reclassified' : '',
-        LPRecord.cls,
-        formatUsdAmount(LPRecord.uc),
+        LPRecord.investorName,
+        LPRecord.reclassified ? 'Reclassified' : '',
+        LPRecord.ubsLpCategory,
+        formatUsdAmount(LPRecord.uncalledCapital),
         formatUsdAmount(LPRecord.aum),
-        formatRegion(LPRecord.region),
-        LPRecord.inc ? 'Y' : 'N',
+        formatRegion(LPRecord.regionLocation),
+        LPRecord.included ? 'Y' : 'N',
       ] as Array<string | number>)
       setPreview({
         kind: 'table',
@@ -542,15 +543,15 @@ export default function Reports() {
     const classRows = buildCertClassRows(report)
     const sheets: XlsxSheet[] = [
       { name: 'Summary', rows: certRows.map(r => ({ Metric: r.metric, 'UBS (BUSA)': r.ubs, Agent: r.agent })) },
-      { name: 'LP Categories', rows: classRows.map(r => ({ 'LP Category': r.cls, 'LPs': r.n, 'Uncalled Capital': r.uc, 'UBS BB': r.ubb, 'Advance Rate': r.rate })) },
+      { name: 'LP Categories', rows: classRows.map(r => ({ 'LP Category': r.ubsLpCategory, 'LPs': r.n, 'Uncalled Capital': r.uncalledCapital, 'UBS BB': r.ubsBorrowingBase, 'Advance Rate': r.ubsAdvanceRate })) },
     ]
     const lps: ComputedLP[] = snapshot?.result?.lps ?? []
     if (detail === 'LPRecord' && lps.length > 0) {
       sheets.push({
         name: 'LPs',
-        rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.inc)).map(LPRecord => ({
-          'Investor Name': LPRecord.name, Status: LPRecord.rcl ? 'Reclassified' : '', 'LP Category': LPRecord.cls, 'Uncalled Capital': formatUsdAmount(LPRecord.uc), 'Advance Rate': LPRecord.rate,
-          'Agent BB': formatUsdAmount(LPRecord.abb), 'UBS BB': formatUsdAmount(LPRecord.ubb), Delta: formatSignedUsdMillions(LPRecord.deltaM),
+        rows: (includeLps === 'all' ? lps : lps.filter(LPRecord => LPRecord.included)).map(LPRecord => ({
+          'Investor Name': LPRecord.investorName, Status: LPRecord.reclassified ? 'Reclassified' : '', 'LP Category': LPRecord.ubsLpCategory, 'Uncalled Capital': formatUsdAmount(LPRecord.uncalledCapital), 'Advance Rate': formatPercentageFraction(LPRecord.ubsAdvanceRate ?? NaN),
+          'Agent BB': formatUsdAmount(LPRecord.agentBorrowingBase), 'UBS BB': formatUsdAmount(LPRecord.ubsBorrowingBase), Delta: formatSignedUsdMillions(LPRecord.deltaM),
         })),
       })
     }

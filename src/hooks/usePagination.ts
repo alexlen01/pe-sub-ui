@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 
-export const PAGE_SIZE = 15
-export const PAGE_SIZE_OPTS = [15, 30, 50, 100, 500]
+export const PAGE_SIZE = 25
+export const PAGE_SIZE_OPTS = [25, 50, 100, 250]
 
 export function usePagination<T>(items: T[], initialPageSize = PAGE_SIZE) {
   const [page, setPage]         = useState(1)

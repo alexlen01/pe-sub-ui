@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button'
 import Tag from '../../components/ui/Tag'
 import Modal from '../../components/ui/Modal'
 import StepBar from '../../components/ui/StepBar'
+import DraggablePanel from '../../components/ui/DraggablePanel'
 import { getMatchQueue } from '../../services/matchingService'
 import { api } from '../../services/api'
 import { getMatchingConfig, getWizardConfig } from '../../services/configService'
@@ -16,6 +17,14 @@ import { analysisCandidates, normalisedAgentName } from './matchAnalysis'
 import type { MatchAnalysis, MatchingConfig, MatchingThresholds } from '../../services/api'
 
 type QueueRow = Awaited<ReturnType<typeof getMatchQueue>>[0] & { status: string; matchDetails?: MatchAnalysis | null }
+
+// Agent name / matched master / ultimate parent — the flexible, text-length-driven columns. Below
+// this width they stop being readable, so the table scrolls horizontally instead of squeezing them.
+// The floor also has to clear the longest of the three headers, "Ultimate Parent (To Be Applied)"
+// — 181px of 12px bold Segoe UI plus the 36px side padding and the 13px sort indicator — and that
+// column only draws a 33% share of the floor, so the per-column floor carries the headroom.
+const NAME_COLS = 3
+const MIN_NAME_COL_PX = 240
 
 function suffixRe(config: MatchingConfig): RegExp | null {
   const suffixes = config.legalSuffixes.filter(s => s.strip).map(s => s.abbr.replace('.', '\\.'))
@@ -50,13 +59,36 @@ function buildParentSignal(r: QueueRow, config: MatchingConfig) {
   return { agentParent: r.agentParent, masterParent, score, adjustment, effect }
 }
 
+/**
+ * Whose credit profile an Accept would actually apply (LP mapping design, Phase 3/4).
+ *
+ * A match against a feeder or SPV routes up to its ultimate parent, so the analyst must see that
+ * entity before deciding — the ratings, LP category and advance rate come from there. Three states,
+ * deliberately distinct: a resolved parent, "Self" when the match is already the ultimate entity,
+ * and no match at all (a new LP record, so nothing to apply).
+ */
+export function appliedEntity(r: Pick<QueueRow, 'masterName' | 'masterParent'>): { label: string; routed: boolean; matched: boolean } {
+  if (!r.masterName) return { label: '', routed: false, matched: false }
+  const parent = (r.masterParent ?? '').trim()
+  return parent
+    ? { label: parent, routed: true, matched: true }
+    : { label: 'Self', routed: false, matched: true }
+}
+
 const scoreColor = (s: number) => s >= 95 ? 'var(--green)' : s >= 80 ? 'var(--amber)' : 'var(--danger)'
 const scoreBand = (s: number, thresholds: MatchingThresholds) =>
   s >= thresholds.autoAccept ? 'Auto-accept' : s >= thresholds.reviewQueue ? 'Review' : 'No Match'
 const bandVariant = (s: number, thresholds: MatchingThresholds) =>
   s >= thresholds.autoAccept ? 'active' : s >= thresholds.reviewQueue ? 'pending' : 'excl'
 
-function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; config: MatchingConfig; overlay?: boolean }) {
+/**
+ * Match Analysis for one queue row.
+ *
+ * `overlay` makes the panel fill its parent instead of sitting in a fixed 360px column — the
+ * docked-overlay mode, where the surrounding `DraggablePanel` owns the positioning class. The
+ * inline mode is kept for any caller that still wants it beside a narrower table.
+ */
+function MatchDetailPanel({ row, onClose, onResolve, onDiscard, config, overlay }: { row: QueueRow; onClose: () => void; onResolve: ((id: number, action: string) => void) | null; onDiscard?: (id: number) => void; config: MatchingConfig; overlay?: boolean }) {
   const thresholds = config.thresholds
   const { steps, normalised: reconstructed } = buildNormSteps(row.agentName, config)
   const normalised = normalisedAgentName(row, reconstructed)
@@ -74,8 +106,9 @@ function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: Q
   }
   return (
     <div
-      className={overlay ? 'LPRecord-detail-overlay' : undefined}
-      style={overlay ? undefined : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
+      style={overlay
+        ? { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--card)', overflow: 'hidden' }
+        : { width: 360, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', background: 'var(--card)', height: '100%', overflow: 'hidden' }}
     >
       <div className="LPRecord-detail-hdr" style={{ padding: '12px 16px', background: 'var(--navy)', color: '#fff', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div><div className="LPRecord-detail-name" style={{ fontSize: 12, fontWeight: 700 }}>Match Analysis</div><div style={{ fontSize: 11, marginTop: 2, opacity: 0.75 }}>#{row.id} - {row.facility}</div></div>
@@ -139,11 +172,37 @@ function MatchDetailPanel({ row, onClose, onResolve, config, overlay }: { row: Q
             ? <div style={{ fontSize: 12 }}>Combined score <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong> — {topCandidate.verdict === 'Auto-accept' ? 'above auto-accept threshold · committed without review.' : 'proposed for review.'}<div style={{ marginTop: 6, color: 'var(--muted)', fontSize: 11 }}>Proposed match: <strong style={{ color: 'var(--text)' }}>{row.masterName}</strong></div></div>
             : <div style={{ fontSize: 12 }}>No confident match{topCandidate ? <span> (closest <strong style={{ color: scoreColor(topCandidate.combined ?? 0) }}>{topCandidate.combined}%</strong>)</span> : ' in LP Master'} — a <strong>new LP record</strong> will be created.</div>}
         </div>
+        {/* The resolution must be visible, not implied: on Accept the credit profile applied to the
+            facility record comes from the ultimate entity, which for a feeder is not the row matched. */}
+        {hasProposedMatch && (() => { const applied = appliedEntity(row); return (
+          <div style={{ background: applied.routed ? 'var(--amber-lt)' : 'var(--tbl)', border: applied.routed ? '1px solid var(--amber)' : '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Parent Routing</div>
+            {applied.routed ? (
+              <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                <strong style={{ color: 'var(--text)' }}>{row.masterName}</strong> is a feeder/SPV.
+                <div style={{ marginTop: 4 }}>
+                  Ratings, LP category and advance rate will be applied from{' '}
+                  <strong style={{ color: 'var(--navy)' }}>{applied.label}</strong>, filling only the fields the matched record leaves blank.
+                </div>
+                <div style={{ marginTop: 5, fontSize: 10, color: 'var(--muted)' }}>
+                  The record stays linked to {row.masterName} for audit.
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12 }}>
+                <strong style={{ color: 'var(--text)' }}>{row.masterName}</strong> is the ultimate entity — its own credit profile is applied.
+              </div>
+            )}
+          </div>
+        )})()}
       </div>
-      {onResolve && row.status !== 'Auto-accept' && (
-        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-          {row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
-          {row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
+      {(onDiscard || (onResolve && row.status !== 'Auto-accept')) && (
+        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {onResolve && row.status !== 'Auto-accept' && row.status !== 'Accepted' && <Button size="sm" onClick={() => onResolve(row.id, 'Accepted')}>✓ Accept</Button>}
+          {onResolve && row.status !== 'Auto-accept' && row.status !== 'Rejected' && <Button variant="ghost" size="sm" onClick={() => onResolve(row.id, 'Rejected')}>✕ Reject</Button>}
+          {/* Escape hatch for a row the Agent BB parsed badly: neither Accept nor Reject describes
+              it — the row should not reach the Shadow BB at all. */}
+          {onDiscard && <Button variant="danger" size="sm" style={{ marginLeft: 'auto' }} onClick={() => onDiscard(row.id)}>⊘ Discard Row</Button>}
         </div>
       )}
     </div>
@@ -158,6 +217,7 @@ export default function MatchQueue() {
   const [checked, setChecked] = useState(new Set<number>())
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
+  const [discardConfirmId, setDiscardConfirmId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [wizardSteps, setWizardSteps] = useState<string[]>([])
   const [matchingConfig, setMatchingConfig] = useState<MatchingConfig | null>(null)
@@ -220,9 +280,30 @@ export default function MatchQueue() {
     pendingDecides.current.push(api.matching.decide(id, action).catch(() => {}))
   }
 
+  // Removes the queue entry outright, so the row is never committed as an LP record. Used for
+  // rows the Agent BB parsed badly — a decision of Accept or Reject would still carry them forward.
+  const handleDiscard = async () => {
+    if (discardConfirmId == null) return
+    const id = discardConfirmId
+    setDiscardConfirmId(null)
+    setQueue(prev => prev.filter(r => r.id !== id))
+    setChecked(prev => { const next = new Set(prev); next.delete(id); return next })
+    if (selectedId === id) setSelectedId(null)
+    try {
+      await api.matching.discard(id)
+      toast('Row discarded.')
+    } catch (e) {
+      toast(`Discard failed: ${String(e)}`)
+      getMatchQueue(activeSubmissionId ?? 0)
+        .then(q => setQueue(q as QueueRow[]))
+        .catch(err => setLoadError(String(err)))
+    }
+  }
+
   const sortColumns = useMemo(() => [
     { key: 'agentName', getValue: (r: QueueRow) => r.agentName },
     { key: 'masterName', getValue: (r: QueueRow) => r.masterName ?? '' },
+    { key: 'ultimateParent', getValue: (r: QueueRow) => appliedEntity(r).label },
     { key: 'score', getValue: (r: QueueRow) => r.score },
     { key: 'quality', getValue: (r: QueueRow) => matchingConfig ? scoreBand(r.score, matchingConfig.thresholds) : '' },
     { key: 'status', getValue: (r: QueueRow) => r.status },
@@ -230,9 +311,55 @@ export default function MatchQueue() {
   ], [matchingConfig])
   const { sort, sortedRows, requestSort } = useSortableRows(filtered, sortColumns)
   const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
-  const { widths, onResizeStart, tableWidth: mqTableWidth } = useColumnResize('match-queue', {
-    checkbox: 36, agentName: 250, masterName: 250, score: 160, quality: 96, status: 82, action: 160,
+  // Two width sets, because the columns behave differently. Checkbox/Confidence/Quality/Status/
+  // Action hold bounded content, so each keeps a hard pixel width: its widest item (the header
+  // itself for Confidence, a Tag for Quality/Status, the button pair for Action) plus the 18px side
+  // padding of `.data-table th/td`. The three name columns carry VARCHAR(255) text and split what
+  // is left in the shares below (~20–25% of the table each), so a wider window grows the names
+  // instead of inflating the badge columns — which is what `table-layout: fixed` did before,
+  // spreading its slack across every declared width.
+  // Storage keys are versioned: useColumnResize merges stored widths over these defaults, so a
+  // returning user would otherwise keep the old Confidence/Action sizing forever.
+  const { widths: fixedW, onResizeStart: onFixedResize } = useColumnResize('match-queue-fixed-v3', {
+    checkbox: 42, score: 116, quality: 104, status: 104, action: 140,
   })
+  const fixedTotal = Object.values(fixedW).reduce((sum, w) => sum + w, 0)
+  const { widths: flexShare, onResizeStart: onFlexResize } = useColumnResize('match-queue-flex-v3', {
+    agentName: 34, masterName: 33, ultimateParent: 33,
+  }, '%', fixedTotal)
+  // The share is resolved to pixels here rather than handed to CSS as a percentage: Blink treats a
+  // `calc()` mixing % and px on a cell of a `table-layout: fixed` table as `auto`, which silently
+  // ignores the width — the columns then split the leftover space evenly and refuse to be dragged.
+  const [queueWidth, setQueueWidth] = useState(0)
+  const queueWrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = queueWrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setQueueWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  // Below its floor the table stops shrinking and the wrapper scrolls, so the name columns never
+  // get squeezed to nothing — and the widths always add up exactly, leaving no slack for
+  // `table-layout: fixed` to spread over the pixel columns.
+  const usableWidth = Math.max(queueWidth, fixedTotal + NAME_COLS * MIN_NAME_COL_PX)
+  // Rounding each share on its own can add a stray pixel that scrolls the whole table sideways, so
+  // round the running total instead: the parts then always sum back to the space being divided.
+  const flexPx = useMemo(() => {
+    const remainder = usableWidth - fixedTotal
+    let acc = 0
+    const take = (share: number) => {
+      const start = acc
+      acc += (remainder * share) / 100
+      return Math.round(acc) - Math.round(start)
+    }
+    return {
+      agentName: take(flexShare.agentName),
+      masterName: take(flexShare.masterName),
+      ultimateParent: take(flexShare.ultimateParent),
+    }
+  }, [usableWidth, fixedTotal, flexShare])
+  const mqTableWidth = fixedTotal + Object.values(flexPx).reduce((sum, w) => sum + w, 0)
 
   useEffect(() => {
     if (selectedId === null || sortedRows.length === 0) return
@@ -307,34 +434,55 @@ export default function MatchQueue() {
         <Button variant="danger" size="sm" onClick={() => setAbortOpen(true)}>Abort Submission</Button>
         <Button size="sm" disabled={committing} style={!canCommit ? { opacity: 0.45, cursor: 'default' } : undefined} title={pending > 0 ? `${pending} item${pending > 1 ? 's' : ''} still pending` : undefined} onClick={handleCommit}>{committing ? 'Committing…' : 'Commit Decisions'}</Button>
       </div>
-      <div style={{ flex: 1, display: 'flex', gap: 12, padding: '0 20px', overflow: 'hidden' }}>
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
-          <table className="data-table" style={{ tableLayout: 'fixed', width: '100%', minWidth: mqTableWidth }}>
+      {/* The queue takes the full width; the Match Analysis form is a docked overlay on row click,
+          the same pattern the LP Master screens use for their record panels. */}
+      <div style={{ flex: 1, display: 'flex', padding: '0 20px', overflow: 'hidden' }}>
+        <div ref={queueWrapRef} className="data-table-wrap" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
+          <table className="data-table" style={{ tableLayout: 'fixed', width: mqTableWidth, minWidth: mqTableWidth }}>
             <thead>
               <tr>
-                <th style={{ width: widths.checkbox, position: 'relative' }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
-                <SortableHeader sortKey="agentName"  sort={sort} onSort={requestSort} style={{ width: widths.agentName }}                        onResizeStart={onResizeStart}>Agent LPRecord Name</SortableHeader>
-                <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort} style={{ width: widths.masterName }}                       onResizeStart={onResizeStart}>Matched LP Master Record</SortableHeader>
-                <SortableHeader sortKey="score"      sort={sort} onSort={requestSort} className="num" style={{ width: widths.score, textAlign: 'right' }} onResizeStart={onResizeStart}>Confidence</SortableHeader>
-                <SortableHeader sortKey="quality"    sort={sort} onSort={requestSort} style={{ width: widths.quality }}                          onResizeStart={onResizeStart}>Quality</SortableHeader>
-                <SortableHeader sortKey="status"     sort={sort} onSort={requestSort} style={{ width: widths.status }}                           onResizeStart={onResizeStart}>Status</SortableHeader>
-                <SortableHeader sortKey="action"     sort={sort} onSort={requestSort} style={{ width: widths.action, padding: '8px 6px' }}       onResizeStart={onResizeStart}>Action</SortableHeader>
+                <th style={{ width: fixedW.checkbox, padding: '8px 10px', position: 'relative' }}><input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = someChecked }} onChange={toggleAll} /></th>
+                <SortableHeader sortKey="agentName"  sort={sort} onSort={requestSort} style={{ width: flexPx.agentName }}                         onResizeStart={onFlexResize}>Agent LPRecord Name</SortableHeader>
+                <SortableHeader sortKey="masterName" sort={sort} onSort={requestSort} style={{ width: flexPx.masterName }}                        onResizeStart={onFlexResize}>Matched LP Master Record</SortableHeader>
+                <SortableHeader sortKey="ultimateParent" sort={sort} onSort={requestSort} style={{ width: flexPx.ultimateParent }}                onResizeStart={onFlexResize}>Ultimate Parent (To Be Applied)</SortableHeader>
+                <SortableHeader sortKey="score"      sort={sort} onSort={requestSort} className="num" style={{ width: fixedW.score, textAlign: 'right' }} onResizeStart={onFixedResize}>Confidence</SortableHeader>
+                <SortableHeader sortKey="quality"    sort={sort} onSort={requestSort} style={{ width: fixedW.quality }}                          onResizeStart={onFixedResize}>Quality</SortableHeader>
+                <SortableHeader sortKey="status"     sort={sort} onSort={requestSort} style={{ width: fixedW.status }}                           onResizeStart={onFixedResize}>Status</SortableHeader>
+                <SortableHeader sortKey="action"     sort={sort} onSort={requestSort} style={{ width: fixedW.action, padding: '8px 6px' }}       onResizeStart={onFixedResize}>Action</SortableHeader>
               </tr>
             </thead>
             <tbody>
-              {pageItems.map(r => (
+              {pageItems.map(r => {
+                const applied = appliedEntity(r)
+                return (
                 <tr key={r.id} className={selectedId === r.id ? 'data-table-row-selected' : undefined} onClick={() => setSelectedId(prev => prev === r.id ? null : r.id)} style={{ opacity: r.status !== 'Pending' ? 0.55 : 1, cursor: 'pointer' }}>
-                  <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggleRow(r.id)} /></td>
+                  <td style={{ padding: '7px 10px' }} onClick={e => e.stopPropagation()}><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggleRow(r.id)} /></td>
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={r.agentName}>{r.agentName}</div></td>
                   <td><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.masterName ? 'var(--text)' : 'var(--muted)', fontStyle: r.masterName ? 'normal' : 'italic' }} title={r.masterName ?? ''}>{r.masterName ?? 'No match found — new LP record will be created'}</div></td>
+                  <td>
+                    {!applied.matched ? (
+                      <span style={{ color: 'var(--muted)' }}>—</span>
+                    ) : applied.routed ? (
+                      <div
+                        title={`Feeder/SPV — credit profile is applied from ${applied.label}`}
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--navy)' }}
+                      >
+                        <span aria-hidden="true" style={{ marginRight: 5, color: 'var(--amber)', fontSize: 10 }}>↰</span>
+                        {applied.label}
+                      </div>
+                    ) : (
+                      <span title="Matched record is the ultimate entity — its own profile is applied" style={{ color: 'var(--muted)', fontSize: 11 }}>Self</span>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: scoreColor(r.score) }}>{r.score}%</td>
                   <td><Tag variant={matchingConfig ? bandVariant(r.score, matchingConfig.thresholds) : ''}>{matchingConfig ? scoreBand(r.score, matchingConfig.thresholds) : '—'}</Tag></td>
                   <td><Tag variant={r.status === 'Accepted' ? 'active' : r.status === 'Rejected' ? 'excl' : 'pending'}>{r.status}</Tag></td>
                   <td style={{ padding: '7px 6px' }} onClick={e => e.stopPropagation()}>
-                    {r.status === 'Pending' ? (<div style={{ display: 'flex', gap: 6 }}><Button size="sm" onClick={() => resolveOne(r.id, 'Accepted')}>✓ Accept</Button><Button variant="ghost" size="sm" onClick={() => resolveOne(r.id, 'Rejected')}>✕ Reject</Button></div>) : (<span style={{ fontSize: 11, color: 'var(--red)', cursor: 'pointer', fontWeight: 600 }} onClick={() => resolveOne(r.id, 'Pending')}>Undo</span>)}
+                    {r.status === 'Pending' ? (<div style={{ display: 'flex', gap: 4 }}><Button size="sm" style={{ padding: '0 7px' }} onClick={() => resolveOne(r.id, 'Accepted')}>✓ Accept</Button><Button variant="ghost" size="sm" style={{ padding: '0 7px' }} onClick={() => resolveOne(r.id, 'Rejected')}>✕ Reject</Button></div>) : (<span style={{ fontSize: 11, color: 'var(--red)', cursor: 'pointer', fontWeight: 600 }} onClick={() => resolveOne(r.id, 'Pending')}>Undo</span>)}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           <div className="tbl-footer">
@@ -347,23 +495,25 @@ export default function MatchQueue() {
           </div>
         </div>
 
-        <div style={{ width: 360, flexShrink: 0, height: '100%', overflow: 'hidden' }}>
-          {selectedRow && matchingConfig ? (
-            <MatchDetailPanel row={selectedRow} onClose={() => setSelectedId(null)} onResolve={resolveOne} config={matchingConfig} />
-          ) : (
-            <div style={{ height: '100%', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--card)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, color: 'var(--muted)' }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity={0.4}>
-                <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z" />
-              </svg>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)', marginBottom: 4 }}>No row selected</div>
-                <div style={{ fontSize: 11, lineHeight: 1.5 }}>Click any row in the queue to view the full match analysis and decision tools.</div>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
+
+      {selectedRow && matchingConfig && (
+        <DraggablePanel className="LPRecord-detail-overlay" storageKey="match-queue-detail">
+          <MatchDetailPanel
+            row={selectedRow}
+            onClose={() => setSelectedId(null)}
+            onResolve={resolveOne}
+            onDiscard={id => setDiscardConfirmId(id)}
+            config={matchingConfig}
+            overlay
+          />
+        </DraggablePanel>
+      )}
     </div>
+    <Modal open={discardConfirmId != null} onClose={() => setDiscardConfirmId(null)} title="Discard Row?" subtitle="This match queue row will be permanently removed."
+      footer={<><Button variant="secondary" onClick={() => setDiscardConfirmId(null)}>Cancel</Button><Button variant="danger" onClick={handleDiscard}>Discard</Button></>}>
+      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>The row is dropped from this submission — no LP record is created or updated for it on Commit Decisions, and it will not appear in the Shadow BB. To restore it, re-upload the Agent BB.</div>
+    </Modal>
     <Modal open={abortOpen} onClose={() => setAbortOpen(false)} title="Abort Submission?" subtitle="This will permanently remove the submission from history."
       footer={<><Button variant="secondary" onClick={() => setAbortOpen(false)}>Keep Working</Button><Button variant="danger" onClick={() => handleAbort()}>Abort Submission</Button></>}>
       <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>Aborting at this stage is safe — no LP records have been added or updated yet. If you need to reprocess this Agent BB, upload it again.</div>

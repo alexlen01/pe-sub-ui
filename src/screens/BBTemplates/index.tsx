@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Card    from '../../components/ui/Card'
 import Button  from '../../components/ui/Button'
 import InfoTip from '../../components/ui/InfoTip'
 import Modal   from '../../components/ui/Modal'
 import { useApp } from '../../context/AppContext'
+import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { api } from '../../services/api'
-import type { BbTemplate, BbTemplateInput, BbTemplateTabInput } from '../../services/api'
+import type { BbTemplate, BbTemplateInput, BbTemplateTabInput, TemplateLegendRule } from '../../services/api'
 import { refreshTemplateService } from '../../services/templateService'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -40,6 +41,10 @@ const BB_TEMPLATE_TIP_ITEMS = [
     label: 'When to add one',
     desc: 'Add or upload a template when an agent bank sends a new workbook format or changes the tab/header structure materially.',
   },
+  {
+    label: 'Editing and removing',
+    desc: 'Click any row to open its definition for editing. Delete Template sits in the footer of that form.',
+  },
 ]
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -56,27 +61,6 @@ const field = (w?: string): React.CSSProperties => ({
   display: 'flex', flexDirection: 'column', flex: w ? `0 0 ${w}` : '1',
 })
 const row: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-end' }
-
-const detailHeading: React.CSSProperties = {
-  fontWeight: 700, color: 'var(--navy)', marginBottom: 8, fontSize: 11,
-  textTransform: 'uppercase', letterSpacing: '0.04em',
-}
-const detailSubHeading: React.CSSProperties = {
-  fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
-  letterSpacing: '0.04em', marginBottom: 4,
-}
-const chip: React.CSSProperties = {
-  background: 'var(--hover)', border: '1px solid var(--border)', borderRadius: 10,
-  padding: '1px 8px', fontSize: 10, fontFamily: 'monospace',
-}
-const notesContent: React.CSSProperties = {
-  width: '100%',
-  fontSize: 11,
-  color: 'var(--muted)',
-  whiteSpace: 'pre-wrap',
-  overflowWrap: 'anywhere',
-  wordBreak: 'break-word',
-}
 
 // ── Form state ────────────────────────────────────────────────────────────────
 
@@ -95,7 +79,12 @@ interface FormState {
   hasColorFlags:          boolean
   autoDiscoverTabs:       boolean
   summaryRowsAboveHeader: string
+  summaryRowRange:        string
+  titleRow:               string
+  titleText:              string
   detectKeys:             string   // comma-separated
+  legend:                 TemplateLegendRule[]
+  notes:                  string   // one note per line
   // single LP_GRID tab
   tabSheetName:       string
   tabHeaderRowIndex:  string
@@ -109,14 +98,17 @@ function emptyForm(): FormState {
   return {
     templateSlug: '', templateName: '', agentName: '', templateClass: 'A', sheetName: '', headerRowIndex: '',
     autoLearned: false, trancheCount: '1', hasGroupingRows: false, hasColorFlags: false, autoDiscoverTabs: false,
-    summaryRowsAboveHeader: '0', detectKeys: '',
+    summaryRowsAboveHeader: '0', summaryRowRange: '', titleRow: '', titleText: '',
+    detectKeys: '', legend: [], notes: '',
     tabSheetName: '', tabHeaderRowIndex: '', tabHeaderRowSpan: '1',
     tabSkipKeywords: DEFAULT_SKIP_KEYWORDS.join(','), tabColumns: '',
     groups: [],
   }
 }
 
-function fromTemplate(t: BbTemplate): FormState {
+// Exported for the round-trip guard in bbTemplateRoundTrip.test.ts: PUT /api/bb-templates/{id}
+// replaces the whole record, so anything these two drop is erased on save.
+export function fromTemplate(t: BbTemplate): FormState {
   const lpGrid = t.tabs.find(tb => tb.tabRole === 'LP_GRID')
   return {
     templateSlug:           t.templateSlug ?? '',
@@ -131,7 +123,12 @@ function fromTemplate(t: BbTemplate): FormState {
     hasColorFlags:          t.hasColorFlags,
     autoDiscoverTabs:       t.autoDiscoverTabs,
     summaryRowsAboveHeader: String(t.summaryRowsAboveHeader),
+    summaryRowRange:        t.summaryRowRange ?? '',
+    titleRow:               t.titleRow != null ? String(t.titleRow) : '',
+    titleText:              t.titleText ?? '',
     detectKeys:             t.detectKeys.join(', '),
+    legend:                 t.legend.map(l => ({ style: l.style, meaning: l.meaning })),
+    notes:                  t.notes.join('\n'),
     tabSheetName:       lpGrid?.sheetName ?? '',
     tabHeaderRowIndex:  lpGrid?.headerRowIndex != null ? String(lpGrid.headerRowIndex) : '',
     tabHeaderRowSpan:   String(lpGrid?.headerRowSpan ?? 1),
@@ -145,7 +142,12 @@ function splitList(raw: string): string[] {
   return raw.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-function toRequest(f: FormState): BbTemplateInput {
+// Notes are free text that may itself contain commas, so the textarea is line-delimited.
+function splitLines(raw: string): string[] {
+  return raw.split('\n').map(s => s.trim()).filter(Boolean)
+}
+
+export function toRequest(f: FormState): BbTemplateInput {
   const tab: BbTemplateTabInput = {
     tabRole:        'LP_GRID',
     tabSort:        1,
@@ -171,12 +173,12 @@ function toRequest(f: FormState): BbTemplateInput {
     hasColorFlags:          f.hasColorFlags,
     autoDiscoverTabs:       f.autoDiscoverTabs,
     summaryRowsAboveHeader: parseInt(f.summaryRowsAboveHeader) || 0,
-    summaryRowRange:        null,
-    titleRow:               null,
-    titleText:              null,
+    summaryRowRange:        f.summaryRowRange.trim() || null,
+    titleRow:               f.titleRow ? parseInt(f.titleRow) : null,
+    titleText:              f.titleText.trim() || null,
     detectKeys:             splitList(f.detectKeys),
-    legend:                 [],
-    notes:                  [],
+    legend:                 f.legend.filter(l => l.style.trim() || l.meaning.trim()),
+    notes:                  splitLines(f.notes),
     tabs:                   [tab],
   }
 }
@@ -184,19 +186,21 @@ function toRequest(f: FormState): BbTemplateInput {
 // ── Template form modal ───────────────────────────────────────────────────────
 
 function TemplateFormModal({
-  open, title, initial, onClose, onSave,
+  open, title, initial, onClose, onSave, onDelete,
 }: {
-  open:    boolean
-  title:   string
-  initial: FormState
-  onClose: () => void
-  onSave:  (f: FormState) => Promise<void>
+  open:      boolean
+  title:     string
+  initial:   FormState
+  onClose:   () => void
+  onSave:    (f: FormState) => Promise<void>
+  onDelete?: () => Promise<void>
 }) {
-  const [form,  setForm]  = useState<FormState>(initial)
-  const [error, setError] = useState('')
-  const [busy,  setBusy]  = useState(false)
+  const [form,    setForm]    = useState<FormState>(initial)
+  const [error,   setError]   = useState('')
+  const [busy,    setBusy]    = useState(false)
+  const [confirm, setConfirm] = useState(false)
 
-  useEffect(() => { if (open) { setForm(initial); setError(''); setBusy(false) } }, [open])
+  useEffect(() => { if (open) { setForm(initial); setError(''); setBusy(false); setConfirm(false) } }, [open])
 
   const set = (key: keyof FormState, val: unknown) =>
     setForm(prev => ({ ...prev, [key]: val }))
@@ -215,6 +219,14 @@ function TemplateFormModal({
       groups: prev.groups.map((g, j) => j === i ? { ...g, [key]: val } : g),
     }))
 
+  const addLegend = () => setForm(prev => ({ ...prev, legend: [...prev.legend, { style: '', meaning: '' }] }))
+  const removeLegend = (i: number) => setForm(prev => ({ ...prev, legend: prev.legend.filter((_, j) => j !== i) }))
+  const setLegend = (i: number, key: keyof TemplateLegendRule, val: string) =>
+    setForm(prev => ({
+      ...prev,
+      legend: prev.legend.map((l, j) => j === i ? { ...l, [key]: val } : l),
+    }))
+
   const handleSave = async () => {
     if (!form.templateName.trim()) { setError('Template Name is required.'); return }
     setBusy(true)
@@ -228,18 +240,48 @@ function TemplateFormModal({
     }
   }
 
+  const handleDelete = async () => {
+    if (!onDelete) return
+    setBusy(true)
+    setError('')
+    try {
+      await onDelete()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+      setConfirm(false)
+    }
+  }
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
+      // 38% wider than the 520px .modal-box default — the tab/group structure fields need the
+      // room. The stylesheet's max-width: 92vw still caps this on narrow viewports.
+      width={718}
       subtitle="Define the workbook structure the extraction engine uses to parse this Agent BB format."
-      footer={
+      footer={confirm ? (
         <>
+          <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--danger)', fontWeight: 600, lineHeight: 1.4 }}>
+            Delete this template permanently, including its tab and group definitions?
+          </span>
+          <Button variant="secondary" onClick={() => setConfirm(false)} disabled={busy}>Cancel</Button>
+          <Button variant="danger" onClick={handleDelete} disabled={busy}>{busy ? 'Removing…' : 'Yes, Remove'}</Button>
+        </>
+      ) : (
+        <>
+          {onDelete && (
+            <Button variant="danger" onClick={() => setConfirm(true)} disabled={busy} style={{ marginRight: 'auto' }}>
+              Delete Template
+            </Button>
+          )}
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button onClick={handleSave} disabled={busy}>{busy ? 'Saving…' : 'Save Template'}</Button>
         </>
-      }
+      )}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingBottom: 4 }}>
 
@@ -298,10 +340,28 @@ function TemplateFormModal({
 
             <div style={row}>
               <div style={field('110px')}>
+                <span style={label}>Title Row</span>
+                <input type="number" min={1} style={inp()} value={form.titleRow} onChange={e => set('titleRow', e.target.value)} placeholder="—" />
+              </div>
+              <div style={field()}>
+                <span style={label}>Title Text</span>
+                <input style={inp()} value={form.titleText} onChange={e => set('titleText', e.target.value)} placeholder="anchor text on the title row (e.g. Deal Name:)" />
+              </div>
+            </div>
+
+            <div style={row}>
+              <div style={field('110px')}>
                 <span style={label}>Summary Rows</span>
                 <input type="number" min={0} style={inp()} value={form.summaryRowsAboveHeader} onChange={e => set('summaryRowsAboveHeader', e.target.value)} />
               </div>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center', paddingBottom: 2 }}>
+              <div style={field('140px')}>
+                <span style={label}>Summary Row Range</span>
+                <input style={inp()} value={form.summaryRowRange} onChange={e => set('summaryRowRange', e.target.value)} placeholder="e.g. 1-7" />
+              </div>
+            </div>
+
+            <div style={row}>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', paddingBottom: 2, flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.hasGroupingRows} onChange={e => set('hasGroupingRows', e.target.checked)} />
                   Group Header Rows
@@ -397,59 +457,68 @@ function TemplateFormModal({
           )}
         </div>
 
+        {/* ── Cell Colour Legend ── */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 4, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Cell Colour Legend
+            </span>
+            <Button size="sm" variant="secondary" onClick={addLegend}>+ Add Rule</Button>
+          </div>
+
+          {form.legend.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>
+              No legend rules. Add one per colour or style the workbook uses to encode LP-level meaning.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {form.legend.map((l, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    style={inp('190px')}
+                    placeholder="Style (e.g. yellow fill)"
+                    value={l.style}
+                    onChange={e => setLegend(i, 'style', e.target.value)}
+                  />
+                  <input
+                    style={inp()}
+                    placeholder="Meaning (what the style encodes)"
+                    value={l.meaning}
+                    onChange={e => setLegend(i, 'meaning', e.target.value)}
+                  />
+                  <button
+                    onClick={() => removeLegend(i)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                    title="Remove rule"
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Notes ── */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)', paddingBottom: 4, marginBottom: 10 }}>
+            Notes
+          </div>
+          <textarea
+            style={{ ...inp(), minHeight: 76, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+            value={form.notes}
+            onChange={e => set('notes', e.target.value)}
+            placeholder="One note per line — extraction caveats, format quirks, provenance."
+          />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            One note per line. The first note shows in the registry table&apos;s Notes column.
+          </div>
+        </div>
+
         {error && (
           <div style={{ padding: '8px 12px', background: 'var(--danger-lt)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
             {error}
           </div>
         )}
       </div>
-    </Modal>
-  )
-}
-
-// ── Delete confirm modal ───────────────────────────────────────────────────────
-
-function DeleteModal({ template, onClose, onConfirm }: {
-  template: BbTemplate | null
-  onClose: () => void
-  onConfirm: () => Promise<void>
-}) {
-  const [busy, setBusy] = useState(false)
-  const [err,  setErr]  = useState('')
-  useEffect(() => {
-    if (template) {
-      setBusy(false)
-      setErr('')
-    }
-  }, [template?.id])
-  const confirm = async () => {
-    setErr('')
-    setBusy(true)
-    try {
-      await onConfirm()
-      onClose()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-      setBusy(false)
-    }
-  }
-  return (
-    <Modal
-      open={template != null}
-      onClose={onClose}
-      title="Remove BB Template?"
-      subtitle={template?.templateName ?? ''}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button variant="danger" onClick={confirm} disabled={busy}>{busy ? 'Removing…' : 'Remove Template'}</Button>
-        </>
-      }
-    >
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-        This will permanently delete the template definition for <strong>{template?.templateName}</strong> (Class {template?.templateClass}), including all tab and group section definitions. Existing submissions that matched against this template are not affected.
-      </div>
-      {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
     </Modal>
   )
 }
@@ -515,16 +584,30 @@ function ClassBadge({ cls }: { cls: string }) {
 export default function BBTemplates() {
   const { toast, navigate } = useApp()
 
-  const [templates,    setTemplates]    = useState<BbTemplate[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [loadError,    setLoadError]    = useState<string | null>(null)
-  const [expanded,     setExpanded]     = useState<number | null>(null)
-  const [createOpen,   setCreateOpen]   = useState(false)
-  const [editTarget,   setEditTarget]   = useState<BbTemplate | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<BbTemplate | null>(null)
+  const [templates,  setTemplates]  = useState<BbTemplate[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [loadError,  setLoadError]  = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<BbTemplate | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
   const mutationDisabled = loadError != null
+
+  // Sort accessors mirror what each cell renders, so the ordering matches what the analyst reads.
+  // The two count columns and Header Row sort numerically and return null where the cell shows
+  // "—", which compareSortValues pushes to the end regardless of direction.
+  const sortColumns = useMemo(() => [
+    { key: 'templateId', getValue: (t: BbTemplate) => t.templateSlug ?? t.templateName },
+    { key: 'agent',      getValue: (t: BbTemplate) => t.agentName ?? t.templateName },
+    { key: 'cls',        getValue: (t: BbTemplate) => t.templateClass },
+    { key: 'tabs',       getValue: (t: BbTemplate) => workbookTabsLabel(t) },
+    { key: 'tabLabel',   getValue: (t: BbTemplate) => tabLabel(t) },
+    { key: 'headerRow',  getValue: (t: BbTemplate) => primaryLpGrid(t)?.headerRowIndex ?? t.headerRowIndex ?? null },
+    { key: 'headerCount', getValue: (t: BbTemplate) => headerCount(t) || null },
+    { key: 'groups',     getValue: (t: BbTemplate) => groupCount(t) || null },
+    { key: 'notes',      getValue: (t: BbTemplate) => firstNote(t) },
+  ], [])
+  const { sort, sortedRows, requestSort } = useSortableRows(templates, sortColumns)
 
   const load = () => {
     setLoadError(null)
@@ -554,11 +637,12 @@ export default function BBTemplates() {
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
+    if (!editTarget) return
+    const target = editTarget
     try {
-      await api.bbTemplates.remove(deleteTarget.id)
-      setTemplates(prev => prev.filter(t => t.id !== deleteTarget.id))
-      toast(`Template "${deleteTarget.templateName}" removed.`)
+      await api.bbTemplates.remove(target.id)
+      setTemplates(prev => prev.filter(t => t.id !== target.id))
+      toast(`Template "${target.templateName}" removed.`)
       refreshTemplateService()
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -601,7 +685,7 @@ export default function BBTemplates() {
 
       <Card
         title={`BB Template Registry (${templates.length})`}
-        subtitle="One row per Agent BB workbook format variant registered for extraction."
+        subtitle="One row per Agent BB workbook format variant registered for extraction. Click a row to edit it."
         action={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <InfoTip title="BB Templates" items={BB_TEMPLATE_TIP_ITEMS} width={340} />
@@ -615,100 +699,59 @@ export default function BBTemplates() {
       >
         {templates.length === 0 ? (
           <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            No templates registered. Use “↑ Upload Template” to import a BB-Template-Import workbook, or “+ Add Template” to define one manually.
+            No templates registered. Use “↑ Upload Template” to import a BB template workbook, or “+ Add Template” to define one manually.
           </div>
         ) : (
           <>
             <div className="data-table-wrap" style={{ padding: '0 0 4px', scrollbarGutter: 'stable' }}>
-              <table className="data-table" style={{ fontSize: 11, tableLayout: 'fixed', minWidth: 1260 }}>
-                <colgroup>
-                  <col style={{ width: 150 }} />
-                  <col style={{ width: 160 }} />
-                  <col style={{ width: 70 }} />
-                  <col style={{ width: 95 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 100 }} />
-                  <col style={{ width: 70 }} />
-                  <col style={{ width: 80 }} />
-                  <col />
-                  <col style={{ width: 180 }} />
-                  <col style={{ width: 150 }} />
-                </colgroup>
+              {/* table-layout: auto — every column sizes itself to its own content, so Class,
+                  Workbook Tabs and the two counts hug their labels instead of being pinned to a
+                  guessed pixel width. Notes is the one declared width: 20% claims the extra room
+                  its free text needs, and the browser hands the rest back to the other columns. */}
+              <table className="data-table" style={{ fontSize: 11, tableLayout: 'auto', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th>Template ID</th>
-                    <th>Agent / Fund</th>
-                    <th>Class</th>
-                    <th>Workbook Tabs</th>
-                    <th>Tab Label</th>
-                    <th>Header Row</th>
-                    <th style={{ textAlign: 'right' }}># Hdrs</th>
-                    <th style={{ textAlign: 'right' }}>Groups</th>
-                    <th>Notes</th>
-                    <th>Template File</th>
-                    <th />
+                    <SortableHeader sortKey="templateId"  sort={sort} onSort={requestSort}>Template ID</SortableHeader>
+                    <SortableHeader sortKey="agent"       sort={sort} onSort={requestSort}>Agent / Fund</SortableHeader>
+                    <SortableHeader sortKey="cls"         sort={sort} onSort={requestSort}>Class</SortableHeader>
+                    <SortableHeader sortKey="tabs"        sort={sort} onSort={requestSort}>Workbook Tabs</SortableHeader>
+                    <SortableHeader sortKey="tabLabel"    sort={sort} onSort={requestSort}>Sheet Name</SortableHeader>
+                    <SortableHeader sortKey="headerRow"   sort={sort} onSort={requestSort}>Header Row</SortableHeader>
+                    <SortableHeader sortKey="headerCount" sort={sort} onSort={requestSort} className="num" style={{ textAlign: 'right' }}>Columns</SortableHeader>
+                    <SortableHeader sortKey="groups"      sort={sort} onSort={requestSort} className="num" style={{ textAlign: 'right' }}>Groups</SortableHeader>
+                    <SortableHeader sortKey="notes"       sort={sort} onSort={requestSort} style={{ width: '20%' }}>Notes</SortableHeader>
                   </tr>
                 </thead>
                 <tbody>
-                  {templates.map(t => {
-                    const isOpen = expanded === t.id
+                  {sortedRows.map(t => {
                     const groups = groupCount(t)
                     return (
-                      <React.Fragment key={t.id}>
-                        <tr
-                          className={isOpen ? 'data-table-row-selected' : undefined}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setExpanded(prev => prev === t.id ? null : t.id)}
-                        >
-                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            <span style={{ marginRight: 6, fontSize: 10, color: 'var(--muted)', userSelect: 'none' }}>
-                              {isOpen ? '▾' : '▸'}
-                            </span>
-                            <strong style={{ fontFamily: 'monospace' }}>{t.templateSlug ?? t.templateName}</strong>
-                          </td>
-                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.agentName ?? t.templateName}</td>
-                          <td><ClassBadge cls={t.templateClass} /></td>
-                          <td>{workbookTabsLabel(t)}</td>
-                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(t)}</td>
-                          <td style={{ fontFamily: 'monospace' }}>{headerRowLabel(t)}</td>
-                          <td style={{ textAlign: 'right' }}>{headerCount(t) || '—'}</td>
-                          <td style={{ textAlign: 'right', color: groups > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groups > 0 ? 600 : 400 }}>
-                            {groups || '—'}
-                          </td>
-                          <td style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {firstNote(t)}
-                          </td>
-                          <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {t.sourceFileName ? (
-                              <a
-                                href={api.bbTemplates.downloadUrl(t.id)}
-                                download={t.sourceFileName}
-                                onClick={e => e.stopPropagation()}
-                                title={`Download ${t.sourceFileName}`}
-                                style={{ color: 'var(--red)', fontWeight: 600, textDecoration: 'none' }}
-                              >
-                                ↓ {t.sourceFileName}
-                              </a>
-                            ) : (
-                              <span style={{ color: 'var(--muted)' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
-                              <Button size="sm" variant="secondary" disabled={mutationDisabled} onClick={() => setEditTarget(t)}>Edit</Button>
-                              <Button size="sm" variant="danger" disabled={mutationDisabled} onClick={() => setDeleteTarget(t)}>Delete</Button>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {isOpen && (
-                          <tr>
-                            <td colSpan={11} style={{ background: 'var(--hover)', padding: '10px 24px 14px 36px', borderBottom: '1px solid var(--border)' }}>
-                              <TemplateDetail template={t} />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                      <tr
+                        key={t.id}
+                        className={editTarget?.id === t.id ? 'data-table-row-selected' : undefined}
+                        style={{ cursor: mutationDisabled ? 'default' : 'pointer' }}
+                        title={mutationDisabled ? undefined : 'Click to edit this template'}
+                        onClick={() => { if (!mutationDisabled) setEditTarget(t) }}
+                      >
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <strong style={{ fontFamily: 'monospace' }}>{t.templateSlug ?? t.templateName}</strong>
+                        </td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.agentName ?? t.templateName}</td>
+                        <td><ClassBadge cls={t.templateClass} /></td>
+                        <td>{workbookTabsLabel(t)}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(t)}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{headerRowLabel(t)}</td>
+                        <td style={{ textAlign: 'right' }}>{headerCount(t) || '—'}</td>
+                        <td style={{ textAlign: 'right', color: groups > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groups > 0 ? 600 : 400 }}>
+                          {groups || '—'}
+                        </td>
+                        {/* The one wrapping cell. Every other column is nowrap, so it sizes to its
+                            own content; a nowrap Notes would instead size to its longest note and
+                            drag the table into a horizontal scroll, leaving the 20% inert. */}
+                        <td style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
+                          {firstNote(t)}
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -727,7 +770,7 @@ export default function BBTemplates() {
         onSave={handleCreate}
       />
 
-      {/* Edit modal */}
+      {/* Edit modal — opened by clicking a registry row; Delete lives in its footer */}
       {editTarget && (
         <TemplateFormModal
           open={editTarget != null}
@@ -735,142 +778,8 @@ export default function BBTemplates() {
           initial={fromTemplate(editTarget)}
           onClose={() => setEditTarget(null)}
           onSave={handleEdit}
+          onDelete={handleDelete}
         />
-      )}
-
-      {/* Delete modal */}
-      <DeleteModal
-        template={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
-      />
-    </div>
-  )
-}
-
-// ── Expanded row detail panel ─────────────────────────────────────────────────
-
-function TemplateDetail({ template }: { template: BbTemplate }) {
-  const summary = template.summaryRowRange
-    ?? (template.summaryRowsAboveHeader > 0 ? `1-${template.summaryRowsAboveHeader}` : '—')
-  const recognition: ReadonlyArray<readonly [string, string]> = [
-    ['Template ID',  template.templateSlug ?? '—'],
-    ['Agent Bank',   template.agentName ?? '—'],
-    ['Title',        template.titleText ? `Row ${template.titleRow ?? '?'} · "${template.titleText}"` : '—'],
-    ['Auto-Discover', template.autoDiscoverTabs ? 'Yes' : 'No'],
-    ['Summary Rows', summary],
-  ]
-  const flags: ReadonlyArray<readonly [string, boolean | number]> = [
-    ['Has Grouping Rows', template.hasGroupingRows],
-    ['Has Colour Flags',  template.hasColorFlags],
-    ['Auto-Learned',      template.autoLearned],
-    ['Tranche Count',     template.trancheCount],
-  ]
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px 32px', fontSize: 12, alignItems: 'start', width: '100%' }}>
-
-      {/* Recognition */}
-      <div>
-        <div style={detailHeading}>Recognition</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px' }}>
-          {recognition.map(([k, v]) => (
-            <React.Fragment key={k}>
-              <span style={{ color: 'var(--muted)' }}>{k}</span>
-              <span style={{ fontWeight: 600 }}>{v}</span>
-            </React.Fragment>
-          ))}
-        </div>
-        {template.detectKeys.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={detailSubHeading}>Detect Keys</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 240 }}>
-              {template.detectKeys.map(k => <span key={k} style={chip}>{k}</span>)}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Flags */}
-      <div>
-        <div style={detailHeading}>Flags</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px' }}>
-          {flags.map(([k, v]) => (
-            <React.Fragment key={k}>
-              <span style={{ color: 'var(--muted)' }}>{k}</span>
-              <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                {typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v)}
-              </span>
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      {template.tabs.map(tab => (
-        <div key={tab.id}>
-          <div style={detailHeading}>{tab.tabRole} Tab{tab.sleeveName ? ` · ${tab.sleeveName}` : ''}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '3px 14px', marginBottom: 8 }}>
-            {([
-              ['Sheet',       tab.sheetName ?? '—'],
-              ['Header Row',  tab.headerRowIndex ?? '—'],
-              ['Header Span', tab.headerRowSpan],
-            ] as ReadonlyArray<readonly [string, string | number]>).map(([k, v]) => (
-              <React.Fragment key={k}>
-                <span style={{ color: 'var(--muted)' }}>{k}</span>
-                <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{String(v)}</span>
-              </React.Fragment>
-            ))}
-          </div>
-
-          {tab.columns.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={detailSubHeading}>Columns Extracted ({tab.columns.length})</div>
-              <ol style={{ margin: 0, paddingLeft: 18 }}>
-                {tab.columns.map((c, i) => <li key={`${c}-${i}`} style={{ fontSize: 11, padding: '1px 0' }}>{c}</li>)}
-              </ol>
-            </div>
-          )}
-
-          {tab.groups.length > 0 && (
-            <div>
-              <div style={detailSubHeading}>LP Category Groups</div>
-              {tab.groups.map(g => (
-                <div key={g.id} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
-                  <span style={{ color: 'var(--muted)', minWidth: 16, textAlign: 'right' }}>{g.groupSort}.</span>
-                  <span style={{ flex: 1 }}>{g.headerText}</span>
-                  <span style={{ color: 'var(--red)', fontWeight: 600 }}>{g.classification}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* Legend */}
-      {template.legend.length > 0 && (
-        <div style={{ gridColumn: '1 / -1' }}>
-          <div style={detailHeading}>Cell Format Legend</div>
-          {template.legend.map((l, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 11, padding: '2px 0' }}>
-              <span style={{ fontWeight: 600, minWidth: 90 }}>{l.style}</span>
-              <span style={{ color: 'var(--muted)' }}>{l.meaning}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Notes */}
-      {template.notes.length > 0 && (
-        <div style={{ gridColumn: '1 / -1' }}>
-          <div style={detailHeading}>Notes</div>
-          <div style={notesContent}>
-            {template.notes.map((n, i) => (
-              <div key={i} style={{ padding: i === 0 ? 0 : '6px 0 0' }}>
-                {n}
-              </div>
-            ))}
-          </div>
-        </div>
       )}
     </div>
   )

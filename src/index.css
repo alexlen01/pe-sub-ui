@@ -93,6 +93,46 @@ body {
 .notification-item p { margin: 5px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .notification-item button { padding: 0; border: 0; background: transparent; color: var(--blue); font-size: 11px; font-weight: 700; cursor: pointer; }
 .notification-item button:hover { text-decoration: underline; }
+.api-status     { padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
+.api-status-up  { background: var(--green-lt); color: var(--green); }
+.api-status-down{ background: var(--danger-lt); color: var(--danger); }
+
+/* ── Account menu ──────────────────────────────────────────── */
+.user-menu          { position: relative; }
+.user-menu-trigger  { border: 0; font-family: inherit; cursor: pointer; }
+.user-menu-trigger[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--border); }
+.user-panel         { position: absolute; z-index: 1000; top: calc(100% + 10px); right: 0; width: min(300px, calc(100vw - 24px)); border: 1px solid var(--border); border-radius: 8px; background: var(--card); box-shadow: 0 12px 32px rgba(17, 35, 60, .18); overflow: hidden; }
+.user-panel-id      { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.user-panel-id strong { display: block; color: var(--text); font-size: 12px; }
+.user-panel-id span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; word-break: break-all; }
+.user-panel-meta    { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.user-panel-meta > div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.user-panel-meta dt { color: var(--muted); font-size: 11px; }
+.user-panel-meta dd { color: var(--text); font-size: 11px; font-weight: 600; text-align: right; }
+.user-panel-actions { padding: 12px 16px; }
+.user-panel-actions p { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.user-panel-actions code { font-size: 10px; background: var(--tbl); padding: 0 3px; border-radius: 3px; }
+.user-panel-signout { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); color: var(--red); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.user-panel-signout:hover { background: var(--red-lt); border-color: var(--red); }
+
+/* ── Dev sign-in gate (local development only) ─────────────── */
+.signin           { height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg); overflow: auto; }
+.signin-card      { width: min(420px, 100%); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+.signin-head      { background: var(--navy-dk); border-bottom: 2px solid var(--gold); padding: 17px 20px; }
+.signin-head-name { color: var(--gold); font-weight: 700; font-size: 13px; letter-spacing: .3px; }
+.signin-head-sub  { color: var(--side-t); font-size: 10px; margin-top: 2px; }
+.signin-body      { padding: 20px; }
+.signin-heading   { color: var(--navy); font-size: 15px; font-weight: 700; }
+.signin-lead      { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.signin-list      { list-style: none; margin: 16px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.signin-user      { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); font-family: inherit; text-align: left; cursor: pointer; transition: all .15s; }
+.signin-user:hover { border-color: var(--red); background: var(--red-lt); }
+.signin-user-id   { flex: 1; min-width: 0; }
+.signin-user-id strong { display: block; color: var(--text); font-size: 12px; }
+.signin-user-id span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; word-break: break-all; }
+.signin-user-role { color: var(--muted); font-size: 10px; font-weight: 600; text-align: right; max-width: 96px; }
+.signin-note      { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; line-height: 1.5; }
+.signin-note code { background: var(--tbl); padding: 0 3px; border-radius: 3px; }
 
 /* ── Button ────────────────────────────────────────────────── */
 .btn            { display: inline-flex; align-items: center; gap: 5px; padding: 0 14px; height: 28px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all .15s; white-space: nowrap; font-family: inherit; }
@@ -177,16 +217,21 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 .data-table th.sortable-th:hover,
 .data-table th.sortable-th:focus-visible { background: #E7E7E7; outline: none; }
 .sortable-th-label { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
-.sortable-th-indicator { color: var(--muted); font-size: 9px; line-height: 1; opacity: .7; }
+/* Clip a too-long header label to its own column instead of letting it paint over the next one.
+   Resizable tables pin each th to a fixed px width while the th keeps visible overflow, so
+   without this a label like "Capital Commitments" in a 90px column overlaps its neighbour.
+   Only the text shrinks (flex items default to min-width:auto, which is what blocked the
+   ellipsis) — the sort indicator stays pinned and fully visible. */
+.sortable-th-label > span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sortable-th-indicator { flex: none; color: var(--muted); font-size: 9px; line-height: 1; opacity: .7; }
 .sortable-th-active .sortable-th-indicator { color: var(--red); opacity: 1; }
 .data-table th.num .sortable-th-label { justify-content: flex-end; width: 100%; }
 
-/* Dashboard summary column sizing (see rules below the variables):
-   table-layout: auto sizes the six data columns to their own text length + side
-   padding (the "width: 1%" columns hug their content). Agent is hard-pinned at 150px.
-   Borrower is the one greedy column (width: 100%): it soaks up the leftover space
-   — ~250px at a typical width, growing toward 350px on larger screens — and
-   ellipsis-truncates long names instead of ever forcing a horizontal scrollbar. */
+/* Dashboard facility column sizing. These variables are the fallback the columns declare in
+   FACILITY_COLS; the live widths come from DASHBOARD_INITIAL_WIDTHS, which DataTable applies inline
+   as percentage shares of the table and therefore wins over anything set here. Change the shares
+   there, not these — and keep them clearing their header labels at DASHBOARD_MIN_TABLE_PX, the
+   pixel floor below which the wrapper scrolls rather than squeezing headers into ellipses. */
 .dashboard-screen {
   --dash-agent-col: 150px;
   --dash-borrower-col: 100%;
@@ -372,10 +417,18 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
 
 /* ── Modal ─────────────────────────────────────────────────── */
 .modal-overlay  { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
-.modal-box      { background: #fff; border-radius: 8px; padding: 24px; width: 520px; max-width: 92vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-title    { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
-.modal-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
-.modal-footer   { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+/* padding lives on the head/body/footer, not the box, so the head bleeds to the rounded edge */
+.modal-box      { background: #fff; border-radius: 8px; overflow: hidden; width: 520px; max-width: 92vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); max-height: 90vh; display: flex; flex-direction: column; }
+/* same grey-bar treatment as .LPRecord-detail-hdr */
+.modal-head     { background: var(--navy); color: #fff; padding: 14px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.modal-title    { font-size: 15px; font-weight: 700; }
+.modal-subtitle { font-size: 12px; opacity: .75; margin-top: 3px; line-height: 1.45; }
+.modal-close    { background: none; border: none; cursor: pointer; font-size: 20px; line-height: 1; color: #fff; opacity: .7; padding: 0; margin-top: -2px; flex-shrink: 0; }
+.modal-close:hover { opacity: 1; }
+/* body is the only part that scrolls, so head and footer stay pinned inside the viewport.
+   The 20px right padding keeps the scrollbar clear of row action icons and field text. */
+.modal-body     { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; }
+.modal-footer   { display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--border); padding: 16px 20px; flex-shrink: 0; }
 
 /* ── Toast ─────────────────────────────────────────────────── */
 .toast          { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: #fff; padding: 12px 12px 12px 18px; border-radius: 6px; font-size: 12px; z-index: 200; border-left: 3px solid var(--gold); box-shadow: 0 4px 20px rgba(0,0,0,.2); pointer-events: auto; max-width: 360px; display: flex; align-items: flex-start; gap: 12px; }

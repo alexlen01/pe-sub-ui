@@ -56,19 +56,19 @@ export function ubsClassFromAgentRate(
 
 export function ubsClassFromAgentCls(
   cfg: ClassificationConfig,
-  agentCls: string | undefined,
+  agentLpCategory: string | undefined,
 ): string {
-  if (!agentCls) return ''
-  return cfg.AGENT_CLS_UBS_MAP[agentCls] ?? ''
+  if (!agentLpCategory) return ''
+  return cfg.AGENT_CLS_UBS_MAP[agentLpCategory] ?? ''
 }
 
 const normalizeDashes = (value: string): string => value.replace(/[\u2010-\u2015]/g, '-')
 
 /** BUSA advance rate (percent, e.g. 90) for a classification from either taxonomy,
  *  matching keys dash-insensitively across BUSA_RATE_MAP and UBS_CLS_DEFAULT_RATE. */
-export function busaRatePctForCls(cfg: ClassificationConfig, cls: string | undefined): number | '' {
-  if (!cls) return ''
-  const wanted = normalizeDashes(cls)
+export function busaRatePctForCls(cfg: ClassificationConfig, ubsLpCategory: string | undefined): number | '' {
+  if (!ubsLpCategory) return ''
+  const wanted = normalizeDashes(ubsLpCategory)
   for (const map of [cfg.BUSA_RATE_MAP, cfg.UBS_CLS_DEFAULT_RATE]) {
     for (const [key, raw] of Object.entries(map)) {
       if (normalizeDashes(key) !== wanted) continue
@@ -85,10 +85,10 @@ export function busaRatePctForCls(cfg: ClassificationConfig, cls: string | undef
  *  config key), matched dash-insensitively. '' when unconfigured for the class. */
 export function clsConcLimitPctForCls(
   cfg: Pick<EligibilityConfig, 'CLS_CONC_LIMIT_DEFAULTS'> | null,
-  cls: string | undefined,
+  ubsLpCategory: string | undefined,
 ): number | '' {
-  if (!cfg?.CLS_CONC_LIMIT_DEFAULTS || !cls) return ''
-  const wanted = normalizeDashes(cls)
+  if (!cfg?.CLS_CONC_LIMIT_DEFAULTS || !ubsLpCategory) return ''
+  const wanted = normalizeDashes(ubsLpCategory)
   for (const [key, pct] of Object.entries(cfg.CLS_CONC_LIMIT_DEFAULTS)) {
     if (normalizeDashes(key) !== wanted) continue
     return typeof pct === 'number' && Number.isFinite(pct) ? pct : ''
@@ -102,10 +102,10 @@ export function clsConcLimitPctForCls(
  *  record entry form to warn — without blocking — on out-of-range limits. */
 export function clsConcLimitBoundsForCls(
   cfg: Pick<EligibilityConfig, 'CLS_CONC_LIMIT_BOUNDS'> | null,
-  cls: string | undefined,
+  ubsLpCategory: string | undefined,
 ): { min: number; max: number } | null {
-  if (!cfg?.CLS_CONC_LIMIT_BOUNDS || !cls) return null
-  const wanted = normalizeDashes(cls)
+  if (!cfg?.CLS_CONC_LIMIT_BOUNDS || !ubsLpCategory) return null
+  const wanted = normalizeDashes(ubsLpCategory)
   for (const [key, range] of Object.entries(cfg.CLS_CONC_LIMIT_BOUNDS)) {
     if (normalizeDashes(key) !== wanted) continue
     const min = Number(range?.min)
@@ -120,6 +120,9 @@ export function clsConcLimitBoundsForCls(
 
 export interface ResolvedBbCriteria { advanceRatePct: number; concLimitPct: number }
 
+/** The three agency ratings, keyed as the API serves them on LPRecord. */
+export interface LpRatings { spRating?: string; moodysRating?: string; fitchRating?: string }
+
 const RATED_BAND_ORDER = ['AAA', 'AA', 'A', 'BBB']
 
 /** Resolves the Borrowing Base Criteria (advance rate % + concentration limit %) for an LP from
@@ -129,12 +132,12 @@ const RATED_BAND_ORDER = ['AAA', 'AA', 'A', 'BBB']
  *  the legacy flat maps). Kept in lockstep with the API's BbCriteriaResolver. */
 export function resolveBbCriteria(
   matrix: BbCriteriaMatrix | null | undefined,
-  cls: string | undefined,
-  ratings: { sp?: string; mdy?: string; fitch?: string },
+  ubsLpCategory: string | undefined,
+  ratings: LpRatings,
   pctFunded: number,
 ): ResolvedBbCriteria | null {
-  if (!matrix || !cls) return null
-  const norm = normalizeDashes(cls).trim()
+  if (!matrix || !ubsLpCategory) return null
+  const norm = normalizeDashes(ubsLpCategory).trim()
   const threshold = (matrix.fundedThresholdPct ?? 40) / 100
   const funded: 'lt40' | 'gte40' = pctFunded >= threshold ? 'gte40' : 'lt40'
 
@@ -155,7 +158,7 @@ export function resolveBbCriteria(
 /** Tri-party "eligible rating" waterfall → band string: three ratings → middle (median), two → the
  *  lower (conservative), one → that rating. A present rating matching no band clamps to the sub-IG
  *  floor (BBB). No rating at all → the sub-IG floor. */
-function resolveRatedBand(matrix: BbCriteriaMatrix, ratings: { sp?: string; mdy?: string; fitch?: string }): string {
+function resolveRatedBand(matrix: BbCriteriaMatrix, ratings: LpRatings): string {
   const bands = matrix.ratingBands ?? {}
   const subIG = matrix.subInvestmentGradeBand ?? 'BBB'
   const subIGIndex = RATED_BAND_ORDER.indexOf(subIG) >= 0 ? RATED_BAND_ORDER.indexOf(subIG) : RATED_BAND_ORDER.length - 1
@@ -169,7 +172,7 @@ function resolveRatedBand(matrix: BbCriteriaMatrix, ratings: { sp?: string; mdy?
     return subIGIndex   // present but unmatched → sub-investment-grade floor
   }
 
-  const ords = [ordinalOf('sp', ratings.sp), ordinalOf('moodys', ratings.mdy), ordinalOf('fitch', ratings.fitch)]
+  const ords = [ordinalOf('sp', ratings.spRating), ordinalOf('moodys', ratings.moodysRating), ordinalOf('fitch', ratings.fitchRating)]
     .filter(o => o >= 0)
     .sort((a, b) => a - b)   // ascending = best → worst
   if (ords.length === 0) return subIG

@@ -12,22 +12,22 @@ export interface MatchAnalysis {
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
-type ApiLP = LPRecord & {
-  type?: LPRecord['instVsHnw']
-  fund_sleeve?: string
-  investor_type?: string
-  inst_vs_hnw?: string
-  region_location?: string
+/** /api/lpRecords and /api/lp-master both serve LpRecordDto/LpMasterDto keys one-for-one, so an
+ *  API row is an LPRecord with the descriptive string fields possibly absent on older rows. */
+type ApiLP = Omit<LPRecord, 'investorType' | 'institutionalOrHnw' | 'regionLocation'> & {
+  investorType?: string
+  institutionalOrHnw?: string
+  regionLocation?: string
 }
 
+/** Boundary coercion: pin the three free-text descriptors to '' when the row omits them, so
+ *  screens can compare/sort them without null guards. No key aliasing — the API is camelCase. */
 function normalizeLP(row: ApiLP): LPRecord {
-  const instVsHnw = (row.instVsHnw ?? row.inst_vs_hnw ?? row.type ?? '') as LPRecord['instVsHnw']
   return {
     ...row,
-    fundSleeve: row.fundSleeve ?? row.fund_sleeve ?? '',
-    investorType: row.investorType ?? row.investor_type ?? '',
-    instVsHnw,
-    region: row.region ?? row.regionLocation ?? row.region_location ?? '',
+    investorType: row.investorType ?? '',
+    institutionalOrHnw: (row.institutionalOrHnw ?? '') as LPRecord['institutionalOrHnw'],
+    regionLocation: row.regionLocation ?? '',
   }
 }
 
@@ -121,7 +121,7 @@ function qs(params: Record<string, string | number | undefined>): string {
 
 export interface BBSummaryExt {
   // LP Portfolio
-  totalCapCommit: number; totalCalledCap: number; pctCalled: number
+  totalCapCommit: number; totalCalledCap: number; pctLpCalled: number
   totalAllUncalled: number; totalLPs: number
   pctInstitutional: number; pctHNW: number; pctTop10: number; pctTop20: number
   igRatio: number; pctUncalledGt25bnAum: number
@@ -144,7 +144,9 @@ export interface EARDataPoint { calculatedAt: string; ear: number; agentEar: num
 
 /** One LPRecord-classification tier of the certificate breakdown. Money in $millions. */
 export interface ClassBreakdownReportRow {
-  cls: string; count: number; uncalledM: number; ubbM: number; rate: string
+  ubsLpCategory: string; count: number; uncalledM: number; ubbM: number
+  /** Fraction (0.90 = 90%), like the API's BigDecimal — formatted by the consumer. */
+  ubsAdvanceRate: number
 }
 
 export interface CollateralReport {
@@ -174,21 +176,23 @@ export interface RecordReportRequest {
 
 /** Mirrors CommitBbRequest.CommitLpRow on the Java side. All fields from BB_PROCESS_FLOW Step 4. */
 export interface CommitLpRow {
-  name: string; parent: string | null; spv: boolean; hq: boolean
-  fundSleeve?: string | null
+  investorName: string; parent: string | null; spv: boolean; highQuality: boolean
   investorType?: string | null
-  instVsHnw: string; type?: string; region: string; ig: boolean; cls: string
-  agentCls?: string | null
-  agentClsSource?: string | null
-  sp: string; mdy: string; fitch: string
-  aum: string | null; nav: string | null; pension: string | null; pensionFunded: string | null
-  capCommit: string | null; pctCapCommit: string | null; calledCap: string | null
-  uc: string | null; pctUncalled: string | null; pctCalled: string | null
-  agentConc: string | null; ubsConc: string | null; ubsRate?: string | null
-  agentRate: string | null
-  // Engine outputs (abb/ubb/excess concentrations) are computed and persisted server-side at
-  // run time — they are deliberately not part of the commit payload.
-  inc: boolean; rcl: boolean; tf?: boolean; rank?: number | null; notes: string | null
+  institutionalOrHnw: string; regionLocation: string; investmentGrade: boolean; ubsLpCategory: string
+  agentLpCategory?: string | null
+  agentLpCategorySource?: string | null
+  spRating: string; moodysRating: string; fitchRating: string
+  aum: string | null; nav: string | null; pensionAssets: string | null
+  capitalCommitment: string | null; calledCapital: string | null
+  uncalledCapital: string | null
+  agentConcentrationLimit: string | null; ubsConcentrationLimit: string | null
+  // Fractions (0.90 = 90%), matching the server's BigDecimal columns.
+  fundingRatio: number | null
+  pctOfFundCommitments: number | null; pctOfFundUncalled: number | null; pctLpCalled: number | null
+  ubsAdvanceRate: number | null; agentAdvanceRate: number | null
+  // Engine outputs (borrowing bases, excess concentrations, rank) are computed and persisted
+  // server-side at run time — they are deliberately not part of the commit payload.
+  included: boolean; reclassified: boolean; transferee?: boolean; notes: string | null
 }
 
 export interface Submission {
@@ -213,12 +217,12 @@ export interface ExtractedLP {
 export interface AgentExtractedRow {
   id: number; name: string
   agentClass?: string
-  agentClsSource?: string
+  agentLpCategorySource?: string
   investorType?: string
   commit: string; uncalled: string; aum: string; nav: string
   lpSizeBil?: string; lpSizeCriteria?: string
-  sp: string; moodys: string; fitch: string
-  agentRate: string; agentConc: string
+  spRating: string; moodys: string; fitchRating: string
+  agentAdvanceRate: string; agentConc: string
   agentBBFmt: string; pctBBFmt: string
   fundSleeve?: string
 }
@@ -242,37 +246,36 @@ export interface LpClassificationRequest {
   audit?: boolean          // true → write one aggregated audit entry; omitted → silent per-row save
   rows: Array<{
     id?: number
-    name: string
+    investorName: string
     originalName?: string
     // Identity & classification (manual)
     parent?: string
     spv?: boolean
-    fundSleeve?: string       // Fund Sleeve
-    investorType?: string     // Investor Type
-    instVsHnw?: string        // Institutional vs HNW
-    type?: string             // Back-compat alias for Institutional vs HNW
-    region?: string
-    ig?: boolean              // Investment Grade?
-    cls?: string              // UBS LP Category
-    agentCls?: string         // Agent LP Category
-    agentClsSource?: string   // EXTRACTED, DERIVED, or USER_EDITED
-    sp?: string; mdy?: string; fitch?: string
+    investorType?: string            // Investor Type
+    institutionalOrHnw?: string      // Institutional vs HNW
+    regionLocation?: string
+    investmentGrade?: boolean
+    ubsLpCategory?: string           // UBS LP Category
+    agentLpCategory?: string         // Agent LP Category
+    agentLpCategorySource?: string   // EXTRACTED, DERIVED, or USER_EDITED
+    spRating?: string; moodysRating?: string; fitchRating?: string
     // Scale (manual)
     aum?: string              // Assets Under Management
     nav?: string              // Net Asset Value
-    pension?: string          // Pension Assets
-    pensionFunded?: string    // Pension Funded %
+    pensionAssets?: string
+    fundingRatio?: number     // Pension funded status as a fraction (0.91 = 91%)
     // Commitment / capital (manual)
-    capCommit?: string
-    uc?: string               // Uncalled Capital
-    // Rates & limits (manual)
-    ubsAdvRatePct?: number    // UBS Advance Rate, percent e.g. 90
-    agentRatePct?: number     // Agent Advance Rate, percent e.g. 75
-    ubsConcLimitPct?: number  // UBS Concentration Limit, percent e.g. 7.5
-    agentConcLimitPct?: number// Agent Concentration Limit, percent e.g. 12
+    capitalCommitment?: string
+    uncalledCapital?: string
+    // Rates & limits (manual) — percent-scaled here, unlike the fractions elsewhere on LPRecord;
+    // the Pct suffix marks that difference, matching the server record.
+    ubsAdvanceRatePct?: number       // UBS Advance Rate, percent e.g. 90
+    agentAdvanceRatePct?: number     // Agent Advance Rate, percent e.g. 75
+    ubsConcentrationLimitPct?: number    // UBS Concentration Limit, percent e.g. 7.5
+    agentConcentrationLimitPct?: number  // Agent Concentration Limit, percent e.g. 12
     // Status (manual)
-    inc?: boolean
-    tf?: boolean
+    included?: boolean
+    transferee?: boolean
     notes?: string
   }>
 }
@@ -306,7 +309,6 @@ export interface BbTemplate {
   summaryRowsAboveHeader: number; summaryRowRange: string | null
   titleRow: number | null; titleText: string | null
   detectKeys: string[]; legend: TemplateLegendRule[]; notes: string[]
-  sourceFileName: string | null; sourceFileSize: number | null
   createdAt: string; updatedAt: string
   tabs: BbTemplateTab[]
 }
@@ -338,8 +340,81 @@ export interface AliasGroup {
 export interface MatchQueueItem {
   id: number; submissionId: number; facilityId?: number; facilityName?: string
   agentName: string; masterName: string | null
+  /** LP Master id of the proposed match — always the matched child/feeder, never its parent. */
+  masterLpId: number | null
+  /** Sponsor named by the agent document, used for the Parent/Sponsor corroboration signal. */
+  agentParent: string | null
+  /** Ultimate entity the match routes to — whose profile an Accept applies. Null means "self". */
+  masterParent: string | null
   score: number; decision: string | null; status?: string; isNew: boolean; reasons?: string[]
   matchDetails?: MatchAnalysis | null
+}
+
+/**
+ * A bank-wide LP Master profile — the curated subset that supplies ratings, category and default
+ * rates to a matched facility record. Deliberately its own type rather than an `LPRecord`: an
+ * LP Master row has no facility, no commitment/uncalled figures and no borrowing base, but it does
+ * carry the parent/child hierarchy those records resolve through.
+ */
+export interface LpMasterRecord {
+  id: number
+  investorName: string
+  /** Sponsor name as displayed. May be set with no `parentId` when the sponsor is not yet on file. */
+  parent: string
+  parentId: number | null
+  isUltimateParent: boolean
+  /** Top of the parent chain, or null when this record is itself the ultimate entity. */
+  ultimateParent: string | null
+  childCount: number
+  spv: boolean
+  highQuality: boolean
+  investorType: string
+  institutionalOrHnw: string
+  regionLocation: string
+  investmentGrade: boolean
+  ubsLpCategory: string
+  spRating: string
+  moodysRating: string
+  fitchRating: string
+  aum: string
+  nav: string
+  pensionAssets: string
+  fundingRatio: number | null
+  /** Fraction, not percent: 0.9 is 90%. */
+  ubsDefaultAdvanceRate: number | null
+  /** Percent-or-dollars display text ("7.5%", "$25,000,000"), as the per-record limits are. */
+  ubsDefaultConcentrationLimit: string
+  notes: string
+}
+
+/** The editable subset the LP Master panel submits. A full replace, so null clears a value. */
+export type LpMasterUpdate = Omit<LpMasterRecord, 'id' | 'isUltimateParent' | 'ultimateParent' | 'childCount'>
+
+/** API row: the same keys, with the string fields absent or null on rows that never set them. */
+type ApiLpMaster = Omit<LpMasterRecord,
+  'parent' | 'investorType' | 'institutionalOrHnw' | 'regionLocation' | 'ubsLpCategory'
+  | 'spRating' | 'moodysRating' | 'fitchRating' | 'aum' | 'nav' | 'pensionAssets'
+  | 'ubsDefaultConcentrationLimit' | 'notes'> & Partial<LpMasterRecord>
+
+/** Boundary coercion: pin every free-text field to '' so screens sort and compare without guards. */
+function normalizeLpMaster(row: ApiLpMaster): LpMasterRecord {
+  return {
+    ...row,
+    parent:                       row.parent ?? '',
+    investorType:                 row.investorType ?? '',
+    institutionalOrHnw:           row.institutionalOrHnw ?? '',
+    regionLocation:               row.regionLocation ?? '',
+    ubsLpCategory:                row.ubsLpCategory ?? '',
+    spRating:                     row.spRating ?? '',
+    moodysRating:                 row.moodysRating ?? '',
+    fitchRating:                  row.fitchRating ?? '',
+    aum:                          row.aum ?? '',
+    nav:                          row.nav ?? '',
+    pensionAssets:                row.pensionAssets ?? '',
+    ubsDefaultConcentrationLimit: row.ubsDefaultConcentrationLimit ?? '',
+    notes:                        row.notes ?? '',
+    ultimateParent:               row.ultimateParent ?? null,
+  }
 }
 
 export interface MatchingThresholds {
@@ -357,6 +432,8 @@ export interface MatchingConfig {
   abbrevRegexMap?:    Record<string, string>
 }
 
+/** A rate-schedule row from the busa_tiers / agent_tiers config blobs. The blob's own key is
+ *  `cls` — these are config documents, not LP records, so they keep the server's JSON key. */
 export interface RateTier {
   cls: string
   rate: number
@@ -378,7 +455,7 @@ export interface GlobalSetting {
   label: string
   value: string | number
 }
-/** Advance rate split on the LP's funded % (pctCalled) at the matrix threshold.
+/** Advance rate split on the LP's funded % (pctLpCalled) at the matrix threshold.
  *  Concentration limit is funded-independent. Sourced from Concentration_Limits.xlsx
  *  tabs 2-3 (bb_criteria_matrix config key). See pe-sub-docs/BB_CRITERIA_DESIGN.md. */
 export interface BbCriteriaAdvanceRate { lt40: number; gte40: number }
@@ -390,6 +467,7 @@ export interface BbCriteriaRatedBand {
   advanceRatePct: BbCriteriaAdvanceRate
 }
 export interface BbCriteriaClass {
+  /** Config-blob key, kept as the server serves it (bb_criteria_matrix uses `cls`). */
   cls: string
   category?: string
   concLimitPct: number
@@ -517,10 +595,19 @@ export const api = {
 
   // ── LP Master (bank-wide) ────────────────────────────────────────────────────
   lpMaster: {
-    list: () => get<ApiLP[]>('/api/lp-master').then(rows => rows.map(normalizeLP)),
-    get: (id: number) => get<ApiLP>(`/api/lp-master/${id}`).then(normalizeLP),
+    list: () => get<ApiLpMaster[]>('/api/lp-master').then(rows => rows.map(normalizeLpMaster)),
+    get: (id: number) => get<ApiLpMaster>(`/api/lp-master/${id}`).then(normalizeLpMaster),
     count: () => get<{ count: number }>('/api/lp-master/count'),
     investorTypes: () => get<string[]>('/api/lp-master/investor-types'),
+    /** Direct children (feeders/SPVs) routing their credit profile to this record. */
+    children: (id: number) =>
+      get<ApiLpMaster[]>(`/api/lp-master/${id}/children`).then(rows => rows.map(normalizeLpMaster)),
+    /** Agent BB strings previously accepted against this record. */
+    aliases: (id: number) => get<string[]>(`/api/lp-master/${id}/aliases`),
+    // Full replace of the editable subset (ANALYST-gated) — PUT, not PATCH, because the panel
+    // always submits every field it renders, so an omitted value means cleared.
+    update: (id: number, body: LpMasterUpdate) =>
+      put<ApiLpMaster>(`/api/lp-master/${id}`, body).then(normalizeLpMaster),
     // Hard-delete a bank-wide LP Master row (ANALYST-gated); facility LP records are detached, not deleted.
     remove: (id: number) =>
       del(`/api/lp-master/${id}`),
@@ -705,8 +792,6 @@ export const api = {
       form.append('file', file)
       return postForm<BbTemplate>('/api/bb-templates/import', form)
     },
-    downloadUrl: (id: number) =>
-      `${BASE}/api/bb-templates/${id}/download`,
   },
 
   // ── Config ────────────────────────────────────────────────────────────────────

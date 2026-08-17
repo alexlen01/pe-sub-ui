@@ -45,9 +45,10 @@ const COLLATERAL_FIXTURE: CollateralReport = {
   },
   totalEligibleUncalledM: 30,
   classBreakdown: [
-    { cls: 'Rated',        count: 1, uncalledM: 20, ubbM: 18,  rate: '90%' },
-    { cls: 'Unrated >2bn', count: 1, uncalledM: 10, ubbM: 7.5, rate: '75%' },
-    { cls: 'Excluded',     count: 1, uncalledM: 0,  ubbM: 0,   rate: '0%'  },
+    // ubsAdvanceRate is a fraction on the wire (CollateralReportDto.ClassBreakdownRow).
+    { ubsLpCategory: 'Rated',        count: 1, uncalledM: 20, ubbM: 18,  ubsAdvanceRate: 0.9  },
+    { ubsLpCategory: 'Unrated >2bn', count: 1, uncalledM: 10, ubbM: 7.5, ubsAdvanceRate: 0.75 },
+    { ubsLpCategory: 'Excluded',     count: 1, uncalledM: 0,  ubbM: 0,   ubsAdvanceRate: 0    },
   ],
 }
 
@@ -171,9 +172,15 @@ describe('buildCertRows', () => {
 describe('buildCertClassRows', () => {
   it('formats tiers and renders zero-money tiers as dashes', () => {
     const rows = buildCertClassRows(COLLATERAL_FIXTURE)
-    expect(rows[0]).toEqual({ cls: 'Rated', n: 1, uc: '$20,000,000', ubb: '$18,000,000', rate: '90%' })
+    expect(rows[0]).toEqual({
+      ubsLpCategory: 'Rated', n: 1,
+      uncalledCapital: '$20,000,000', ubsBorrowingBase: '$18,000,000', ubsAdvanceRate: '90%',
+    })
     // Excluded tier carries no BB — must render '-' not '$0.0M'
-    expect(rows[2]).toEqual({ cls: 'Excluded', n: 1, uc: '-', ubb: '-', rate: '0%' })
+    expect(rows[2]).toEqual({
+      ubsLpCategory: 'Excluded', n: 1,
+      uncalledCapital: '-', ubsBorrowingBase: '-', ubsAdvanceRate: '0%',
+    })
   })
 
   it('returns [] for an empty breakdown', () => {

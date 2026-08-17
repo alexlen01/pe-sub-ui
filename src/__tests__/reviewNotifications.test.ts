@@ -39,7 +39,7 @@ describe('review notifications', () => {
 
   it('groups reclassified LPs by facility only while that facility is under review', () => {
     const facility = (id: number, name: string, status: Facility['status']) => ({ id, name, status } as Facility)
-    const lp = (name: string, rcl: boolean) => ({ name, rcl } as LPRecord)
+    const lp = (investorName: string, reclassified: boolean) => ({ investorName, reclassified } as LPRecord)
     const messages = buildReclassificationNotifications([
       facility(10, 'Apollo XI', 'Needs Review'),
       facility(20, 'Closed Fund', 'Active'),

@@ -11,7 +11,7 @@ import {
 } from '../../services/configService'
 import { useConfigCache } from '../../store/configStore'
 import type { LPRecord } from '../../services/lpService'
-import { formatPercentageText, formatPercentageValue } from '../../utils/percentage'
+import { formatPercentageFraction, formatPercentageText, formatPercentageValue } from '../../utils/percentage'
 
 const NOTES_MAX    = 250
 
@@ -20,7 +20,7 @@ type LpSizeCriteria = 'AUM' | 'NAV' | 'Assets' | ''
 function inferLpSizeCriteria(LPRecord: LPRecord): LpSizeCriteria {
   if (String(LPRecord.aum ?? '').trim()) return 'AUM'
   if (String(LPRecord.nav ?? '').trim()) return 'NAV'
-  if (String(LPRecord.pension ?? '').trim()) return 'Assets'
+  if (String(LPRecord.pensionAssets ?? '').trim()) return 'Assets'
   return ''
 }
 
@@ -34,17 +34,39 @@ function agentClsSourceNote(source: string | undefined | null, hasAgentCls: bool
 }
 
 function lpSizeValue(LPRecord: LPRecord, criteria: string): string {
-  const source = criteria === 'NAV' ? LPRecord.nav : criteria === 'Assets' ? LPRecord.pension : LPRecord.aum
+  const source = criteria === 'NAV' ? LPRecord.nav : criteria === 'Assets' ? LPRecord.pensionAssets : LPRecord.aum
   return String(source ?? '')
 }
 
+/** Advance rates and the ratio fields are raw fractions on LPRecord (0.9 = 90%), but the form's
+ *  percent inputs edit them as display text ("90%"). These two convert across that boundary. */
+export function pctTextFromFraction(value: number | null | undefined): string {
+  return value == null ? '' : formatPercentageFraction(value, '')
+}
+
+export function fractionFromPctText(value: unknown): number | null {
+  const n = Number.parseFloat(String(value ?? '').replace(/,/g, '').replace('%', '').trim())
+  return Number.isFinite(n) ? n / 100 : null
+}
+
+/** Form keys that hold a fraction on LPRecord — coerced back on the way into the record so a
+ *  blank or "N/A" never lands in a numeric column. */
+const FRACTION_FIELDS = [
+  'ubsAdvanceRate', 'agentAdvanceRate', 'fundingRatio',
+  'pctOfFundCommitments', 'pctOfFundUncalled', 'pctLpCalled',
+] as const
+
 function applyLpSizeToRecord(LPRecord: LPRecord, form: Record<string, unknown>): LPRecord {
-  const next = { ...LPRecord, ...form as Partial<LPRecord> } as LPRecord
+  const coerced: Record<string, unknown> = { ...form }
+  for (const key of FRACTION_FIELDS) {
+    if (key in coerced) coerced[key] = fractionFromPctText(coerced[key])
+  }
+  const next = { ...LPRecord, ...coerced as Partial<LPRecord> } as LPRecord
   const size = String(form.lpSize ?? '')
   switch (form.lpSizeCriteria) {
     case 'AUM': next.aum = size; break
     case 'NAV': next.nav = size; break
-    case 'Assets': next.pension = size; break
+    case 'Assets': next.pensionAssets = size; break
   }
   return next
 }
@@ -57,7 +79,7 @@ export function buildLpRecordFromForm(
   totalUncalledM?: number,
 ): LPRecord {
   const eff = applyLpSizeToRecord(LPRecord, form)
-  const ubsConcPct = parseRatePct(eff.ubsConc)
+  const ubsConcPct = parseRatePct(eff.ubsConcentrationLimit)
   const dynamicConcLimitM = totalUncalledM != null && Number.isFinite(ubsConcPct)
     ? totalUncalledM * ubsConcPct
     : undefined
@@ -66,33 +88,37 @@ export function buildLpRecordFromForm(
     undefined,
     busaRates,
   )
-  const capCommitM = parseM(eff.capCommit)
-  const calledCapM = capCommitM - parseM(eff.uc)
-  const agentRateDec = parseRatePct(eff.agentRate)
-  const agentConcPct = parseRatePct(eff.agentConc)
+  const capCommitM = parseM(eff.capitalCommitment)
+  const calledCapM = capCommitM - parseM(eff.uncalledCapital)
+  const agentRateDec = eff.agentAdvanceRate ?? NaN
+  const agentConcPct = parseRatePct(eff.agentConcentrationLimit)
   const agentConcLimitM = totalUncalledM != null && Number.isFinite(agentConcPct) && agentConcPct > 0
     ? totalUncalledM * agentConcPct
     : undefined
-  const agentExcessM = eff.inc && eff.cls !== 'Excluded' && agentConcLimitM != null
-    ? Math.max(0, parseM(eff.uc) - agentConcLimitM)
+  const agentExcessM = eff.included && eff.ubsLpCategory !== 'Excluded' && agentConcLimitM != null
+    ? Math.max(0, parseM(eff.uncalledCapital) - agentConcLimitM)
     : 0
+  // An edited rate wins; otherwise fall back to the class default schedule, then the record's own.
+  const clsDefaultRate = fractionFromPctText(
+    classCfg.UBS_CLS_DEFAULT_RATE?.[String(form.ubsLpCategory)]
+    ?? classCfg.BUSA_RATE_MAP?.[String(form.ubsLpCategory)],
+  )
   return {
     ...eff,
-    fundSleeve: form.fundSleeve as string | undefined,
-    rate: eff.rate || classCfg.UBS_CLS_DEFAULT_RATE?.[String(form.cls)] || classCfg.BUSA_RATE_MAP?.[String(form.cls)] || LPRecord.rate,
-    clsTag: classCfg.CLS_TAG_MAP?.[String(form.cls)] ?? LPRecord.clsTag,
-    hq: c.busaRate === 0.90,
-    rcl: LPRecord.rcl
-      || String(eff.agentCls ?? '').trim() !== String(LPRecord.agentCls ?? '').trim()
-      || String(eff.cls ?? '').trim() !== String(LPRecord.cls ?? '').trim(),
-    calledCap: fmtM(calledCapM),
-    pctCalled: fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0),
-    abb: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uc) * agentRateDec) : (eff.abb ?? '$0'),
-    ubb: c.ubb,
-    uec: c.uec,
-    ubsExcessConc: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
-    agentExcessConc: agentExcessM > 0 ? fmtM(agentExcessM) : '—',
-  } as LPRecord
+    ubsAdvanceRate: eff.ubsAdvanceRate ?? clsDefaultRate ?? LPRecord.ubsAdvanceRate,
+    ubsLpCategoryTag: classCfg.CLS_TAG_MAP?.[String(form.ubsLpCategory)] ?? LPRecord.ubsLpCategoryTag,
+    highQuality: c.busaRate === 0.90,
+    reclassified: LPRecord.reclassified
+      || String(eff.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
+      || String(eff.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim(),
+    calledCapital: fmtM(calledCapM),
+    pctLpCalled: capCommitM > 0 ? calledCapM / capCommitM : 0,
+    agentBorrowingBase: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uncalledCapital) * agentRateDec) : (eff.agentBorrowingBase ?? '$0'),
+    ubsBorrowingBase: c.ubsBorrowingBase,
+    uncalledEligibleCapital: c.uncalledEligibleCapital,
+    ubsExcessConcentration: c.concExcessM > 0 ? fmtM(c.concExcessM) : '—',
+    agentExcessConcentration: agentExcessM > 0 ? fmtM(agentExcessM) : '—',
+  }
 }
 
 function parseRatePct(s: string | undefined | null): number {
@@ -153,21 +179,20 @@ export default function LPRecordPanel({
     const lpSizeCriteria = inferLpSizeCriteria(LPRecord)
     setConfirmDelete(false)
     setForm({
-      name: LPRecord.name ?? '', parent: LPRecord.parent ?? '', spv: LPRecord.spv, agentCls: LPRecord.agentCls ?? '',
-      agentClsSource: LPRecord.agentClsSource ?? '',
-      fundSleeve: LPRecord.fundSleeve ?? '',
-      investorType: LPRecord.investorType ?? '', instVsHnw: LPRecord.instVsHnw ?? '', cls: LPRecord.cls ?? '', ig: LPRecord.ig,
-      region: LPRecord.region ?? '', hq: LPRecord.hq,
-      sp: LPRecord.sp ?? '', mdy: LPRecord.mdy ?? '', fitch: LPRecord.fitch ?? '',
-      aum: LPRecord.aum ?? '', nav: LPRecord.nav ?? '', pension: LPRecord.pension || 'N/A', pensionFunded: LPRecord.pensionFunded || 'N/A',
+      investorName: LPRecord.investorName ?? '', parent: LPRecord.parent ?? '', spv: LPRecord.spv, agentLpCategory: LPRecord.agentLpCategory ?? '',
+      agentLpCategorySource: LPRecord.agentLpCategorySource ?? '',
+      investorType: LPRecord.investorType ?? '', institutionalOrHnw: LPRecord.institutionalOrHnw ?? '', ubsLpCategory: LPRecord.ubsLpCategory ?? '', investmentGrade: LPRecord.investmentGrade,
+      regionLocation: LPRecord.regionLocation ?? '', highQuality: LPRecord.highQuality,
+      spRating: LPRecord.spRating ?? '', moodysRating: LPRecord.moodysRating ?? '', fitchRating: LPRecord.fitchRating ?? '',
+      aum: LPRecord.aum ?? '', nav: LPRecord.nav ?? '', pensionAssets: LPRecord.pensionAssets || 'N/A',
       lpSizeCriteria, lpSize: lpSizeValue(LPRecord, lpSizeCriteria),
-      capCommit: LPRecord.capCommit ?? '', pctCapCommit: LPRecord.pctCapCommit ?? '', calledCap: LPRecord.calledCap ?? '',
-      uc: LPRecord.uc ?? '', pctUncalled: LPRecord.pctUncalled ?? '', pctCalled: LPRecord.pctCalled ?? '',
-      rate: LPRecord.rate ?? '', agentRate: LPRecord.agentRate ?? '',
-      agentConc: LPRecord.agentConc ?? '', ubsConc: LPRecord.ubsConc ?? '', abb: LPRecord.abb ?? '', ubb: LPRecord.ubb ?? '',
-      inc: LPRecord.inc, notes: LPRecord.notes ?? '',
+      capitalCommitment: LPRecord.capitalCommitment ?? '', calledCapital: LPRecord.calledCapital ?? '',
+      uncalledCapital: LPRecord.uncalledCapital ?? '',
+      ubsAdvanceRate: pctTextFromFraction(LPRecord.ubsAdvanceRate), agentAdvanceRate: pctTextFromFraction(LPRecord.agentAdvanceRate),
+      agentConcentrationLimit: LPRecord.agentConcentrationLimit ?? '', ubsConcentrationLimit: LPRecord.ubsConcentrationLimit ?? '', agentBorrowingBase: LPRecord.agentBorrowingBase ?? '', ubsBorrowingBase: LPRecord.ubsBorrowingBase ?? '',
+      included: LPRecord.included, notes: LPRecord.notes ?? '',
     })
-  }, [LPRecord?.name])
+  }, [LPRecord?.investorName])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -187,8 +212,8 @@ export default function LPRecordPanel({
   const agentRateScheduleOpts = eligCfg.AGENT_TIERS.map(({ cls, rate }) => ({
     value: cls, label: `${cls} (${formatPercentageValue(rate)})`, rate: formatPercentageValue(rate),
   }))
-  const agentRateForClass = (cls: string): string =>
-    agentRateScheduleOpts.find(o => o.value === cls)?.rate ?? ''
+  const agentRateForClass = (agentLpCategory: string): string =>
+    agentRateScheduleOpts.find(o => o.value === agentLpCategory)?.rate ?? ''
   const busaRates = buildBusaRateFractions(classCfg)
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -196,20 +221,20 @@ export default function LPRecordPanel({
       const rawValue = e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value
       const value = k === 'notes' && typeof rawValue === 'string' ? rawValue.slice(0, NOTES_MAX) : rawValue
       const next = { ...p, [k]: value }
-      if (k === 'cls') {
-        if (!p.rate) next.rate = classCfg.UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
+      if (k === 'ubsLpCategory') {
+        if (!p.ubsAdvanceRate) next.ubsAdvanceRate = classCfg.UBS_CLS_DEFAULT_RATE[String(value)] ?? ''
         // Auto-assign the per-LP concentration limit from the class default. Evaluate the
         // Excluded bucket first: it is a hard 0 regardless of any configured residual default.
         if (String(value) === 'Excluded') {
-          next.ubsConc = '0.0%'
+          next.ubsConcentrationLimit = '0.0%'
         } else {
           const clsConcDefault = clsConcLimitPctForCls(eligCfg, String(value))
-          if (clsConcDefault !== '') next.ubsConc = formatPercentageValue(clsConcDefault)
+          if (clsConcDefault !== '') next.ubsConcentrationLimit = formatPercentageValue(clsConcDefault)
         }
       }
-      if (k === 'agentCls') {
-        next.agentClsSource = 'USER_EDITED'
-        next.agentRate = agentRateForClass(String(value)) || next.agentRate
+      if (k === 'agentLpCategory') {
+        next.agentLpCategorySource = 'USER_EDITED'
+        next.agentAdvanceRate = agentRateForClass(String(value)) || next.agentAdvanceRate
       }
       if (k === 'lpSizeCriteria' && LPRecord) next.lpSize = lpSizeValue(applyLpSizeToRecord(LPRecord, p), String(value))
       return next
@@ -313,7 +338,7 @@ export default function LPRecordPanel({
 
   const renderDetail = () => {
     const eff = applyLpSizeToRecord(LPRecord, form)
-    const ubsConcPctForCalc = parseRatePct(eff.ubsConc)
+    const ubsConcPctForCalc = parseRatePct(eff.ubsConcentrationLimit)
     const dynamicConcLimitM = totalUncalledM != null && Number.isFinite(ubsConcPctForCalc)
       ? totalUncalledM * ubsConcPctForCalc
       : undefined
@@ -322,33 +347,33 @@ export default function LPRecordPanel({
       undefined,
       busaRates,
     )
-    const capCommitM = parseM(eff.capCommit)
-    const ucM = parseM(eff.uc)
+    const capCommitM = parseM(eff.capitalCommitment)
+    const ucM = parseM(eff.uncalledCapital)
     const calledCapM = capCommitM - ucM
-    const agentRateDec = parseRatePct(eff.agentRate)
+    const agentRateDec = eff.agentAdvanceRate ?? NaN
     const calledCapStr   = fmtM(calledCapM)
     const pctCalledStr   = fmtPct(capCommitM > 0 ? calledCapM / capCommitM : 0)
     const agentBBStr     = Number.isFinite(agentRateDec) ? fmtM(ucM * agentRateDec) : '—'
     const agentBBM       = Number.isFinite(agentRateDec) ? ucM * agentRateDec : 0
-    const ubsExcessStr   = eff.inc && eff.cls !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConc || '—')
-    const agentConcPctForCalc = parseRatePct(eff.agentConc)
+    const ubsExcessStr   = eff.included && eff.ubsLpCategory !== 'Excluded' && c.concExcessM > 0 ? fmtM(c.concExcessM) : (eff.ubsExcessConcentration || '—')
+    const agentConcPctForCalc = parseRatePct(eff.agentConcentrationLimit)
     const agentConcLimitM = totalUncalledM != null && Number.isFinite(agentConcPctForCalc) && agentConcPctForCalc > 0
       ? totalUncalledM * agentConcPctForCalc
       : undefined
-    const agentExcessM = eff.inc && eff.cls !== 'Excluded' && agentConcLimitM != null
+    const agentExcessM = eff.included && eff.ubsLpCategory !== 'Excluded' && agentConcLimitM != null
       ? Math.max(0, ucM - agentConcLimitM)
       : 0
-    const agentExcessStr = agentConcLimitM != null ? (agentExcessM > 0 ? fmtM(agentExcessM) : '—') : (eff.agentExcessConc || '—')
-    const agentClsValue  = String(form.agentCls ?? '')
+    const agentExcessStr = agentConcLimitM != null ? (agentExcessM > 0 ? fmtM(agentExcessM) : '—') : (eff.agentExcessConcentration || '—')
+    const agentClsValue  = String(form.agentLpCategory ?? '')
     const agentClsOptions = agentClsValue && !agentRateScheduleOpts.some(o => o.value === agentClsValue)
       ? [{ value: '', label: 'Select classification' }, { value: agentClsValue, label: agentClsValue }, ...agentRateScheduleOpts]
       : [{ value: '', label: 'Select classification' }, ...agentRateScheduleOpts]
 
     // Non-blocking guard: warn when the UBS concentration limit falls outside the accepted
-    // range for the selected class. Only percent-style limits are checked — legacy dollar
-    // strings ("$4.0M") carry no comparable range and are left alone.
-    const concBounds = clsConcLimitBoundsForCls(eligCfg, String(form.cls ?? ''))
-    const rawUbsConc = String(form.ubsConc ?? '').trim()
+    // range for the selected class. Only percent-style limits are checked — a dollar-denominated
+    // limit ("$25,000,000") carries no comparable range and is left alone.
+    const concBounds = clsConcLimitBoundsForCls(eligCfg, String(form.ubsLpCategory ?? ''))
+    const rawUbsConc = String(form.ubsConcentrationLimit ?? '').trim()
     const ubsConcPct = parseFloat(rawUbsConc.replace('%', '').trim())
     const isPctConc = rawUbsConc !== '' && !/[$mbk]/i.test(rawUbsConc)
     const concOutOfRange = !!concBounds && isPctConc && Number.isFinite(ubsConcPct)
@@ -360,62 +385,61 @@ export default function LPRecordPanel({
     return (
       <div style={COLS}>
         {sec('Identification & Classification')}
-        {showRank && calc('Rank', LPRecord.rank ?? '—', { cols: 1 })}
-        {f('Investor Name', LPRecord.name, 'name', { cols: showRank ? 5 : 6 })}
+        {showRank && calc('Rank', LPRecord.lpRank ?? '—', { cols: 1 })}
+        {f('Investor Name', LPRecord.investorName, 'investorName', { cols: showRank ? 5 : 6 })}
         {f('SPV?', LPRecord.spv ? 'Yes' : 'No', 'spv', { chk: true, cols: 1 })}
         {f('Parent', LPRecord.parent, 'parent', { cols: 5 })}
-        {f('Fund Sleeve', LPRecord.fundSleeve ?? '', 'fundSleeve', { cols: 3 })}
-        {f('Region / Location', LPRecord.region || '—', 'region', { cols: 3, typeahead: true })}
+        {f('Region / Location', LPRecord.regionLocation || '—', 'regionLocation', { cols: 3, typeahead: true })}
         {f('Investor Type', LPRecord.investorType ?? '', 'investorType', { opts: classCfg.INVESTOR_TYPE_OPTS, emptyLabel: '—' })}
-        {f('Institutional vs HNW', LPRecord.instVsHnw, 'instVsHnw', { opts: classCfg.TYPE_OPTS })}
-        {f('Agent LP Classification', LPRecord.agentCls || '—', 'agentCls', { opts: agentClsOptions })}
-        {f('Agent Classification Source', LPRecord.agentClsSource || '—', 'agentClsSource', { ro: true })}
+        {f('Institutional vs HNW', LPRecord.institutionalOrHnw, 'institutionalOrHnw', { opts: classCfg.TYPE_OPTS })}
+        {f('Agent LP Classification', LPRecord.agentLpCategory || '—', 'agentLpCategory', { opts: agentClsOptions })}
+        {f('Agent Classification Source', LPRecord.agentLpCategorySource || '—', 'agentLpCategorySource', { ro: true })}
         <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
-          {agentClsSourceNote(String(form.agentClsSource ?? ''), Boolean(form.agentCls))}
+          {agentClsSourceNote(String(form.agentLpCategorySource ?? ''), Boolean(form.agentLpCategory))}
         </div>
-        {f('UBS LP Classification', LPRecord.cls, 'cls', { opts: ubsClsOptions, emptyLabel: 'Unclassified' })}
-        {f('Investment Grade?', LPRecord.ig ? 'Yes' : 'No', 'ig', { chk: true })}
-        {Boolean(form.cls && classCfg.CLS_CRITERIA[form.cls as string]) && (
+        {f('UBS LP Classification', LPRecord.ubsLpCategory, 'ubsLpCategory', { opts: ubsClsOptions, emptyLabel: 'Unclassified' })}
+        {f('Investment Grade?', LPRecord.investmentGrade ? 'Yes' : 'No', 'investmentGrade', { chk: true })}
+        {Boolean(form.ubsLpCategory && classCfg.CLS_CRITERIA[form.ubsLpCategory as string]) && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', background: 'var(--tbl)', borderRadius: 4, padding: '6px 10px', marginTop: -6 }}>
-            <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[form.cls as string]}
+            <strong style={{ color: 'var(--navy)' }}>Qualifying criteria:</strong> {classCfg.CLS_CRITERIA[form.ubsLpCategory as string]}
           </div>
         )}
 
         {sec('Credit Ratings')}
-        {f('S&P', LPRecord.sp, 'sp', { opts: classCfg.SP_RATING_OPTS, cols: 2 })}
-        {f("Moody's", LPRecord.mdy, 'mdy', { opts: classCfg.MDY_RATING_OPTS, cols: 2 })}
-        {f('Fitch', LPRecord.fitch, 'fitch', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
+        {f('S&P', LPRecord.spRating, 'spRating', { opts: classCfg.SP_RATING_OPTS, cols: 2 })}
+        {f("Moody's", LPRecord.moodysRating, 'moodysRating', { opts: classCfg.MDY_RATING_OPTS, cols: 2 })}
+        {f('Fitch', LPRecord.fitchRating, 'fitchRating', { opts: classCfg.FITCH_RATING_OPTS, cols: 2 })}
 
         {sec('Capital Metrics')}
         {f('LP Size', form.lpSize, 'lpSize')}
         {f('Size Measure', form.lpSizeCriteria, 'lpSizeCriteria', { opts: classCfg.LP_SIZE_CRITERIA_OPTS.filter(Boolean) })}
-        {f('Capital Commitments', LPRecord.capCommit, 'capCommit', { money: true })}
-        {calc('% of Capital Commitments', LPRecord.pctCapCommit, { formula: 'LP commitment ÷ total fund commitments' })}
+        {f('Capital Commitments', LPRecord.capitalCommitment, 'capitalCommitment', { money: true })}
+        {calc('% of Capital Commitments', formatPercentageFraction(LPRecord.pctOfFundCommitments ?? NaN), { formula: 'LP commitment ÷ total fund commitments' })}
         {calc('Called Capital', calledCapStr, { money: true, formula: 'Capital Commitments − Uncalled Capital' })}
-        {f('Uncalled Capital', LPRecord.uc, 'uc', { money: true })}
-        {calc('% of Uncalled Capital', LPRecord.pctUncalled, { formula: 'LP uncalled ÷ total fund uncalled' })}
+        {f('Uncalled Capital', LPRecord.uncalledCapital, 'uncalledCapital', { money: true })}
+        {calc('% of Uncalled Capital', formatPercentageFraction(LPRecord.pctOfFundUncalled ?? NaN), { formula: 'LP uncalled ÷ total fund uncalled' })}
         {calc('% of LP Called', pctCalledStr, { formula: 'Called Capital ÷ Capital Commitments' })}
 
         {sec('Borrowing Base Calculation')}
         <div style={{ gridColumn: '1 / -1', fontSize: 10, color: 'var(--muted)', marginTop: -4 }}>
           Preview of unsaved edits — saved totals update on the next Shadow BB run.
         </div>
-        {f('Agent Advance Rate', LPRecord.agentRate, 'agentRate', { percentage: true, percentageStep: 5 })}
-        {f('UBS Advance Rate', LPRecord.rate, 'rate', { percentage: true, percentageStep: 5 })}
-        {f('Agent Concentration Limit', LPRecord.agentConc, 'agentConc', { percentage: true, percentageStep: 0.5 })}
-        {f('UBS Concentration Limit', LPRecord.ubsConc, 'ubsConc', { percentage: true, percentageStep: 0.5 })}
+        {f('Agent Advance Rate', LPRecord.agentAdvanceRate, 'agentAdvanceRate', { percentage: true, percentageStep: 5 })}
+        {f('UBS Advance Rate', LPRecord.ubsAdvanceRate, 'ubsAdvanceRate', { percentage: true, percentageStep: 5 })}
+        {f('Agent Concentration Limit', LPRecord.agentConcentrationLimit, 'agentConcentrationLimit', { percentage: true, percentageStep: 0.5 })}
+        {f('UBS Concentration Limit', LPRecord.ubsConcentrationLimit, 'ubsConcentrationLimit', { percentage: true, percentageStep: 0.5 })}
         {concOutOfRange && concBounds && (
           <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#7a5c00', background: '#fff8e6', border: '1px solid #f0d98a', borderRadius: 4, padding: '6px 10px', marginTop: -2 }}>
-            <strong>⚠ Outside norm:</strong> {ubsConcPct}% is outside the accepted {concBounds.min}–{concBounds.max}% range for {String(form.cls)}. Verify before saving.
+            <strong>⚠ Outside norm:</strong> {ubsConcPct}% is outside the accepted {concBounds.min}–{concBounds.max}% range for {String(form.ubsLpCategory)}. Verify before saving.
           </div>
         )}
         {calc('Agent Excess Concentration', agentExcessStr, { money: true, formula: 'Excess uncalled above Agent concentration limit' })}
         {calc('UBS Excess Concentration', ubsExcessStr, { money: true, formula: 'Excess uncalled above UBS concentration limit' })}
         {calc('Agent Borrowing Base', agentBBStr, { money: true, formula: 'Uncalled Capital × Agent Advance Rate, capped by Agent concentration' })}
         {totalAgentBB != null && totalAgentBB > 0 && calc('% of Agent BB', agentBBM > 0 ? fmtPct(agentBBM / totalAgentBB) : '—', { formula: 'Agent BB ÷ total facility Agent BB' })}
-        {calc('UBS Borrowing Base', c.ubb, { money: true, pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
+        {calc('UBS Borrowing Base', c.ubsBorrowingBase, { money: true, pos: c.ubbM > 0, zero: c.ubbM === 0, formula: 'Uncalled Capital × UBS Advance Rate, capped by UBS concentration' })}
         {totalUbsBB != null && totalUbsBB > 0 && calc('% of UBS BB', c.ubbM > 0 ? fmtPct(c.ubbM / totalUbsBB) : '—', { formula: 'UBS BB ÷ total facility UBS BB' })}
-        {f('Eligible (Included in BB)', LPRecord.inc ? 'Yes' : 'No', 'inc', { chk: true, wide: true, accent: true })}
+        {f('Eligible (Included in BB)', LPRecord.included ? 'Yes' : 'No', 'included', { chk: true, wide: true, accent: true })}
 
         {sec('Additional Details')}
         <div style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
@@ -440,15 +464,15 @@ export default function LPRecordPanel({
       <div className="LPRecord-detail-hdr" style={{ background: 'var(--navy)', color: '#fff', padding: '14px 18px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
-            <div className="LPRecord-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={LPRecord.name}>
-              {LPRecord.name}
+            <div className="LPRecord-detail-name" style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={LPRecord.investorName}>
+              {LPRecord.investorName}
             </div>
             <div style={{ marginTop: 7, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', opacity: .9 }}>
-              <Tag>{LPRecord.cls}</Tag>
-              <span style={{ fontSize: 11, opacity: .7 }}>{LPRecord.rate || classCfg.UBS_CLS_DEFAULT_RATE[LPRecord.cls] || classCfg.BUSA_RATE_MAP[LPRecord.cls] || '—'} UBS · {LPRecord.agentRate || '—'} Agent</span>
+              <Tag>{LPRecord.ubsLpCategory}</Tag>
+              <span style={{ fontSize: 11, opacity: .7 }}>{pctTextFromFraction(LPRecord.ubsAdvanceRate) || classCfg.UBS_CLS_DEFAULT_RATE[LPRecord.ubsLpCategory] || classCfg.BUSA_RATE_MAP[LPRecord.ubsLpCategory] || '—'} UBS · {pctTextFromFraction(LPRecord.agentAdvanceRate) || '—'} Agent</span>
               {running && <span style={{ fontSize: 10, opacity: .8 }}>Calculating…</span>}
-              {LPRecord.rcl && <span className="rcl-badge">Reclassified</span>}
-              {LPRecord.tf  && <span className="tf-badge">Transferee</span>}
+              {LPRecord.reclassified && <span className="rcl-badge">Reclassified</span>}
+              {LPRecord.transferee  && <span className="tf-badge">Transferee</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 24, lineHeight: 1, opacity: .7, padding: 0, marginTop: -2 }}>×</button>
@@ -456,7 +480,7 @@ export default function LPRecordPanel({
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 18px' }}>
-        {LPRecord.rcl && (
+        {LPRecord.reclassified && (
           <div role="status" style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--amber-lt)', border: '1px solid var(--amber)', borderRadius: 4, color: 'var(--text)', fontSize: 11 }}>
             <strong>Reclassified record.</strong> Agent or UBS LP Classification changed during Save. Re-run Shadow BB and submit the updated result for Manager approval.
           </div>
@@ -468,7 +492,7 @@ export default function LPRecordPanel({
         {confirmDelete ? (
           <>
             <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>
-              Delete "{LPRecord.name}" from this facility's LP records? This cannot be undone.
+              Delete "{LPRecord.investorName}" from this facility's LP records? This cannot be undone.
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>

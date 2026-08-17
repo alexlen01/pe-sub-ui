@@ -1,7 +1,7 @@
 import type { LPRecord } from './lp'
 
 export interface ComputedLP extends LPRecord {
-  uec: string
+  uncalledEligibleCapital: string
   uecM: number
   ubbM: number
   abbM: number
