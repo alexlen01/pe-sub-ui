@@ -679,8 +679,9 @@ export default function ExtractionPreview() {
     return { group: group || 'User Mapped', label: option?.label ?? value }
   }
 
+  // Every matched column can be undone, exact matches included — an exact match on the
+  // header text can still be the wrong canonical field, and the user needs to redirect it.
   const undoFieldMapping = (mapping: FieldMapRow) => {
-    if (isExactFieldMatch(mapping)) return
     setFieldMap(prev => prev.filter(m => m.extracted !== mapping.extracted))
     setUnrecog(prev => {
       const exists = prev.some(c => c.extracted === mapping.extracted)
@@ -906,7 +907,7 @@ export default function ExtractionPreview() {
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}><Tag>{m.group}</Tag></td>
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', color: exact ? 'var(--green)' : 'var(--amber)', fontSize: 11, fontWeight: exact ? 600 : 700 }}>{m.note}</td>
                         <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-                          {!exact && <Button size="sm" variant="secondary" onClick={() => undoFieldMapping(m)} disabled={!canEdit}>Undo</Button>}
+                          <Button size="sm" variant="secondary" onClick={() => undoFieldMapping(m)} disabled={!canEdit}>Undo</Button>
                         </td>
                       </tr>
                     )

@@ -34,11 +34,13 @@ interface DataTableProps<T> {
    * inline style rather than a CSS rule, because the table's own width/minWidth are inline.
    */
   minTableWidth?: number
+  /** Rows per page before the user picks another size from the footer select. */
+  initialPageSize?: number
 }
 
-export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed', widthUnit = 'px', minTableWidth }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, rows, onRowClick, footer, selectedRow, resizableStorageKey, initialWidths, keyboardNavigation = false, tableLayout = 'fixed', widthUnit = 'px', minTableWidth, initialPageSize = 15 }: DataTableProps<T>) {
   const [page, setPage]         = useState(1)
-  const [pageSize, setPageSize] = useState(15)
+  const [pageSize, setPageSize] = useState(initialPageSize)
   const resizeInitial = useMemo(() => initialWidths ?? {}, [initialWidths])
   const { widths, onResizeStart, tableWidth } = useColumnResize(resizableStorageKey ?? 'data-table', resizeInitial, widthUnit)
   const resizable = Boolean(resizableStorageKey && initialWidths)

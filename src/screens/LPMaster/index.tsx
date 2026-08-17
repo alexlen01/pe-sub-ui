@@ -925,7 +925,6 @@ export default function LPMaster() {
               </Button>
             </span>
           )}
-          <Button variant="secondary" size="sm" onClick={() => toast('LPRecord master exported to Excel.')}>&#x2193; Export</Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
             {filtered.length} of {lpData.length} LPs
           </span>

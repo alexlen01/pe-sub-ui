@@ -209,6 +209,11 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
   background-size: 100% 1px;
   border-bottom-color: transparent;
 }
+/* BB Template Registry: several of its columns hold values far shorter than their header labels
+   ("Summary Row Range" over "3-9"), so the default 18px side padding, not the text, is what sets
+   their minimum width. Trimming it to 10px lets each column sit at the width of its own text. */
+.bb-template-table th,
+.bb-template-table td { padding-left: 10px; padding-right: 10px; }
 .data-table .num { text-align: right; }
 .data-table .neg { color: var(--danger); }
 .data-table .zero{ color: var(--muted); }

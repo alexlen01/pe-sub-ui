@@ -7,6 +7,7 @@ import DonutChart     from '../../components/ui/DonutChart'
 import Tag            from '../../components/ui/Tag'
 import Button         from '../../components/ui/Button'
 import InfoTip        from '../../components/ui/InfoTip'
+import { PAGE_SIZE } from '../../hooks/usePagination'
 import { getFacilities, getActivityFeed, formatLastRun } from '../../services/facilityService'
 import { getLPsForFacility } from '../../services/lpService'
 import { api } from '../../services/api'
@@ -237,6 +238,7 @@ export default function Dashboard() {
               rows={filteredFacilities}
               onRowClick={setSelectedFacility}
               selectedRow={selectedFacility}
+              initialPageSize={PAGE_SIZE}
               keyboardNavigation
               tableLayout="auto"
               resizableStorageKey="dashboard-facilities-v2"

@@ -4,6 +4,8 @@ import Button  from '../../components/ui/Button'
 import InfoTip from '../../components/ui/InfoTip'
 import Modal   from '../../components/ui/Modal'
 import { useApp } from '../../context/AppContext'
+import { useColumnResize, type ColWidths } from '../../hooks/useColumnResize'
+import { usePagination, PAGE_SIZE_OPTS } from '../../hooks/usePagination'
 import { SortableHeader, useSortableRows } from '../../hooks/useTableSort'
 import { api } from '../../services/api'
 import type { BbTemplate, BbTemplateInput, BbTemplateTabInput, TemplateLegendRule } from '../../services/api'
@@ -27,6 +29,24 @@ const LP_CLASSIFICATIONS = [
 ]
 
 const DEFAULT_SKIP_KEYWORDS = ['Total', 'Subtotal', 'Sub-Total', 'Grand Total', 'Sum', 'Net Total']
+
+// Percentage shares, summing to 100, so the table always fills the card at any viewport width
+// instead of underfilling it or forcing a horizontal scroll. Resizing redistributes the share.
+// Each share is at or above the width its header label needs under .bb-template-table's 10px
+// padding, so no column ellipsis-truncates at its default size; the slack left over goes to the
+// three free-text columns, whose values are the only ones that outrun their labels.
+const BB_TEMPLATE_INITIAL_WIDTHS: ColWidths = {
+  templateId:   12,
+  agent:        13,
+  cls:           7,
+  tabs:          5,
+  tabLabel:     16,
+  summaryRows:   9,
+  summaryRange:  7,
+  headerRow:     9,
+  headerCount:   8,
+  groups:        25,
+}
 
 const BB_TEMPLATE_TIP_ITEMS = [
   {
@@ -509,7 +529,7 @@ function TemplateFormModal({
             placeholder="One note per line — extraction caveats, format quirks, provenance."
           />
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-            One note per line. The first note shows in the registry table&apos;s Notes column.
+            One note per line. Notes are stored with the template and shown here only.
           </div>
         </div>
 
@@ -559,8 +579,9 @@ function groupCount(t: BbTemplate): number {
   return lpGridTabs(t).reduce((total, tab) => total + tab.groups.length, 0)
 }
 
-function firstNote(t: BbTemplate): string {
-  return t.notes.find(n => n.trim()) ?? '—'
+// The API sends an absent range as "" rather than null, so emptiness is a trim check, not `?? `.
+function summaryRangeLabel(t: BbTemplate): string {
+  return t.summaryRowRange?.trim() ? t.summaryRowRange.trim() : '—'
 }
 
 // ── Class badge ───────────────────────────────────────────────────────────────
@@ -594,20 +615,27 @@ export default function BBTemplates() {
   const mutationDisabled = loadError != null
 
   // Sort accessors mirror what each cell renders, so the ordering matches what the analyst reads.
-  // The two count columns and Header Row sort numerically and return null where the cell shows
-  // "—", which compareSortValues pushes to the end regardless of direction.
+  // The numeric columns (Summary Rows, Header Row, Columns, Groups) return null wherever the cell
+  // shows "—", which compareSortValues groups together at one end rather than scattering zeros
+  // through the run. Summary Row Range is free text sent as "" when absent, so it trims to null.
   const sortColumns = useMemo(() => [
     { key: 'templateId', getValue: (t: BbTemplate) => t.templateSlug ?? t.templateName },
     { key: 'agent',      getValue: (t: BbTemplate) => t.agentName ?? t.templateName },
     { key: 'cls',        getValue: (t: BbTemplate) => t.templateClass },
     { key: 'tabs',       getValue: (t: BbTemplate) => workbookTabsLabel(t) },
     { key: 'tabLabel',   getValue: (t: BbTemplate) => tabLabel(t) },
+    { key: 'summaryRows',  getValue: (t: BbTemplate) => t.summaryRowsAboveHeader || null },
+    { key: 'summaryRange', getValue: (t: BbTemplate) => t.summaryRowRange?.trim() || null },
     { key: 'headerRow',  getValue: (t: BbTemplate) => primaryLpGrid(t)?.headerRowIndex ?? t.headerRowIndex ?? null },
     { key: 'headerCount', getValue: (t: BbTemplate) => headerCount(t) || null },
     { key: 'groups',     getValue: (t: BbTemplate) => groupCount(t) || null },
-    { key: 'notes',      getValue: (t: BbTemplate) => firstNote(t) },
   ], [])
   const { sort, sortedRows, requestSort } = useSortableRows(templates, sortColumns)
+  const { page, setPage, totalPages, total, pageItems, from, to, pageSize, setPageSize } = usePagination(sortedRows)
+  // Key versioned: useColumnResize merges stored widths over these defaults, so anyone who already
+  // dragged a column would otherwise keep the old, wider sizing forever.
+  const { widths, onResizeStart, tableWidth } = useColumnResize('bb-templates-v2', BB_TEMPLATE_INITIAL_WIDTHS, '%')
+  const pct = (w: number) => `${w}%`
 
   const load = () => {
     setLoadError(null)
@@ -704,26 +732,25 @@ export default function BBTemplates() {
         ) : (
           <>
             <div className="data-table-wrap" style={{ padding: '0 0 4px', scrollbarGutter: 'stable' }}>
-              {/* table-layout: auto — every column sizes itself to its own content, so Class,
-                  Workbook Tabs and the two counts hug their labels instead of being pinned to a
-                  guessed pixel width. Notes is the one declared width: 20% claims the extra room
-                  its free text needs, and the browser hands the rest back to the other columns. */}
-              <table className="data-table" style={{ fontSize: 11, tableLayout: 'auto', width: '100%' }}>
+              {/* table-layout: fixed — the resize handles set each column's width explicitly, so the
+                  browser must honour those widths rather than re-fitting columns to their content. */}
+              <table className="data-table bb-template-table" style={{ fontSize: 11, tableLayout: 'fixed', width: tableWidth }}>
                 <thead>
                   <tr>
-                    <SortableHeader sortKey="templateId"  sort={sort} onSort={requestSort}>Template ID</SortableHeader>
-                    <SortableHeader sortKey="agent"       sort={sort} onSort={requestSort}>Agent / Fund</SortableHeader>
-                    <SortableHeader sortKey="cls"         sort={sort} onSort={requestSort}>Class</SortableHeader>
-                    <SortableHeader sortKey="tabs"        sort={sort} onSort={requestSort}>Workbook Tabs</SortableHeader>
-                    <SortableHeader sortKey="tabLabel"    sort={sort} onSort={requestSort}>Sheet Name</SortableHeader>
-                    <SortableHeader sortKey="headerRow"   sort={sort} onSort={requestSort}>Header Row</SortableHeader>
-                    <SortableHeader sortKey="headerCount" sort={sort} onSort={requestSort} className="num" style={{ textAlign: 'right' }}>Columns</SortableHeader>
-                    <SortableHeader sortKey="groups"      sort={sort} onSort={requestSort} className="num" style={{ textAlign: 'right' }}>Groups</SortableHeader>
-                    <SortableHeader sortKey="notes"       sort={sort} onSort={requestSort} style={{ width: '20%' }}>Notes</SortableHeader>
+                    <SortableHeader sortKey="templateId"   sort={sort} onSort={requestSort} style={{ width: pct(widths.templateId) }} onResizeStart={onResizeStart}>Template ID</SortableHeader>
+                    <SortableHeader sortKey="agent"        sort={sort} onSort={requestSort} style={{ width: pct(widths.agent) }}      onResizeStart={onResizeStart}>Agent / Fund</SortableHeader>
+                    <SortableHeader sortKey="cls"          sort={sort} onSort={requestSort} style={{ width: pct(widths.cls) }}        onResizeStart={onResizeStart}>Class</SortableHeader>
+                    <SortableHeader sortKey="tabs"         sort={sort} onSort={requestSort} style={{ width: pct(widths.tabs) }}       onResizeStart={onResizeStart}>Workbook Tabs</SortableHeader>
+                    <SortableHeader sortKey="tabLabel"     sort={sort} onSort={requestSort} style={{ width: pct(widths.tabLabel) }}   onResizeStart={onResizeStart}>Sheet Name</SortableHeader>
+                    <SortableHeader sortKey="summaryRows"  sort={sort} onSort={requestSort} style={{ width: pct(widths.summaryRows) }} onResizeStart={onResizeStart}>Summary Rows</SortableHeader>
+                    <SortableHeader sortKey="summaryRange" sort={sort} onSort={requestSort} style={{ width: pct(widths.summaryRange) }} onResizeStart={onResizeStart}>Summary Row Range</SortableHeader>
+                    <SortableHeader sortKey="headerRow"    sort={sort} onSort={requestSort} style={{ width: pct(widths.headerRow) }}  onResizeStart={onResizeStart}>Header Row</SortableHeader>
+                    <SortableHeader sortKey="headerCount"  sort={sort} onSort={requestSort} style={{ width: pct(widths.headerCount) }} onResizeStart={onResizeStart}>Columns</SortableHeader>
+                    <SortableHeader sortKey="groups"       sort={sort} onSort={requestSort} style={{ width: pct(widths.groups) }}      onResizeStart={onResizeStart}>Groups</SortableHeader>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map(t => {
+                  {pageItems.map(t => {
                     const groups = groupCount(t)
                     return (
                       <tr
@@ -739,23 +766,36 @@ export default function BBTemplates() {
                         <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.agentName ?? t.templateName}</td>
                         <td><ClassBadge cls={t.templateClass} /></td>
                         <td>{workbookTabsLabel(t)}</td>
-                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(t)}</td>
+                        <td title={tabLabel(t)} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(t)}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{t.summaryRowsAboveHeader || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summaryRangeLabel(t)}</td>
                         <td style={{ fontFamily: 'monospace' }}>{headerRowLabel(t)}</td>
-                        <td style={{ textAlign: 'right' }}>{headerCount(t) || '—'}</td>
-                        <td style={{ textAlign: 'right', color: groups > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groups > 0 ? 600 : 400 }}>
+                        <td>{headerCount(t) || '—'}</td>
+                        <td style={{ color: groups > 0 ? 'var(--navy)' : 'var(--muted)', fontWeight: groups > 0 ? 600 : 400 }}>
                           {groups || '—'}
-                        </td>
-                        {/* The one wrapping cell. Every other column is nowrap, so it sizes to its
-                            own content; a nowrap Notes would instead size to its longest note and
-                            drag the table into a horizontal scroll, leaving the 20% inert. */}
-                        <td style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
-                          {firstNote(t)}
                         </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="tbl-footer">
+              <span>Showing {from}–{to} of {total} templates</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {total > 15 && (
+                  <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                    {PAGE_SIZE_OPTS.map(n => <option key={n} value={n}>{n} / page</option>)}
+                  </select>
+                )}
+                {totalPages > 1 && (
+                  <>
+                    <Button variant="secondary" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>‹ Prev</Button>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>Page {page} of {totalPages}</span>
+                    <Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next ›</Button>
+                  </>
+                )}
+              </div>
             </div>
           </>
         )}

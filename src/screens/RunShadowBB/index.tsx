@@ -1097,9 +1097,6 @@ export default function RunShadowBB() {
                             : ''
                         const agentClsAuto = !adjusted && ov.agentLpCategorySource === 'DERIVED'
                         const c = calcRow(ov, totalCommitM, totalUncalledM)
-                        const reclassified = LPRecord.reclassified
-                          || String(ov.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
-                          || String(ov.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim()
                         const n = ov.investorName || LPRecord.investorName || LPRecord._agentName || '—'
                         return (
                           <tr key={key} className={selected ? 'data-table-row-selected' : undefined} onClick={() => setSelectedKey(key)}
@@ -1108,7 +1105,6 @@ export default function RunShadowBB() {
                             <td title={n}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                                 <span style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span>
-                                {reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}
                                 {LPRecord.transferee && <span className="tf-badge">T</span>}
                                 {LPRecord._isNew && <span style={{ fontSize: 9, fontWeight: 700, background: 'var(--red)', color: '#fff', borderRadius: 2, padding: '1px 4px', letterSpacing: '0.04em', flexShrink: 0 }}>NEW</span>}
                                 {saveState[key] === 'saving' && <span style={{ fontSize: 9, color: 'var(--muted)', flexShrink: 0 }}>Saving…</span>}
