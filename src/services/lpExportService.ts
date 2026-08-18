@@ -1,5 +1,6 @@
 import { exportXlsx, type XlsxSheet } from './reportService'
 import type { LpMasterRecord } from './api'
+import type { FacilityRow } from './facilityService'
 import type { LPRecord } from '../types/lp'
 
 /**
@@ -44,53 +45,64 @@ function lpSize(record: Pick<LPRecord, 'aum' | 'nav' | 'pensionAssets'>): string
   return text(record.aum) || text(record.nav) || text(record.pensionAssets)
 }
 
+/**
+ * The facility columns an LP record cannot carry itself — the export names each row's facility the
+ * way the LP DB Export does (account, fund name, BB date).
+ */
+export type ExportFacility = Pick<FacilityRow, 'name' | 'accountNumber' | 'collateralDate'>
+
+/**
+ * Column order and field set follow the LP DB Export (`lp_db_generate.SRC_COLS`) so the file that
+ * comes out lines up with the file the platform was seeded from. Headers are the readable form of
+ * each source column (`FndName` → Fund Name, `HQ` → High Quality, `UBSAR` → UBS Advance Rate) and
+ * `lp_db_extract.PLATFORM_HEADERS` maps them back, so an exported workbook re-ingests as a feed.
+ *
+ * Nothing follows `Collateral Date` — the LP DB Export ends at `BBDate`, so the platform's own
+ * computed columns (rank, eligibility, excess concentration, delta, the shadow-BB outcome) stay out
+ * of this file. They belong to the Shadow BB export, not to the seed schema.
+ */
 export function buildLpRecordExportRows(
   records: LPRecord[],
-  facilityNameById: Map<number, string>,
+  facilityById: Map<number, ExportFacility>,
 ): ExportRow[] {
-  return records.map(r => ({
-    'LP Record ID':               r.id ?? '',
-    'Facility ID':                r.facilityId ?? '',
-    'Facility':                   r.facilityId != null ? facilityNameById.get(r.facilityId) ?? '' : '',
-    'Rank':                       r.lpRank ?? '',
-    'Investor Name':              text(r.investorName),
-    'Parent':                     text(r.parent),
-    'SPV':                        yesNo(r.spv),
-    'Region / Location':          text(r.regionLocation),
-    'Investor Type':              text(r.investorType),
-    'Institutional vs HNW':       text(r.institutionalOrHnw),
-    'Agent LP Classification':    text(r.agentLpCategory),
-    'Agent Classification Source': text(r.agentLpCategorySource),
-    'UBS LP Classification':      text(r.ubsLpCategory),
-    'Eligible':                   yesNo(r.included),
-    'Investment Grade':           yesNo(r.investmentGrade),
-    'High Quality':               yesNo(r.highQuality),
-    'S&P':                        text(r.spRating),
-    "Moody's":                    text(r.moodysRating),
-    'Fitch':                      text(r.fitchRating),
-    'LP Size':                    lpSize(r),
-    'Size Measure':               sizeMeasure(r),
-    'Funded Ratio (%)':           pct(r.fundingRatio),
-    'Capital Commitments':        text(r.capitalCommitment),
-    '% of Commitments':           pct(r.pctOfFundCommitments),
-    'Called Capital':             text(r.calledCapital),
-    'Uncalled Capital':           text(r.uncalledCapital),
-    '% of Uncalled Capital':      pct(r.pctOfFundUncalled),
-    '% of LP Called':             pct(r.pctLpCalled),
-    'Uncalled Eligible Capital':  text(r.uncalledEligibleCapital),
-    'Agent Advance Rate (%)':     pct(r.agentAdvanceRate),
-    'UBS Advance Rate (%)':       pct(r.ubsAdvanceRate),
-    'Agent Concentration Limit':  text(r.agentConcentrationLimit),
-    'UBS Concentration Limit':    text(r.ubsConcentrationLimit),
-    'Agent Excess Concentration': text(r.agentExcessConcentration),
-    'UBS Excess Concentration':   text(r.ubsExcessConcentration),
-    'Agent Borrowing Base':       text(r.agentBorrowingBase),
-    'UBS Borrowing Base':         text(r.ubsBorrowingBase),
-    'Delta':                      text(r.delta),
-    'Reclassified':               yesNo(r.reclassified),
-    'Transferee':                 yesNo(r.transferee),
-    'Notes':                      text(r.notes),
-  }))
+  return records.map(r => {
+    const facility = r.facilityId != null ? facilityById.get(r.facilityId) : undefined
+    return {
+      // ── LP DB Export columns, in source order ───────────────────────────────────────────────
+      'Account ID':                  text(facility?.accountNumber),   // AccountID
+      'Fund Name':                   text(facility?.name),            // FndName
+      'Investor Name':               text(r.investorName),            // InvestorName
+      'Parent':                      text(r.parent),                  // Parent
+      'SPV':                         yesNo(r.spv),                    // SPV
+      'Investor Type':               text(r.investorType),            // InvestorType
+      'Region / Location':           text(r.regionLocation),          // Region
+      'High Quality':                yesNo(r.highQuality),            // HQ
+      'Institutional vs HNW':        text(r.institutionalOrHnw),      // InstitutionalHNW
+      'Investment Grade':            yesNo(r.investmentGrade),        // InvestmentGrade
+      'Agent LP Classification':     text(r.agentLpCategory),         // Classification
+      'Notes':                       text(r.notes),                   // Notes
+      'S&P':                         text(r.spRating),                // SP
+      "Moody's":                     text(r.moodysRating),            // Moodys
+      'Fitch':                       text(r.fitchRating),             // Fitch
+      'AUM':                         text(r.aum),                     // AUM
+      'NAV':                         text(r.nav),                     // NAV
+      'Pension Assets':              text(r.pensionAssets),           // PensionAssets
+      'Funded Ratio (%)':            pct(r.fundingRatio),             // FundingRatio
+      'UBS Advance Rate (%)':        pct(r.ubsAdvanceRate),           // UBSAR
+      'Agent Advance Rate (%)':      pct(r.agentAdvanceRate),         // AgentAR
+      'Capital Commitments':         text(r.capitalCommitment),       // Commitments
+      '% of Commitments':            pct(r.pctOfFundCommitments),     // PercentOfCommitments
+      'Called Capital':              text(r.calledCapital),           // Called
+      'Uncalled Capital':            text(r.uncalledCapital),         // Uncalled
+      '% of Uncalled Capital':       pct(r.pctOfFundUncalled),        // PercentOfUncalled
+      '% of LP Called':              pct(r.pctLpCalled),              // CalledPercent
+      'Agent Concentration Limit':   text(r.agentConcentrationLimit), // AgentCL
+      'UBS Concentration Limit':     text(r.ubsConcentrationLimit),   // UBSCL
+      'Agent Borrowing Base':        text(r.agentBorrowingBase),      // AgentBB
+      'UBS Borrowing Base':          text(r.ubsBorrowingBase),        // UBSBB
+      'Collateral Date':             text(facility?.collateralDate),  // BBDate — last column
+    }
+  })
 }
 
 export function buildLpMasterExportRows(records: LpMasterRecord[]): ExportRow[] {
@@ -130,8 +142,8 @@ export function exportFileName(prefix: string, now = new Date()): string {
   return `${prefix}-${stamp}.xlsx`
 }
 
-export function exportLpRecords(records: LPRecord[], facilityNameById: Map<number, string>): void {
-  const sheet: XlsxSheet = { name: 'LP Records', rows: buildLpRecordExportRows(records, facilityNameById) }
+export function exportLpRecords(records: LPRecord[], facilityById: Map<number, ExportFacility>): void {
+  const sheet: XlsxSheet = { name: 'LP Records', rows: buildLpRecordExportRows(records, facilityById) }
   exportXlsx(exportFileName('lp-records'), [sheet])
 }
 

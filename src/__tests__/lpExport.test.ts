@@ -82,18 +82,49 @@ const lpMaster = (over: Partial<LpMasterRecord> = {}): LpMasterRecord => ({
   ...over,
 })
 
-describe('LP records export', () => {
-  const facilities = new Map([[3, 'AG ABC']])
+// Column order and field set mirror the LP DB Export (lp_db_generate.SRC_COLS), so the file that
+// comes out of the platform lines up with the file the platform was seeded from.
+const LP_DB_COLUMNS = [
+  'Account ID', 'Fund Name', 'Investor Name', 'Parent', 'SPV', 'Investor Type', 'Region / Location',
+  'High Quality', 'Institutional vs HNW', 'Investment Grade', 'Agent LP Classification', 'Notes',
+  'S&P', "Moody's", 'Fitch', 'AUM', 'NAV', 'Pension Assets', 'Funded Ratio (%)',
+  'UBS Advance Rate (%)', 'Agent Advance Rate (%)', 'Capital Commitments', '% of Commitments',
+  'Called Capital', 'Uncalled Capital', '% of Uncalled Capital', '% of LP Called',
+  'Agent Concentration Limit', 'UBS Concentration Limit', 'Agent Borrowing Base',
+  'UBS Borrowing Base', 'Collateral Date',
+]
 
-  it('names the facility and keeps API display strings verbatim', () => {
+describe('LP records export', () => {
+  const facilities = new Map([
+    [3, { name: 'AG ABC', accountNumber: '5VZ8873', collateralDate: '2026-06-25' }],
+  ])
+
+  it('is the LP DB Export columns, in the source file order and nothing after them', () => {
     const [row] = buildLpRecordExportRows([lpRecord()], facilities)
-    expect(row['Facility']).toBe('AG ABC')
-    expect(row['Facility ID']).toBe(3)
-    expect(row['LP Record ID']).toBe(11)
+    expect(Object.keys(row)).toEqual(LP_DB_COLUMNS)
+    expect(Object.keys(row).at(-1)).toBe('Collateral Date')   // the source export ends at BBDate
+  })
+
+  it('carries the facility columns an LP record cannot hold itself', () => {
+    const [row] = buildLpRecordExportRows([lpRecord()], facilities)
+    expect(row['Account ID']).toBe('5VZ8873')
+    expect(row['Fund Name']).toBe('AG ABC')
+    expect(row['Collateral Date']).toBe('2026-06-25')
+  })
+
+  it('keeps API display strings verbatim', () => {
+    const [row] = buildLpRecordExportRows([lpRecord()], facilities)
     expect(row['Investor Name']).toBe('Beacon Capital Hospital Trust')
     expect(row['Capital Commitments']).toBe('$100,000,000')
     expect(row['UBS Concentration Limit']).toBe('$25,000,000')
-    expect(row['Rank']).toBe(4)
+    expect(row['Agent LP Classification']).toBe('Rated Included')
+  })
+
+  it('leaves the platform-computed columns out — they are not LP DB Export columns', () => {
+    const [row] = buildLpRecordExportRows([lpRecord()], facilities)
+    const absent = ['LP Record ID', 'Facility ID', 'Rank', 'UBS LP Classification', 'Eligible',
+                    'Uncalled Eligible Capital', 'Delta', 'Reclassified', 'Transferee']
+    absent.forEach(column => expect(row).not.toHaveProperty(column))
   })
 
   it('writes fractions as percent numbers, not text', () => {
@@ -106,33 +137,34 @@ describe('LP records export', () => {
 
   it('leaves absent values as empty cells so numeric columns stay numeric', () => {
     const [row] = buildLpRecordExportRows(
-      [lpRecord({ fundingRatio: null, ubsAdvanceRate: null, fitchRating: '', lpRank: null })],
+      [lpRecord({ fundingRatio: null, ubsAdvanceRate: null, fitchRating: '' })],
       facilities,
     )
     expect(row['Funded Ratio (%)']).toBe('')
     expect(row['UBS Advance Rate (%)']).toBe('')
     expect(row['Fitch']).toBe('')
-    expect(row['Rank']).toBe('')
   })
 
-  it('reports LP Size against the measure that carries it, and booleans as Yes/No', () => {
+  it('keeps AUM, NAV and Pension Assets in their own columns like the source export', () => {
     const [aum] = buildLpRecordExportRows([lpRecord()], facilities)
-    expect(aum['LP Size']).toBe('$4,200,000,000')
-    expect(aum['Size Measure']).toBe('AUM')
-    expect(aum['Eligible']).toBe('Yes')
+    expect(aum['AUM']).toBe('$4,200,000,000')
+    expect(aum['NAV']).toBe('')
+    expect(aum['Pension Assets']).toBe('')
     expect(aum['SPV']).toBe('No')
+    expect(aum['Investment Grade']).toBe('Yes')
 
     const [pension] = buildLpRecordExportRows(
       [lpRecord({ aum: '', pensionAssets: '$1,800,000,000' })], facilities,
     )
-    expect(pension['LP Size']).toBe('$1,800,000,000')
-    expect(pension['Size Measure']).toBe('Assets')
+    expect(pension['AUM']).toBe('')
+    expect(pension['Pension Assets']).toBe('$1,800,000,000')
   })
 
-  it('blanks the facility for a record whose facility is not on file', () => {
+  it('blanks the facility columns for a record whose facility is not on file', () => {
     const [row] = buildLpRecordExportRows([lpRecord({ facilityId: 99 })], facilities)
-    expect(row['Facility']).toBe('')
-    expect(row['Facility ID']).toBe(99)
+    expect(row['Fund Name']).toBe('')
+    expect(row['Account ID']).toBe('')
+    expect(row['Collateral Date']).toBe('')
   })
 
   it('exports every record, not a page of them', () => {

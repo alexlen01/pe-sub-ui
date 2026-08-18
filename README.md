@@ -293,6 +293,18 @@ rather than of the current view. Money and the concentration limits go out as th
 strings; rates and ratios, which arrive as fractions, become numbers under `(%)` headers so a
 spreadsheet can sum them, and absent values are empty cells rather than `—`.
 
+The LP records export closes the loop on the seed file: it is the **LP DB Export**'s own 32 columns
+in the source order (`lp_db_generate.SRC_COLS`), ending at `BBDate` like the source workbook, under
+readable headers — `AccountID` → Account ID, `FndName` → Fund Name, `HQ` → High Quality, `UBSAR` →
+UBS Advance Rate, `BBDate` → Collateral Date — with `AUM`/`NAV`/`PensionAssets` kept as three
+separate columns rather than collapsed into LP Size + Size Measure. Account ID, Fund Name and
+Collateral Date come from the row's facility, which is why the export is handed the facility map
+rather than just its names. Nothing follows Collateral Date: the platform's own computed columns
+(rank, eligibility, excess concentration, delta) are not LP DB Export columns and stay in the Shadow
+BB export. `lp_db_extract.py` reads the file back through its `PLATFORM_HEADERS` map, converting the
+spreadsheet-shaped values (percent numbers, `$`-formatted money) back to the feed's fractions and
+bare numbers, so an exported workbook can be re-ingested as a seed.
+
 The screen reuses the LP Records layout exactly — same `Card` + filter bar, dense sortable/resizable
 table, pagination, and a right-docked editable panel (`LPMasterPanel` inside a `DraggablePanel`
 using the same `.LPRecord-detail-overlay` class, so the same width and position). Columns cover the

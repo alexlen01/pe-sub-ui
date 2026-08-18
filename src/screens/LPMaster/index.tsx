@@ -474,7 +474,7 @@ export default function LPMaster() {
     setExporting(true)
     try {
       const all = await getLPs()
-      exportLpRecords(all, new Map([...facilityById].map(([id, f]) => [id, f.name])))
+      exportLpRecords(all, facilityById)
       toast(`Exported ${all.length.toLocaleString()} LP records to Excel.`)
     } catch (e) {
       toast(e instanceof Error && e.message ? e.message : 'Could not export LP records — API unavailable.')
@@ -583,14 +583,38 @@ export default function LPMaster() {
   // label's rendered width (11px bold Segoe UI in `.data-table.dense`) plus the 18px side padding
   // and the 13px sort indicator, so no label is ever ellipsis-truncated at the default sizing.
   const { widths, onResizeStart, tableWidth } = useColumnResize('lp-master-v2', {
-    rank: 64, facility: 180,
-    name: 170, parent: 160, spv: 54,
-    region: 125, investorType: 130, instHnw: 142, agentLpCategory: 151, cls: 144,
-    inc: 71, ig: 126, sp: 70, mdy: 78, fitch: 70,
-    lpSize: 134, sizeMeasure: 101, capitalCommitment: 146, pctOfFundCommitments: 133,
-    calledCapital: 104, uc: 117, pctOfFundUncalled: 144, pctLpCalled: 107,
-    agentAdvanceRate: 139, rate: 128, agentConcentrationLimit: 171, ubsConcentrationLimit: 160,
-    agentExcess: 177, ubsExcess: 167, abb: 149, ubb: 139, notes: 150,
+    rank: 64, 
+    facility: 180,
+    name: 170, 
+    parent: 160, 
+    spv: 54,
+    region: 125, 
+    investorType: 130, 
+    instHnw: 142, 
+    agentLpCategory: 151, 
+    cls: 144,
+    inc: 71, 
+    ig: 126, 
+    sp: 70, 
+    mdy: 78, 
+    fitch: 70,
+    lpSize: 84, 
+    sizeMeasure: 101, 
+    capitalCommitment: 146, 
+    pctOfFundCommitments: 133,
+    calledCapital: 104, 
+    uc: 117, 
+    pctOfFundUncalled: 144, 
+    pctLpCalled: 107,
+    agentAdvanceRate: 139, 
+    rate: 128, 
+    agentConcentrationLimit: 171, 
+    ubsConcentrationLimit: 160,
+    agentExcess: 177, 
+    ubsExcess: 167, 
+    abb: 149, 
+    ubb: 139, 
+    notes: 150
   })
   // Rank and Facility are mutually exclusive: Rank only under a selected facility, Facility only
   // under "All Facilities". Whichever is hidden must come off the summed table width.
