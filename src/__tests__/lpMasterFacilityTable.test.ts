@@ -38,15 +38,42 @@ describe('LP Master facility table', () => {
     expect(lpMaster()).toContain('onResizeStart={onFacResizeStart}>Last BB Run</SortableHeader>')
   })
 
-  it('puts the two UBS participation columns directly after Loan Amount', () => {
+  it('puts UBS Participation directly after Loan Amount, with no rate column', () => {
     const keys = facSortKeys()
-    expect(keys.slice(keys.indexOf('facLoanAmount'), keys.indexOf('facLoanAmount') + 3))
-      .toEqual(['facLoanAmount', 'facUbsParticipation', 'facUbsRate'])
+    expect(keys.slice(keys.indexOf('facLoanAmount'), keys.indexOf('facLoanAmount') + 2))
+      .toEqual(['facLoanAmount', 'facUbsParticipation'])
     expect(lpMaster()).toContain('onResizeStart={onFacResizeStart}>UBS Participation</SortableHeader>')
-    expect(lpMaster()).toContain('onResizeStart={onFacResizeStart}>UBS Participation Rate</SortableHeader>')
-    // Both read the row fields getFacilities already derives — no second derivation in the screen.
+    // Reads the row field getFacilities already derives — no second derivation in the screen.
     expect(lpMaster()).toContain('<td className="num">{f.ubsParticipation}</td>')
-    expect(lpMaster()).toContain('<td className="num">{f.ubsParticipationRate}</td>')
+    // The rate is an edit-overlay field only; it was dropped from the table.
+    expect(lpMaster()).not.toContain('UBS Participation Rate</SortableHeader>')
+    expect(lpMaster()).not.toContain('<td className="num">{f.ubsParticipationRate}</td>')
+  })
+
+  it('draws the facility name cell as a folder tab, not a hyperlink', () => {
+    // The row opens the edit overlay, so the name cell has to advertise its own target. It does
+    // that as a folder tab, never a link underline. The tab must stay a nested span: .data-table
+    // sets border-collapse: collapse, under which a td ignores border-radius outright.
+    const src = lpMaster()
+    expect(src).toContain('<span className="folder-tab">{f.name}</span>')
+    expect(src).toContain('className="drill-cell folder-tab-wrap"')
+    expect(src).not.toContain("textDecoration: 'underline'")
+    const css = source('../index.css')
+    expect(css).toContain('.folder-tab {')
+    // The lip hangs off the wrapper, so the cell must carry both classes to get one.
+    expect(css).toContain('.folder-tab-wrap::before {')
+  })
+
+  it('keeps the open facility wearing a highlighted tab on the LP records screen', () => {
+    // Same tab, held lit: the folder you clicked in the picker is the folder you are inside.
+    const src = lpMaster()
+    expect(src).toContain('<span className="folder-tab folder-tab-open" title={facFilter.name}>{facFilter.name}</span>')
+    // "All Facilities" is no single folder — it must stay plain text.
+    expect(src).toContain(">All Facilities</span>")
+    const css = source('../index.css')
+    expect(css).toContain('.folder-tab-open {')
+    // The open tab is a label, not a drill target.
+    expect(css).toContain('.folder-tab-open::after { content: none; }')
   })
 
   it('fills the card width, with the summed column widths only as the floor', () => {
@@ -66,9 +93,8 @@ describe('LP Master facility table', () => {
     expect(src).toContain("key: 'facMaturity',    getValue: (f: FacilityRow) => toISODate(f.maturityDate)")
     expect(src).toContain("key: 'facLastRun',     getValue: (f: FacilityRow) => f.lastRunAt ?? null")
     expect(src).toContain("key: 'facLps',         getValue: (f: FacilityRow) => f.lps ?? null")
-    // "$500.0M" vs "$1.2B" sorts as text; the rate's "—" placeholder sorts as absent, not as a value.
+    // "$500.0M" vs "$1.2B" sorts as text, so participation sorts on the parsed dollar amount.
     expect(src).toContain("key: 'facUbsParticipation', getValue: (f: FacilityRow) => parseMoneyToNumber(f.ubsParticipation)")
-    expect(src).toContain("key: 'facUbsRate',     getValue: (f: FacilityRow) => percentToNumber(f.ubsParticipationRate)")
   })
 
   it('accents the Last BB Run date in bold blue', () => {

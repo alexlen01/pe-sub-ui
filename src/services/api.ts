@@ -568,8 +568,8 @@ export const api = {
       patch<Facility>(`/api/facilities/${id}/status`, { status }),
     update: (id: number, body: { name?: string; agentBank?: string; accountNumber?: string | null; loanAmount?: number | null; maturityDate?: string | null; collateralDate?: string | null; facilitySize?: number | null; ubsParticipation?: number | null }) =>
       patch<Facility>(`/api/facilities/${id}`, body),
-    remove: (id: number) =>
-      del(`/api/facilities/${id}`),
+    // No delete wrapper: a facility is retired by setStatus(id, 'Inactive'), never removed —
+    // its LP records and Shadow BB history have to stay auditable.
   },
 
   // ── LPs ─────────────────────────────────────────────────────────────────────

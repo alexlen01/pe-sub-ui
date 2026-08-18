@@ -269,14 +269,29 @@ that *feed* them, so the columns stop at the credit profile and add the parent/c
 instead.
 
 The facility picker itself is a table, not a tile grid, carrying the same Agent Bank Summary columns
-as the Dashboard (Facility, Agent Bank, # LPs, Account #, Loan Amount, Maturity Date, Collateral
-Date, Facility Status) plus **Last BB Run** last — an explicit run date, with the relative form
-("2d ago") on hover, and a `◆ BB` marker for a facility carrying BB figures but no run timestamp.
-Sorting runs on the underlying values, not the display strings, so dates order chronologically and
-`# LPs` numerically. Column widths default wide enough for each header to sit on one line beside its
-sort indicator, and the summed width is the table's minimum, so a narrow viewport scrolls
-horizontally rather than squeezing columns. A leading pencil column (editors only) opens the
-Facility Edit overlay; clicking anywhere else on the row drills into that facility's LP records.
+as the Dashboard (Facility, Agent Bank, # LPs, Account #, Loan Amount, UBS Participation, Maturity
+Date, Collateral Date, Facility Status) plus **Last BB Run** last — an explicit run date, with the
+relative form ("2d ago") on hover, and a `◆ BB` marker for a facility carrying BB figures but no run
+timestamp. Sorting runs on the underlying values, not the display strings, so dates order
+chronologically and `# LPs` numerically. Column widths default wide enough for each header to sit on
+one line beside its sort indicator, and the summed width is the table's minimum, so a narrow viewport
+scrolls horizontally rather than squeezing columns.
+
+The **Facility** cell is drawn as a folder tab (`.folder-tab` inside a `.folder-tab-wrap` cell —
+a nested span because `border-collapse: collapse` makes a `td` ignore `border-radius`). Tabs rest in
+neutral grey and light gold/amber with a red spine when hovered; clicking one opens that facility's
+LP records, while clicking anywhere else on the row opens the Facility Edit overlay (editors only —
+there is no pencil column). The same tab marks the Facility column of the **View All LPs** table,
+and the facility you drilled into keeps wearing it in the LP records header, pinned to the
+highlighted state (`.folder-tab-open`) because that is the folder you are inside.
+
+Both stores export to Excel from their filter bars, each behind a **↓ Export** button
+(`lp-records-<date>.xlsx` and `lp-master-records-<date>.xlsx`), built in
+`services/lpExportService.ts`. Each writes the **whole** table — screen filters and pagination are
+ignored, and the LP records export refetches `GET /api/lpRecords` so it is a copy of the store
+rather than of the current view. Money and the concentration limits go out as the API's display
+strings; rates and ratios, which arrive as fractions, become numbers under `(%)` headers so a
+spreadsheet can sum them, and absent values are empty cells rather than `—`.
 
 The screen reuses the LP Records layout exactly — same `Card` + filter bar, dense sortable/resizable
 table, pagination, and a right-docked editable panel (`LPMasterPanel` inside a `DraggablePanel`
@@ -311,8 +326,10 @@ and edited on the **Facility Edit** overlay in LP Master (persisted via `PATCH /
 The overlay makes **all** facility fields editable, including the Identity fields **Borrower (name)**
 and **Agent Bank** (# LPs and Facility Status Date stay read-only — they are derived). It also lets a
 facility with **no LP records** be **Deactivated** (`PATCH /api/facilities/{id}/status` → `Inactive`,
-reversible via **Reactivate**) or **Deleted** (`DELETE /api/facilities/{id}`); both actions are
-disabled while LP records exist. Facility Status / Status Date reflect the internal workflow status.
+reversible via **Reactivate**), disabled while LP records exist. A facility is **never deleted from
+the UI** — deactivation is the only retirement path, so LP records and Shadow BB history stay
+auditable, and the API client deliberately exposes no `DELETE /api/facilities/{id}` wrapper.
+Facility Status / Status Date reflect the internal workflow status.
 
 The call to action on the selected facility is status- and role-aware: **Start Submission** (Not
 Started), **View Submission** (In Progress / Needs Review — routing straight to the wizard step the

@@ -327,29 +327,14 @@ describe('api.facilities.setStatus', () => {
   })
 })
 
-// ── api.facilities.remove (DELETE /api/facilities/{id}) ────────────────────────
+// ── Facilities are never deleted from the UI ───────────────────────────────────
 
-describe('api.facilities.remove', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('issues a DELETE to the facility resource', async () => {
-    const calls: Array<{ url: string; init?: RequestInit }> = []
-    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
-      calls.push({ url: String(url), init })
-      return Promise.resolve(new Response(null, { status: 204 }))
-    }))
-
-    await api.facilities.remove(9)
-
-    expect(calls[0].url).toContain('/api/facilities/9')
-    expect(calls[0].init?.method).toBe('DELETE')
-  })
-
-  it('rejects with the API ProblemDetail message when the facility still has LP records (409)', async () => {
-    vi.stubGlobal('fetch', vi.fn(() =>
-      Promise.resolve(new Response(JSON.stringify({ detail: 'Cannot delete a facility that has LP records (3). Remove its LP records first.' }), { status: 409 }))
-    ))
-    await expect(api.facilities.remove(9)).rejects.toThrow('Cannot delete a facility that has LP records')
+describe('facility retirement', () => {
+  it('exposes no delete wrapper — retiring a facility is a status change', () => {
+    // Deleting a facility would take its LP records and Shadow BB history with it, so the
+    // client offers no DELETE path at all; 'Inactive' is the only way to retire one.
+    expect('remove' in api.facilities).toBe(false)
+    expect(typeof api.facilities.setStatus).toBe('function')
   })
 })
 

@@ -214,6 +214,93 @@ input[type=checkbox] { cursor: pointer; accent-color: var(--red); }
    their minimum width. Trimming it to 10px lets each column sit at the width of its own text. */
 .bb-template-table th,
 .bb-template-table td { padding-left: 10px; padding-right: 10px; }
+/* Drill-down cell — one column in a row whose other cells do something else (in LP Master the row
+   opens the facility edit overlay, this cell opens the facility's LP records). A link underline
+   reads as "more text of the same kind", so the cell is drawn as a folder tab instead: the name
+   sits on a tinted tab with a coloured spine and a lip, and clicking it opens that folder.
+   The tab is an inner span because .data-table uses border-collapse: collapse, under which a td
+   ignores border-radius entirely. Tabs rest in neutral grey — the colour is the interaction, so
+   only the hovered tab takes the UBS red the rest of the app uses for "this is the thing you
+   clicked". Row status keeps its own colour in the Facility Status cell. */
+/* The wrapper owns the lip and the space it needs; the tab itself clips its own overflow for the
+   ellipsis and would otherwise swallow it. On a td, `display` must stay table-cell — the inline
+   variant below is for the LP records header, where the open facility wears the same tab. */
+.folder-tab-wrap {
+  position: relative;
+  padding: 5px 10px 3px 5px;
+}
+.folder-tab-wrap-inline { display: inline-block; vertical-align: middle; max-width: 320px; }
+/* Both must beat .data-table.dense td, which sets its own padding and an `overflow: hidden` that
+   would clip the lip. */
+.data-table td.drill-cell,
+.data-table.dense td.drill-cell {
+  padding: 5px 10px 3px 5px;
+  overflow: visible;
+}
+.folder-tab {
+  display: block;
+  position: relative;
+  padding: 4px 20px 4px 9px;
+  font-weight: 700;
+  color: var(--navy);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gray);
+  border-radius: 3px 9px 9px 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, box-shadow .12s;
+}
+/* The folder's lip — the raised strip a manila tab shows above the folder body. */
+.folder-tab-wrap::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 38%;
+  max-width: 78px;
+  height: 6px;
+  border-radius: 3px 5px 0 0;
+  background: var(--tbl);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  transition: background .12s, border-color .12s;
+}
+.folder-tab::after {
+  content: '\203A';
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--gray);
+  transition: color .12s, right .12s;
+}
+/* Highlighted: hovering a tab in the table, or the open facility's tab on the LP records screen,
+   which stays lit because that is the folder you are inside. Hovering lifts the tab out of the
+   row's red-lt tint so the click target is unambiguous next to the rest of the row (which opens
+   the edit overlay instead). */
+.data-table td.drill-cell:hover .folder-tab,
+.folder-tab-open {
+  color: var(--navy-dk);
+  /* Gold-into-amber wash — a manila folder catching the light. The spine and chevron stay red so
+     the interactive accent is still the app's own, and the fill carries the highlight. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--amber-lt) 50%, #fff), var(--amber-lt));
+  border-color: color-mix(in srgb, var(--amber) 40%, #fff);
+  border-left-color: var(--red);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .16);
+}
+.data-table td.drill-cell:hover.folder-tab-wrap::before,
+.folder-tab-wrap-open::before {
+  background: color-mix(in srgb, var(--amber-lt) 50%, #fff);
+  border-color: color-mix(in srgb, var(--amber) 40%, #fff);
+}
+.data-table td.drill-cell:hover .folder-tab::after { color: var(--red); right: 5px; }
+/* The open tab is a label, not a target: no chevron to promise a drill it cannot perform. */
+.folder-tab-open { padding-right: 11px; }
+.folder-tab-open::after { content: none; }
 .data-table .num { text-align: right; }
 .data-table .neg { color: var(--danger); }
 .data-table .zero{ color: var(--muted); }

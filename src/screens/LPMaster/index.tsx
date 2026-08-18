@@ -14,6 +14,7 @@ import LPRecordPanel   from '../../components/ui/LPRecordPanel'
 import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import { formatFullDate, formatUsdNoDecimals, getFacilities, parseMoneyToNumber } from '../../services/facilityService'
 import { api, type LpClassificationRequest } from '../../services/api'
+import { exportLpRecords } from '../../services/lpExportService'
 import { getLPs, getLPsForFacility } from '../../services/lpService'
 import type { FacilityRow } from '../../services/facilityService'
 import type { LPRecord } from '../../services/lpService'
@@ -117,9 +118,8 @@ const FAC_COL_WIDTHS = {
   facLps:              78, 
   facAccount:          100,
   facLoanAmount:       120, 
-  facUbsParticipation: 168, 
-  facUbsRate:          160,
-  facMaturity:         120, 
+  facUbsParticipation: 168,
+  facMaturity:         120,
   facCollateral:       120, 
   facStatus:           132, 
   facLastRun:          150,
@@ -133,12 +133,6 @@ const FAC_COL_WIDTHS = {
 const toISODate = (display: string) => {
   const d = new Date(display)
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
-}
-
-// "10.0%" → 10, so the rate column sorts numerically; the "—" placeholder sorts as absent.
-const percentToNumber = (display: string) => {
-  const n = parseFloat(display)
-  return Number.isNaN(n) ? null : n
 }
 
 const moneyForFacilityEdit = (display: string) => {
@@ -197,19 +191,17 @@ function pctDisplay(value: number | null): string {
   return value == null ? '—' : formatPercentageFraction(value)
 }
 
-function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, onDelete }: {
+function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate }: {
   facility: FacilityRow | null
   open: boolean
   onClose: () => void
   onSave: (f: FacilityRow) => void
   onDeactivate: (f: FacilityRow, status: 'Inactive' | 'Not Started') => void
-  onDelete: (f: FacilityRow) => void
 }) {
   const [form, setForm] = useState<FacilityForm>({
     name: '', agentBank: '', accountNumber: '', loanAmount: '', ubsParticipation: '', ubsParticipationRate: '', maturityDate: '', collateralDate: '',
   })
   const [draftFields, setDraftFields] = useState<Record<DraftFieldKey, boolean>>({ ubsParticipation: false, ubsParticipationRate: false })
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!facility) return
@@ -235,12 +227,12 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
       ubsParticipation: defaultParticipation != null,
       ubsParticipationRate: defaultParticipation != null,
     })
-    setConfirmDelete(false)
   }, [facility?.id])
 
   if (!open || !facility) return null
 
-  // A facility may only be deactivated or deleted while it holds no LP records.
+  // A facility may only be deactivated while it holds no LP records. There is no delete —
+  // a facility that is no longer in use is made Inactive and keeps its history.
   const hasLPs    = (facility.lps ?? 0) > 0
   const isInactive = facility.status === 'Inactive'
   const nameValid  = form.name.trim().length > 0 && form.agentBank.trim().length > 0
@@ -350,15 +342,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
     <div key={t} style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--navy)', marginTop: 6, padding: '4px 10px', background: 'var(--tbl)', borderRadius: 4, borderLeft: '3px solid var(--navy)' }}>{t}</div>
   )
 
-  const footer = confirmDelete ? (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
-      <span style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>Delete "{facility.name}" permanently? This cannot be undone.</span>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-        <Button variant="danger" onClick={() => onDelete(facility)}>Confirm Delete</Button>
-      </div>
-    </div>
-  ) : (
+  const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         {isInactive ? (
@@ -367,8 +351,6 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
           <Button variant="secondary" onClick={() => onDeactivate(facility, 'Inactive')} disabled={hasLPs}
                   title={hasLPs ? 'Remove all LP records before deactivating' : undefined}>Deactivate</Button>
         )}
-        <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={hasLPs}
-                title={hasLPs ? 'Remove all LP records before deleting' : undefined}>Delete</Button>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -381,7 +363,7 @@ function FacilityDetailOverlay({ facility, open, onClose, onSave, onDeactivate, 
     <Modal open={open} onClose={onClose} title={facility.name} width={620} footer={footer}>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         {facility.agentBank} · {facility.lps?.toLocaleString()} LPs
-        {hasLPs && <span style={{ marginLeft: 8, color: 'var(--amber)' }}>· deactivate / delete disabled while LP records exist</span>}
+        {hasLPs && <span style={{ marginLeft: 8, color: 'var(--amber)' }}>· deactivate disabled while LP records exist</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
         {sec('Identity')}
@@ -454,6 +436,7 @@ export default function LPMaster() {
   const [selected,   setSelected]   = useState<LPRecord | null>(null)
   const [editingFacility, setEditingFacility] = useState<FacilityRow | null>(null)
   const [rerunning, setRerunning] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // Live: pull the facility's LP records fresh on open so newly-committed LPs always show,
   // independent of whatever facility the shared context last loaded.
@@ -485,6 +468,21 @@ export default function LPMaster() {
     setFacFilter(null)
   }
 
+  // Export is the whole lp_records table, never the filtered page — it is a copy of the store, so
+  // it refetches rather than dumping whatever the current facility view happens to hold.
+  const handleExportLpRecords = async () => {
+    setExporting(true)
+    try {
+      const all = await getLPs()
+      exportLpRecords(all, new Map([...facilityById].map(([id, f]) => [id, f.name])))
+      toast(`Exported ${all.length.toLocaleString()} LP records to Excel.`)
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : 'Could not export LP records — API unavailable.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const visibleFacilities = useMemo(() => {
     const q = facSearch.toLowerCase()
     return q ? facilities.filter(f => f.name.toLowerCase().includes(q) || f.agentBank.toLowerCase().includes(q)) : facilities
@@ -499,7 +497,6 @@ export default function LPMaster() {
     { key: 'facAccount',     getValue: (f: FacilityRow) => f.accountNumber },
     { key: 'facLoanAmount',  getValue: (f: FacilityRow) => f.loanAmount },
     { key: 'facUbsParticipation', getValue: (f: FacilityRow) => parseMoneyToNumber(f.ubsParticipation) },
-    { key: 'facUbsRate',     getValue: (f: FacilityRow) => percentToNumber(f.ubsParticipationRate) },
     { key: 'facMaturity',    getValue: (f: FacilityRow) => toISODate(f.maturityDate) },
     { key: 'facCollateral',  getValue: (f: FacilityRow) => toISODate(f.collateralDate) },
     { key: 'facStatus',      getValue: (f: FacilityRow) => f.status },
@@ -509,9 +506,10 @@ export default function LPMaster() {
     useSortableRows(visibleFacilities, facSortColumns, { key: 'facName', direction: 'asc' })
   const facPage = usePagination(facSortedRows)
   // Versioned key: useColumnResize merges stored widths over these defaults, so a returning user
-  // would otherwise keep the retired edit column and the old UBS Participation width forever.
+  // would otherwise keep the retired edit and UBS Participation Rate columns — and the old
+  // UBS Participation width — forever.
   const { widths: facWidths, onResizeStart: onFacResizeStart, tableWidth: facTableWidth } =
-    useColumnResize('lp-master-facilities-v2', FAC_COL_WIDTHS)
+    useColumnResize('lp-master-facilities-v3', FAC_COL_WIDTHS)
   const facVisibleWidth = facTableWidth
 
   const filtered = useMemo(() => {
@@ -533,14 +531,14 @@ export default function LPMaster() {
   }, [classCfg])
   // "All Facilities" mixes records from every facility, so each row names its own facility.
   // The API sends only facilityId on an LP record; the name comes from the loaded facility list.
-  const facilityNameById = useMemo(() => {
-    const byId = new Map<number, string>()
-    facilities.forEach(f => { if (f.id != null) byId.set(f.id, f.name) })
+  const facilityById = useMemo(() => {
+    const byId = new Map<number, FacilityRow>()
+    facilities.forEach(f => { if (f.id != null) byId.set(f.id, f) })
     return byId
   }, [facilities])
   const facilityLabel = useCallback((LPRecord: LPRecord) => (
-    LPRecord.facilityId != null ? facilityNameById.get(LPRecord.facilityId) ?? '—' : '—'
-  ), [facilityNameById])
+    LPRecord.facilityId != null ? facilityById.get(LPRecord.facilityId)?.name ?? '—' : '—'
+  ), [facilityById])
   const sortColumns = useMemo(() => [
     { key: 'rank',         getValue: (LPRecord: LPRecord) => LPRecord.lpRank ?? null },
     { key: 'facility',     getValue: (LPRecord: LPRecord) => facilityLabel(LPRecord) },
@@ -675,21 +673,6 @@ export default function LPMaster() {
     toast(status === 'Inactive' ? `Facility deactivated — ${target.name}.` : `Facility reactivated — ${target.name}.`)
   }
 
-  // Permanently delete a facility (only reachable when it has no LP records).
-  const handleFacilityDelete = async (target: FacilityRow) => {
-    if (target.id != null) {
-      try {
-        await api.facilities.remove(target.id)
-      } catch (e) {
-        toast(e instanceof Error && e.message ? e.message : 'Could not delete facility — API unavailable.')
-        return
-      }
-    }
-    setFacilities(prev => prev.filter(f => f.id !== target.id))
-    setEditingFacility(null)
-    toast(`Facility deleted — ${target.name}.`)
-  }
-
   // Hard-delete an erroneously ingested LP record (correction path for rows that slipped
   // past extraction review). Re-fetch the list so all server-managed record data stays current.
   const handleDelete = async (target: LPRecord) => {
@@ -783,7 +766,6 @@ export default function LPMaster() {
                     <SortableHeader sortKey="facAccount"    sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facAccount }}       onResizeStart={onFacResizeStart}>Account #</SortableHeader>
                     <SortableHeader sortKey="facLoanAmount" sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facLoanAmount }} onResizeStart={onFacResizeStart}>Loan Amount</SortableHeader>
                     <SortableHeader sortKey="facUbsParticipation" sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facUbsParticipation }} onResizeStart={onFacResizeStart}>UBS Participation</SortableHeader>
-                    <SortableHeader sortKey="facUbsRate"    sort={facSort} onSort={requestFacSort} className="num" style={{ width: facWidths.facUbsRate }} onResizeStart={onFacResizeStart}>UBS Participation Rate</SortableHeader>
                     <SortableHeader sortKey="facMaturity"   sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facMaturity }}      onResizeStart={onFacResizeStart}>Maturity Date</SortableHeader>
                     <SortableHeader sortKey="facCollateral" sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facCollateral }}    onResizeStart={onFacResizeStart}>Collateral Date</SortableHeader>
                     <SortableHeader sortKey="facStatus"     sort={facSort} onSort={requestFacSort} style={{ width: facWidths.facStatus }}        onResizeStart={onFacResizeStart}>Facility Status</SortableHeader>
@@ -799,16 +781,15 @@ export default function LPMaster() {
                       // facility's LP records; viewers have no overlay, so their row still drills.
                       <tr key={f.id ?? f.name} onClick={() => (canEdit ? setEditingFacility(f) : openFacility(f))} style={{ cursor: 'pointer' }}>
                         <td
+                          className="drill-cell folder-tab-wrap"
                           title={`Open LP records — ${f.name}`}
                           onClick={e => { e.stopPropagation(); openFacility(f) }}
-                          style={{ fontWeight: 700, color: 'var(--navy)', textDecoration: 'underline', textUnderlineOffset: 2 }}
-                        >{f.name}</td>
+                        ><span className="folder-tab">{f.name}</span></td>
                         <td title={f.agentBank}>{f.agentBank}</td>
                         <td className="num">{f.lps?.toLocaleString() ?? '—'}</td>
                         <td>{f.accountNumber}</td>
                         <td className="num">{f.loanAmount}</td>
                         <td className="num">{f.ubsParticipation}</td>
-                        <td className="num">{f.ubsParticipationRate}</td>
                         <td>{f.maturityDate}</td>
                         <td>{f.collateralDate}</td>
                         <td><span style={{ fontWeight: 600, color }}>● {f.status}</span></td>
@@ -865,7 +846,6 @@ export default function LPMaster() {
           onClose={() => setEditingFacility(null)}
           onSave={handleFacilitySave}
           onDeactivate={handleFacilityDeactivate}
-          onDelete={handleFacilityDelete}
         />
       </div>
     )
@@ -884,9 +864,16 @@ export default function LPMaster() {
             &#x2190; Facilities
           </button>
           <span style={{ color: 'var(--border)' }}>|</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>
-            {facFilter ? facFilter.name : 'All Facilities'}
-          </span>
+          {/* The facility you drilled into keeps wearing the tab you clicked, held in its
+              highlighted state — the folder is open. "All Facilities" is no one folder, so it
+              stays plain text. */}
+          {facFilter ? (
+            <span className="folder-tab-wrap folder-tab-wrap-inline folder-tab-wrap-open">
+              <span className="folder-tab folder-tab-open" title={facFilter.name}>{facFilter.name}</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)' }}>All Facilities</span>
+          )}
           {facFilter && (
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {facFilter.agentBank}</span>
           )}
@@ -928,6 +915,15 @@ export default function LPMaster() {
               </Button>
             </span>
           )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExportLpRecords}
+            disabled={exporting}
+            title="Downloads every LP record, ignoring the filters above"
+          >
+            {exporting ? 'Exporting…' : <>&#x2193; Export</>}
+          </Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
             {filtered.length} of {lpData.length} LPs
           </span>
@@ -994,9 +990,18 @@ export default function LPMaster() {
               return (
               <tr key={rowKey} className={selected === LPRecord ? 'data-table-row-selected' : undefined} onClick={() => setSelected(LPRecord)} style={{ cursor: 'pointer' }}>
                 {facFilter && <td className="num">{LPRecord.lpRank ?? '—'}</td>}
-                {!facFilter && (
-                  <td title={facilityLabel(LPRecord)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{facilityLabel(LPRecord)}</td>
-                )}
+                {!facFilter && (() => {
+                  // Same folder tab as the facility picker, and it does the same thing: opens that
+                  // facility's records. A row whose facility is missing from the list keeps a plain
+                  // dash — a tab has to be openable.
+                  const fac = LPRecord.facilityId != null ? facilityById.get(LPRecord.facilityId) : undefined
+                  return fac
+                    ? <td className="drill-cell folder-tab-wrap" title={`Open LP records — ${fac.name}`}
+                          onClick={e => { e.stopPropagation(); openFacility(fac) }}>
+                        <span className="folder-tab">{fac.name}</span>
+                      </td>
+                    : <td title={facilityLabel(LPRecord)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{facilityLabel(LPRecord)}</td>
+                })()}
                 <td title={LPRecord.investorName} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <strong>{LPRecord.investorName}</strong>
                   {LPRecord.reclassified && <span className="rcl-badge" title="Reclassified" aria-label="Reclassified">R</span>}

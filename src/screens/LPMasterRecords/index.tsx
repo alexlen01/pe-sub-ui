@@ -12,6 +12,7 @@ import DraggablePanel from '../../components/ui/DraggablePanel'
 import LPMasterPanel, { type ParentOption } from '../../components/ui/LPMasterPanel'
 import { getClassificationConfig, type ClassificationConfig } from '../../services/configService'
 import { api, type LpMasterRecord, type LpMasterUpdate } from '../../services/api'
+import { exportLpMasterRecords } from '../../services/lpExportService'
 import { formatPercentageFraction } from '../../utils/percentage'
 import { lpSizeFormat } from '../../utils/lpSize'
 
@@ -214,6 +215,13 @@ export default function LPMasterRecords() {
     toast(`LP Master record deleted — ${target.investorName}.`)
   }
 
+  // The whole lp_master store, not the filtered page: this is a copy of the table, and `rows`
+  // already holds every record the screen loaded.
+  const handleExport = () => {
+    exportLpMasterRecords(rows)
+    toast(`Exported ${rows.length.toLocaleString()} LP Master records to Excel.`)
+  }
+
   const feederCount = rows.filter(r => !r.isUltimateParent).length
 
   return (
@@ -251,9 +259,15 @@ export default function LPMasterRecords() {
             <option value="feeder">Feeders &amp; SPVs</option>
             <option value="sponsor">Sponsors (has children)</option>
           </select>
-          <Button variant="secondary" size="sm" onClick={() => toast('LP Master records exported to Excel.')}>&#x2193; Export</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExport}
+            disabled={rows.length === 0}
+            title="Downloads every LP Master record, ignoring the filters above"
+          >&#x2193; Export</Button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
-            {filtered.length} of {rows.length} LP Master records · {feederCount} routed
+            {filtered.length} of {rows.length} LP Master records · {feederCount} feeders
           </span>
         </div>
 
