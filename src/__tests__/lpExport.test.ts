@@ -85,7 +85,7 @@ const lpMaster = (over: Partial<LpMasterRecord> = {}): LpMasterRecord => ({
   ...over,
 })
 
-// The 29 columns of the LP DB Export (2026-08-18 format), in source order, so the file that comes
+// The 30 columns of the LP DB Export (2026-08-18 format), in source order, so the file that comes
 // out of the platform re-ingests through lp_db_extract.py. Headers match the source spellings; the
 // one departure is 'Institutional vs HNW', which the source misspells "Insitutional" and which the
 // extract's _norm() matcher treats as the same column.
@@ -93,7 +93,8 @@ const LP_DB_COLUMNS = [
   'AccountID', 'FndName', 'Investor Name', 'Parent', 'SPV', 'UBS LP Classification',
   'Institutional vs HNW', 'Investment Grade?', 'Agent LP Classification', 'S&P', "Moody's", 'Fitch',
   'LP Size ($ Bil)', 'LP Size Criteria', 'Capital Commitments', 'Uncalled Capital',
-  'UBS Advance Rate', 'Agent Concentration Limit', 'UBS Concentration Limit',
+  'UBS Advance Rate', 'Agent Advance Rate', 'Agent Concentration Limit',
+  'UBS Concentration Limit',
   '% of Capital Commitments', 'Called Capital', '% of Uncalled Capital', '% of LP Called',
   'Agent Excess Concentration', 'UBS Excess Concentration', 'Agent Borrowing Base',
   'UBS Borrowing Base', 'Notes', 'BBDate',
@@ -107,14 +108,14 @@ describe('LP records export', () => {
   it('is the LP DB Export columns, in the source file order and nothing after them', () => {
     const [row] = buildLpRecordExportRows([lpRecord()], facilities)
     expect(Object.keys(row)).toEqual(LP_DB_COLUMNS)
-    expect(Object.keys(row)).toHaveLength(29)
+    expect(Object.keys(row)).toHaveLength(30)
     expect(Object.keys(row).at(-1)).toBe('BBDate')   // the source export ends at BBDate
   })
 
   it('drops the columns the 2026-08-18 format removed', () => {
     const [row] = buildLpRecordExportRows([lpRecord()], facilities)
     const removed = ['High Quality', 'Investor Type', 'Region / Location', 'AUM', 'NAV',
-                     'Pension Assets', 'Funded Ratio (%)', 'Agent Advance Rate (%)']
+                     'Pension Assets', 'Funded Ratio (%)']
     removed.forEach(column => expect(row).not.toHaveProperty(column))
   })
 
@@ -150,6 +151,7 @@ describe('LP records export', () => {
     // percent-vs-fraction from the value, and a 1% share written as `1` would look like 100%.
     const [row] = buildLpRecordExportRows([lpRecord()], facilities)
     expect(row['UBS Advance Rate']).toBe(0.9)
+    expect(row['Agent Advance Rate']).toBe(0.95)
     expect(row['% of Capital Commitments']).toBe(0.0421)
     expect(row['% of Uncalled Capital']).toBe(0.0533)
     expect(row['% of LP Called']).toBe(0.4)
@@ -157,10 +159,12 @@ describe('LP records export', () => {
 
   it('leaves absent values as empty cells so numeric columns stay numeric', () => {
     const [row] = buildLpRecordExportRows(
-      [lpRecord({ ubsAdvanceRate: null, fitchRating: '', agentExcessConcentration: undefined })],
+      [lpRecord({ ubsAdvanceRate: null, agentAdvanceRate: null, fitchRating: '',
+                  agentExcessConcentration: undefined })],
       facilities,
     )
     expect(row['UBS Advance Rate']).toBe('')
+    expect(row['Agent Advance Rate']).toBe('')
     expect(row['Fitch']).toBe('')
     expect(row['Agent Excess Concentration']).toBe('')
   })

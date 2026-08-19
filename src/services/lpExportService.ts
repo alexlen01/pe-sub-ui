@@ -83,7 +83,7 @@ function lpSizeBil(record: Pick<LPRecord, 'aum' | 'nav' | 'pensionAssets'>): num
 export type ExportFacility = Pick<FacilityRow, 'name' | 'accountNumber' | 'collateralDate'>
 
 /**
- * The 29 columns of the LP DB Export (2026-08-18 format), in source order, so a workbook exported
+ * The 30 columns of the LP DB Export (2026-08-18 format), in source order, so a workbook exported
  * here re-ingests through `pe-sub-jobs/scripts/lp_db_extract.py` as a feed.
  *
  * Headers are written **exactly as the real export spells them**, because that is what makes the
@@ -105,8 +105,8 @@ export type ExportFacility = Pick<FacilityRow, 'name' | 'accountNumber' | 'colla
  * which remain out of this file and belong to the Shadow BB export.
  *
  * Not present, because the 2026-08-18 format dropped them: High Quality, Investor Type,
- * Region / Location, AUM / NAV / Pension Assets (superseded by LP Size + its criteria), Funded
- * Ratio, and Agent Advance Rate (the extract resolves it from the Agent LP Classification).
+ * Region / Location, AUM / NAV / Pension Assets (superseded by LP Size + its criteria) and Funded
+ * Ratio.
  */
 export function buildLpRecordExportRows(
   records: LPRecord[],
@@ -133,18 +133,19 @@ export function buildLpRecordExportRows(
       'Capital Commitments':         text(r.capitalCommitment),          // 15
       'Uncalled Capital':            text(r.uncalledCapital),            // 16
       'UBS Advance Rate':            frac(r.ubsAdvanceRate),             // 17
-      'Agent Concentration Limit':   text(r.agentConcentrationLimit),    // 18
-      'UBS Concentration Limit':     text(r.ubsConcentrationLimit),      // 19
-      '% of Capital Commitments':    frac(r.pctOfFundCommitments),       // 20
-      'Called Capital':              text(r.calledCapital),              // 21
-      '% of Uncalled Capital':       frac(r.pctOfFundUncalled),          // 22
-      '% of LP Called':              frac(r.pctLpCalled),                // 23
-      'Agent Excess Concentration':  text(r.agentExcessConcentration),   // 24
-      'UBS Excess Concentration':    text(r.ubsExcessConcentration),     // 25
-      'Agent Borrowing Base':        text(r.agentBorrowingBase),         // 26
-      'UBS Borrowing Base':          text(r.ubsBorrowingBase),           // 27
-      'Notes':                       text(r.notes),                      // 28
-      'BBDate':                      text(facility?.collateralDate),     // 29 — last column
+      'Agent Advance Rate':          frac(r.agentAdvanceRate),           // 18
+      'Agent Concentration Limit':   text(r.agentConcentrationLimit),    // 19
+      'UBS Concentration Limit':     text(r.ubsConcentrationLimit),      // 20
+      '% of Capital Commitments':    frac(r.pctOfFundCommitments),       // 21
+      'Called Capital':              text(r.calledCapital),              // 22
+      '% of Uncalled Capital':       frac(r.pctOfFundUncalled),          // 23
+      '% of LP Called':              frac(r.pctLpCalled),                // 24
+      'Agent Excess Concentration':  text(r.agentExcessConcentration),   // 25
+      'UBS Excess Concentration':    text(r.ubsExcessConcentration),     // 26
+      'Agent Borrowing Base':        text(r.agentBorrowingBase),         // 27
+      'UBS Borrowing Base':          text(r.ubsBorrowingBase),           // 28
+      'Notes':                       text(r.notes),                      // 29
+      'BBDate':                      text(facility?.collateralDate),     // 30 — last column
     }
   })
 }
