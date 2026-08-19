@@ -1263,9 +1263,12 @@ export function LPRecordCard({ LPRecord, ov, totalCommitM, totalUncalledM, onSav
   const calc = useMemo(() => calcRow(draft, totalCommitM, totalUncalledM), [draft, totalCommitM, totalUncalledM])
   const name = draft.investorName || LPRecord.investorName || LPRecord._agentName || '—'
   const dirty = JSON.stringify(draft) !== JSON.stringify(ov)
-  const reclassified = LPRecord.reclassified
-    || String(draft.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
-    || String(draft.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim()
+  // Persisted flag only. The draft's categories are derived (extraction, LP Master, the rate
+  // schedule) and so differ from the stored record on first render for practically every LP —
+  // comparing them here flagged untouched, and even wholly unclassified, records as reclassified.
+  // The flag is set on Save by the server's ReclassificationPolicy and mirrored optimistically by
+  // marksReclassificationOnSave, both of which require a Shadow BB to invalidate.
+  const reclassified = Boolean(LPRecord.reclassified)
 
   if (!classCfg || !eligCfg) {
     return <div style={{ padding: 16, color: 'var(--muted)', fontSize: 12 }}>Loading LPRecord configuration...</div>

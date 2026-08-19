@@ -1102,6 +1102,7 @@ export default function LPMaster() {
             onDelete={canEdit ? handleDelete : undefined}
             canEdit={canEdit}
             showRank={Boolean(facFilter)}
+            marksReclassification={Boolean(facFilter?.lastRunAt)}
             totalUncalledM={lpData.reduce((sum, row) => sum + ((parseMoneyToNumber(row.uncalledCapital) ?? 0) / 1_000_000), 0)}
           />
         </DraggablePanel>

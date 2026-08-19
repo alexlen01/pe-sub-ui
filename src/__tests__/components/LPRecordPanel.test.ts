@@ -92,7 +92,7 @@ describe('buildLpRecordFromForm', () => {
   it.each([
     ['Agent classification', { agentLpCategory: 'Excluded' }],
     ['UBS classification', { ubsLpCategory: 'Excluded' }],
-  ])('marks a record reclassified when %s changes during Save', (_label, edit) => {
+  ])('marks a record reclassified when %s changes during Save, once a Shadow BB exists', (_label, edit) => {
     const record = baseRecord({
       investorName: 'Changed LP',
       agentLpCategory: 'Included',
@@ -101,13 +101,46 @@ describe('buildLpRecordFromForm', () => {
       agentAdvanceRate: 0.9,
     })
 
+    const saved = buildLpRecordFromForm(record, edit, EMPTY_CLASS_CFG, {}, undefined, true)
+
+    expect(saved.reclassified).toBe(true)
+  })
+
+  it.each([
+    ['Agent classification', { agentLpCategory: 'Excluded' }],
+    ['UBS classification', { ubsLpCategory: 'Excluded' }],
+  ])('does not mark %s as a reclassification with no Shadow BB to invalidate', (_label, edit) => {
+    const record = baseRecord({ investorName: 'Fresh LP', agentLpCategory: 'Included' })
+
     const saved = buildLpRecordFromForm(record, edit, EMPTY_CLASS_CFG, {})
+
+    expect(saved.reclassified).toBe(false)
+  })
+
+  it('does not mark an unclassified record whose categories are still blank', () => {
+    // A record the analyst has not classified yet: the API sends both categories as "" (see the
+    // empty-string contract), which the display union does not model.
+    const record = baseRecord({
+      investorName: 'Unclassified LP',
+      agentLpCategory: '',
+      ubsLpCategory: '' as LPRecord['ubsLpCategory'],
+    })
+
+    const saved = buildLpRecordFromForm(record, { agentLpCategory: 'Non-Rated Included' },
+      EMPTY_CLASS_CFG, {}, undefined, false)
+
+    expect(saved.reclassified).toBe(false)
+  })
+
+  it('keeps a record the server already flagged reclassified', () => {
+    const saved = buildLpRecordFromForm(baseRecord({ reclassified: true }), { notes: 'reviewed' },
+      EMPTY_CLASS_CFG, {})
 
     expect(saved.reclassified).toBe(true)
   })
 
   it('leaves a record unreclassified when neither classification changes', () => {
-    const saved = buildLpRecordFromForm(baseRecord(), { notes: 'reviewed' }, EMPTY_CLASS_CFG, {})
+    const saved = buildLpRecordFromForm(baseRecord(), { notes: 'reviewed' }, EMPTY_CLASS_CFG, {}, undefined, true)
 
     expect(saved.reclassified).toBe(false)
   })

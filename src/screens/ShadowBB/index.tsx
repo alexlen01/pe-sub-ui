@@ -1566,6 +1566,7 @@ export default function ShadowBB() {
                       totalUbsBB={frozenTotalUBB}
                       totalUncalledM={totalUncalledM}
                       showRank
+                      marksReclassification
                     />
                   </DraggablePanel>
                 )}

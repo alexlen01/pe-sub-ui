@@ -77,6 +77,10 @@ export function buildLpRecordFromForm(
   classCfg: { UBS_CLS_DEFAULT_RATE?: Record<string, string>; BUSA_RATE_MAP?: Record<string, string>; CLS_TAG_MAP?: Record<string, string> },
   busaRates: Record<string, number>,
   totalUncalledM?: number,
+  /** Mirrors the server's ReclassificationPolicy: a category change only counts as a
+   *  reclassification once a Shadow BB exists to invalidate. Callers that edit records with no
+   *  run behind them leave this false, so no R badge or re-run banner appears. */
+  marksReclassification = false,
 ): LPRecord {
   const eff = applyLpSizeToRecord(LPRecord, form)
   const ubsConcPct = parseRatePct(eff.ubsConcentrationLimit)
@@ -109,8 +113,9 @@ export function buildLpRecordFromForm(
     ubsLpCategoryTag: classCfg.CLS_TAG_MAP?.[String(form.ubsLpCategory)] ?? LPRecord.ubsLpCategoryTag,
     highQuality: c.busaRate === 0.90,
     reclassified: LPRecord.reclassified
-      || String(eff.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
-      || String(eff.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim(),
+      || (marksReclassification
+        && (String(eff.agentLpCategory ?? '').trim() !== String(LPRecord.agentLpCategory ?? '').trim()
+          || String(eff.ubsLpCategory ?? '').trim() !== String(LPRecord.ubsLpCategory ?? '').trim())),
     calledCapital: fmtM(calledCapM),
     pctLpCalled: capCommitM > 0 ? calledCapM / capCommitM : 0,
     agentBorrowingBase: Number.isFinite(agentRateDec) ? fmtM(parseM(eff.uncalledCapital) * agentRateDec) : (eff.agentBorrowingBase ?? '$0'),
@@ -160,11 +165,14 @@ export interface LPRecordPanelProps {
   totalUncalledM?: number
   /** Rank is facility-specific; show it only in facility-scoped and Shadow BB contexts. */
   showRank?: boolean
+  /** True only where a Shadow BB already exists for this facility, so a category edit invalidates
+   *  it. Off by default: with no run behind the record there is nothing to re-run. */
+  marksReclassification?: boolean
 }
 
 export default function LPRecordPanel({
   LPRecord, open, onClose, onSave, onDelete, canEdit = true, running = false,
-  totalAgentBB, totalUbsBB, totalUncalledM, showRank = false,
+  totalAgentBB, totalUbsBB, totalUncalledM, showRank = false, marksReclassification = false,
 }: LPRecordPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [form,      setForm]      = useState<Record<string, unknown>>({})
@@ -241,7 +249,7 @@ export default function LPRecordPanel({
     })
 
   const handleSave = () => {
-    onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates, totalUncalledM))
+    onSave(buildLpRecordFromForm(LPRecord, form, classCfg, busaRates, totalUncalledM, marksReclassification))
     onClose()
   }
 
